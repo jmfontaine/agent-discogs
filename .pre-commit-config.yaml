@@ -1,0 +1,51 @@
+repos:
+  # General
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: 393031adb9afb225ee52ae2ccd7a5af5525e03e8 # frozen: v1.7.11
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 0839f92796ae388643a08a21640a029b322be5c2 # frozen: v0.15.2
+    hooks:
+      - id: ruff-format
+      - id: ruff-check
+        args: [--fix]
+
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: b7fa7c655ce7b89804034228e1677f8cc1dca92a # frozen: v2.16.1
+    hooks:
+      - id: pyproject-fmt
+
+  - repo: local
+    hooks:
+      - id: dead-code
+        name: dead-code
+        entry: bash -c 'output=$(uv run deadcode src tests 2>&1); echo "$output"; echo "$output" | grep -q "DC0" && exit 1 || exit 0'
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: deps-unused
+        name: deps-unused
+        entry: uv run deptry src
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: type-check
+        name: type-check
+        entry: uv run ty check
+        language: system
+        types: [python]
+        pass_filenames: false

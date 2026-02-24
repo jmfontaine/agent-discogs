@@ -1,0 +1,7 @@
+__pycache__
+.coverage
+.env
+.pytest_cache
+.ruff_cache
+.venv
+docs/discogs

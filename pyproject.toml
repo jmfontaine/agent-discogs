@@ -1,0 +1,41 @@
+[build-system]
+build-backend = "uv_build"
+requires = [ "uv-build>=0.10.4,<0.11" ]
+
+[project]
+name = "agent-discogs"
+version = "0.1.0"
+description = "Token-efficient Discogs CLI for AI agents"
+readme = "README.md"
+keywords = [ "ai-agent", "cli", "discogs", "discogs-api", "music-database" ]
+license = "Apache-2.0"
+authors = [ { name = "Jean-Marc Fontaine", email = "jm@jmfontaine.net" } ]
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [ "click>=8.3.1", "discogs-sdk>=0.3", "pydantic>=2.12.5" ]
+urls.Homepage = "https://github.com/jmfontaine/agent-discogs"
+urls.Issues = "https://github.com/jmfontaine/agent-discogs/issues"
+urls.Repository = "https://github.com/jmfontaine/agent-discogs"
+scripts.agent-discogs = "agent_discogs:main"
+
+[dependency-groups]
+dev = [
+  "deadcode>=2.4.1",
+  "deptry>=0.24",
+  "pyproject-fmt>=2.16.1",
+  "pyright>=1.1.408",
+  "pytest>=8",
+  "pytest-cov",
+  "ruff>=0.15.2",
+  "ty>=0.0.18",
+]
+
+[tool.deadcode]
+ignore-names = [ "_patch_get", "_patch_search", "_reset_singleton" ]

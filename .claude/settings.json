@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "just format && just lint-fix && just type-check && just test || { echo 'Quality checks failed - fix issues before completing' >&2; exit 2; }"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(just dead-code:*)",
+      "Bash(just format:*)",
+      "Bash(just qa:*)",
+      "Bash(just test:*)",
+      "Bash(uv run agent-discogs:*)",
+      "WebSearch"
+    ]
+  }
+}

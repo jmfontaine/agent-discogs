@@ -1,0 +1,62 @@
+name: Checks
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ""
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --all-extras --all-groups
+      - name: Check dead code
+        run: |
+          output=$(uv run deadcode src tests 2>&1)
+          echo "$output"
+          echo "$output" | grep -q "DC0" && exit 1 || exit 0
+      - name: Check pyproject.toml
+        run: uv run pyproject-fmt --check pyproject.toml
+      - name: Check formatting
+        run: uv run ruff format --check
+      - name: Lint
+        run: uv run ruff check
+      - name: Check types
+        run: uv run ty check
+      - name: Check unused dependencies
+        run: uv run deptry src
+      - name: Verify type completeness
+        run: uv run pyright --ignoreexternal --verifytypes agent_discogs
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: uv sync --all-extras --all-groups
+      - name: Run tests
+        run: uv run pytest --cov --cov-report=term-missing
