@@ -79,13 +79,14 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 | `tracklist` | `@r` or numeric ID | Tracklist only (from a release) |
 | `versions` | `@m` or numeric ID | Master release versions (paginated) |
 
-**Flags for paginated nouns (releases, versions):**
+**Flags:**
 
 | Flag | Description |
 |------|-------------|
 | `--json` | Output raw JSON |
 | `--limit` | Results per page (default: 5) |
 | `--page` | Page number (default: 1) |
+| `-v, --verbose` | Show additional details (e.g., release notes) |
 
 **Additional flags for `releases`:**
 
@@ -118,6 +119,7 @@ agent-discogs get releases @a3857 --page 2 --limit 10
 agent-discogs get releases @a3857 --role Remix
 agent-discogs get versions @m4917
 agent-discogs get versions @m4917 --country US --format "Vinyl"
+agent-discogs get release @r367113 --verbose
 ```
 
 ## status

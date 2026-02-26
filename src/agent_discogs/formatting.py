@@ -323,7 +323,7 @@ def format_price_guide(
     return "\n".join(lines)
 
 
-def format_release(release: Any) -> str:
+def format_release(release: Any, *, verbose: bool = False) -> str:
     """Format a full release detail view."""
     ref = make_ref("release", release.id)
     artists = _artist_string(getattr(release, "artists", None))
@@ -374,6 +374,13 @@ def format_release(release: Any) -> str:
     if master_id:
         master_ref = make_ref("master", master_id)
         lines.append(f"Master: {master_ref}")
+
+    if verbose:
+        notes = getattr(release, "notes", None)
+        if notes:
+            notes = notes.strip()
+            if notes:
+                lines.append(f"Notes: {notes}")
 
     tracklist = getattr(release, "tracklist", None)
     if tracklist:

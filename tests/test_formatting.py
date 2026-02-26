@@ -440,6 +440,87 @@ class TestFormatStatus:
         assert "Cache:" not in output
 
 
+class TestFormatReleaseVerbose:
+    def test_verbose_with_notes(self) -> None:
+        release = _fake(
+            id=1,
+            title="Album",
+            year=None,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=None,
+            notes="Pressed at Sterling Sound.",
+        )
+        output = format_release(release, verbose=True)
+        assert "Notes: Pressed at Sterling Sound." in output
+
+    def test_not_verbose_with_notes(self) -> None:
+        release = _fake(
+            id=1,
+            title="Album",
+            year=None,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=None,
+            notes="Pressed at Sterling Sound.",
+        )
+        output = format_release(release)
+        assert "Notes:" not in output
+
+    def test_verbose_without_notes_attr(self) -> None:
+        release = _fake(
+            id=1,
+            title="Album",
+            year=None,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=None,
+        )
+        output = format_release(release, verbose=True)
+        assert "Notes:" not in output
+
+    def test_verbose_empty_notes(self) -> None:
+        release = _fake(
+            id=1,
+            title="Album",
+            year=None,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=None,
+            notes="   ",
+        )
+        output = format_release(release, verbose=True)
+        assert "Notes:" not in output
+
+
 class TestFormatArtistEdgeCases:
     def test_artist_with_members(self) -> None:
         m1 = _fake(name="Trent Reznor", active=True)

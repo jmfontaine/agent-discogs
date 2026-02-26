@@ -689,6 +689,50 @@ class TestGetCommand:
         assert result.exit_code == 1
         assert "error" in result.output.lower()
 
+    def test_get_release_verbose(self) -> None:
+        release = _fake(
+            id=367113,
+            title="The Downward Spiral",
+            year=1994,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=None,
+            notes="Pressed at Sterling Sound.",
+        )
+        self._set_client(_fake_client(releases_get=lambda _id: release))
+        result = CliRunner().invoke(cli, ["get", "release", "@r367113", "--verbose"])
+        assert result.exit_code == 0
+        assert "Notes: Pressed at Sterling Sound." in result.output
+
+    def test_get_release_no_verbose_hides_notes(self) -> None:
+        release = _fake(
+            id=367113,
+            title="The Downward Spiral",
+            year=1994,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=None,
+            notes="Pressed at Sterling Sound.",
+        )
+        self._set_client(_fake_client(releases_get=lambda _id: release))
+        result = CliRunner().invoke(cli, ["get", "release", "@r367113"])
+        assert result.exit_code == 0
+        assert "Notes:" not in result.output
+
     def test_get_with_raw_id(self) -> None:
         release = _fake(
             id=367113,

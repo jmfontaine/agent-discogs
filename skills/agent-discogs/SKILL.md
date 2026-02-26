@@ -59,6 +59,7 @@ Check status: `agent-discogs status`
 | Find by barcode | `search release --barcode "606949235024"` |
 | Get original pressing | `search master "<title>"` → `get versions @m...` → `get release @r...` |
 | Narrow release search | `search release "<title>" --artist "<name>"` |
+| Get release notes | `get release @r... --verbose` |
 | VA compilation tracks | `get release @r...` — per-track artists shown automatically |
 | Machine-readable output | Add `--json` to any command for raw JSON |
 

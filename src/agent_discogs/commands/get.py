@@ -117,12 +117,14 @@ def _get_price(client: Discogs, entity_id: int, *, json_output: bool) -> None:
         print(format_price_guide(release, price_suggestions, marketplace_stats))
 
 
-def _get_release(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+def _get_release(
+    client: Discogs, entity_id: int, *, verbose: bool, json_output: bool
+) -> None:
     release = client.releases.get(entity_id)
     if json_output:
         dump_entity(release)
     else:
-        print(format_release(release))
+        print(format_release(release, verbose=verbose))
 
 
 def _get_releases(
@@ -273,6 +275,7 @@ def _dispatch(
     format: str | None,
     label: str | None,
     role: str | None,
+    verbose: bool,
     json_output: bool,
 ) -> None:
     """Shared dispatch logic for get, tracks, and price commands."""
@@ -290,7 +293,7 @@ def _dispatch(
         elif noun == "price":
             _get_price(client, entity_id, json_output=json_output)
         elif noun == "release":
-            _get_release(client, entity_id, json_output=json_output)
+            _get_release(client, entity_id, verbose=verbose, json_output=json_output)
         elif noun == "releases":
             _get_releases(
                 client,
@@ -332,6 +335,13 @@ def _dispatch(
 @click.option("--limit", type=int, default=5, help="Results per page")
 @click.option("--page", type=int, default=1, help="Page number")
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Show additional details (e.g., release notes)",
+)
 def get(
     noun: str,
     ref: str,
@@ -342,6 +352,7 @@ def get(
     limit: int,
     page: int,
     role: str | None,
+    verbose: bool,
 ) -> None:
     """Get entity details.
 
@@ -357,6 +368,7 @@ def get(
         format=format_,
         label=label,
         role=role,
+        verbose=verbose,
         json_output=json_output,
     )
 
@@ -377,6 +389,7 @@ def tracks(ref: str, json_output: bool) -> None:
         format=None,
         label=None,
         role=None,
+        verbose=False,
         json_output=json_output,
     )
 
@@ -397,5 +410,6 @@ def price(ref: str, json_output: bool) -> None:
         format=None,
         label=None,
         role=None,
+        verbose=False,
         json_output=json_output,
     )
