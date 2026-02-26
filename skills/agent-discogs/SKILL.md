@@ -58,6 +58,18 @@ Check status: `agent-discogs status`
 | Identify by catalog number | `search release --catno "INT-92346"` → `get release @r...` |
 | Find by barcode | `search release --barcode "606949235024"` |
 | Get original pressing | `search master "<title>"` → `get versions @m...` → `get release @r...` |
+| Narrow release search | `search release "<title>" --artist "<name>"` |
+| VA compilation tracks | `get release @r...` — per-track artists shown automatically |
+| Machine-readable output | Add `--json` to any command for raw JSON |
+
+## Machine-Readable Output
+
+All commands support `--json` for raw JSON output, useful for piping into other tools or extracting structured data:
+
+```bash
+agent-discogs search release "Blue Monday" --artist "New Order" --json
+agent-discogs get release @r367113 --json
+```
 
 ## Anti-Patterns
 

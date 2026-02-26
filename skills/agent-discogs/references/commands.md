@@ -51,6 +51,7 @@ agent-discogs search label "Nothing Records"
 agent-discogs search master "The Downward Spiral"
 agent-discogs search release --catno "INT-92346"
 agent-discogs search release --barcode "606949235024"
+agent-discogs search release "Blue Monday" --artist "New Order"
 agent-discogs search release "Pretty Hate Machine" --format "Vinyl" --country US
 agent-discogs search release "The Downward Spiral" --page 2 --limit 10
 agent-discogs search release "Pretty Hate Machine" --release-type all
