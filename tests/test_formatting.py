@@ -684,6 +684,175 @@ class TestFormatPriceGuideEdgeCases:
         assert "Lowest:" not in output
 
 
+class TestTrackArtistPrefix:
+    def test_track_with_artists(self) -> None:
+        from agent_discogs.formatting import _track_artist_prefix
+
+        track = _fake(
+            artists=[_fake(name="Throbbing Gristle", join=None)],
+        )
+        assert _track_artist_prefix(track) == "Throbbing Gristle - "
+
+    def test_track_with_multiple_artists(self) -> None:
+        from agent_discogs.formatting import _track_artist_prefix
+
+        track = _fake(
+            artists=[
+                _fake(name="Trent Reznor", join="&"),
+                _fake(name="Atticus Ross", join=None),
+            ],
+        )
+        assert _track_artist_prefix(track) == "Trent Reznor & Atticus Ross - "
+
+    def test_track_without_artists(self) -> None:
+        from agent_discogs.formatting import _track_artist_prefix
+
+        track = _fake(position="A1", title="Song", duration="3:00", type_=None)
+        assert _track_artist_prefix(track) == ""
+
+    def test_track_with_empty_artists(self) -> None:
+        from agent_discogs.formatting import _track_artist_prefix
+
+        track = _fake(artists=[])
+        assert _track_artist_prefix(track) == ""
+
+
+class TestFormatTrackLines:
+    def test_tracks_with_artists(self) -> None:
+        from agent_discogs.formatting import _format_track_lines
+
+        tracks = [
+            _fake(
+                position="A1",
+                title="Hamburger Lady",
+                duration="4:12",
+                type_=None,
+                artists=[_fake(name="Throbbing Gristle", join=None)],
+            ),
+            _fake(
+                position="A2",
+                title="Blue Monday",
+                duration="7:29",
+                type_=None,
+                artists=[_fake(name="New Order", join=None)],
+            ),
+        ]
+        lines = _format_track_lines(tracks)
+        assert lines == [
+            "  A1. Throbbing Gristle - Hamburger Lady (4:12)",
+            "  A2. New Order - Blue Monday (7:29)",
+        ]
+
+    def test_tracks_without_artists(self) -> None:
+        from agent_discogs.formatting import _format_track_lines
+
+        tracks = [
+            _fake(position="A1", title="Song", duration="3:00", type_=None),
+        ]
+        lines = _format_track_lines(tracks)
+        assert lines == ["  A1. Song (3:00)"]
+
+    def test_heading_ignores_artists(self) -> None:
+        from agent_discogs.formatting import _format_track_lines
+
+        tracks = [
+            _fake(
+                position="",
+                title="Side A",
+                duration="",
+                type_="heading",
+                artists=[_fake(name="Ignored", join=None)],
+            ),
+        ]
+        lines = _format_track_lines(tracks)
+        assert lines == ["  Side A"]
+
+
+class TestFormatReleaseTrackArtists:
+    def test_va_compilation(self) -> None:
+        """VA compilation shows per-track artists."""
+        va_artist = _fake(name="Various", join=None)
+        track1 = _fake(
+            position="A1",
+            title="Hamburger Lady",
+            duration="4:12",
+            type_=None,
+            artists=[_fake(name="Throbbing Gristle", join=None)],
+        )
+        track2 = _fake(
+            position="A2",
+            title="Blue Monday",
+            duration="7:29",
+            type_=None,
+            artists=[_fake(name="New Order", join=None)],
+        )
+        release = _fake(
+            id=452218,
+            title="Some Bizzare Album",
+            year=1981,
+            artists=[va_artist],
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=[track1, track2],
+        )
+        output = format_release(release)
+        assert "A1. Throbbing Gristle - Hamburger Lady (4:12)" in output
+        assert "A2. New Order - Blue Monday (7:29)" in output
+
+
+class TestFormatTracklistTrackArtists:
+    def test_va_tracklist(self) -> None:
+        """format_tracklist shows per-track artists."""
+        track = _fake(
+            position="1",
+            title="Warm Leatherette",
+            duration="3:24",
+            type_=None,
+            artists=[_fake(name="The Normal", join=None)],
+        )
+        release = _fake(
+            id=1,
+            title="Comp",
+            year=1980,
+            artists=[_fake(name="Various", join=None)],
+            tracklist=[track],
+        )
+        output = format_tracklist(release)
+        assert "1. The Normal - Warm Leatherette (3:24)" in output
+
+
+class TestFormatMasterTrackArtists:
+    def test_va_master(self) -> None:
+        """format_master shows per-track artists."""
+        track = _fake(
+            position="1",
+            title="Warm Leatherette",
+            duration="3:24",
+            type_=None,
+            artists=[_fake(name="The Normal", join=None)],
+        )
+        master = _fake(
+            id=1,
+            title="Comp",
+            year=1980,
+            artists=[_fake(name="Various", join=None)],
+            genres=None,
+            styles=None,
+            main_release=None,
+            num_for_sale=None,
+            lowest_price=None,
+            tracklist=[track],
+        )
+        output = format_master(master)
+        assert "1. The Normal - Warm Leatherette (3:24)" in output
+
+
 class TestFormatMasterVersionsEdgeCases:
     def test_version_no_next_page(self) -> None:
         versions = [

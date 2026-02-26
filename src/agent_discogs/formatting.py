@@ -47,6 +47,34 @@ def _label_string(labels: list[Any] | None) -> str:
     return name
 
 
+def _track_artist_prefix(track: Any) -> str:
+    """Return 'Artist - ' prefix for a track, or '' if no track-level artists."""
+    artists = getattr(track, "artists", None)
+    if not artists:
+        return ""
+    return _artist_string(artists) + " - "
+
+
+def _format_track_lines(tracklist: list[Any]) -> list[str]:
+    """Format a tracklist into display lines with optional per-track artists."""
+    lines: list[str] = []
+    for track in tracklist:
+        pos = getattr(track, "position", "") or ""
+        title = getattr(track, "title", "") or ""
+        dur = getattr(track, "duration", "") or ""
+        type_ = getattr(track, "type_", "") or ""
+        if type_ == "heading":
+            lines.append(f"  {title}")
+            continue
+        artist_prefix = _track_artist_prefix(track)
+        dur_str = f" ({dur})" if dur else ""
+        if pos:
+            lines.append(f"  {pos}. {artist_prefix}{title}{dur_str}")
+        else:
+            lines.append(f"  {artist_prefix}{title}{dur_str}")
+    return lines
+
+
 def _truncate(text: str | None, length: int = 300) -> str:
     """Truncate text to a max length with ellipsis."""
     if not text:
@@ -191,19 +219,7 @@ def format_master(master: Any) -> str:
     if tracklist:
         lines.append("")
         lines.append("Tracklist:")
-        for track in tracklist:
-            pos = getattr(track, "position", "") or ""
-            title = getattr(track, "title", "") or ""
-            dur = getattr(track, "duration", "") or ""
-            type_ = getattr(track, "type_", "") or ""
-            if type_ == "heading":
-                lines.append(f"  {title}")
-                continue
-            dur_str = f" ({dur})" if dur else ""
-            if pos:
-                lines.append(f"  {pos}. {title}{dur_str}")
-            else:
-                lines.append(f"  {title}{dur_str}")
+        lines.extend(_format_track_lines(tracklist))
 
     return "\n".join(lines)
 
@@ -363,19 +379,7 @@ def format_release(release: Any) -> str:
     if tracklist:
         lines.append("")
         lines.append("Tracklist:")
-        for track in tracklist:
-            pos = getattr(track, "position", "") or ""
-            title = getattr(track, "title", "") or ""
-            dur = getattr(track, "duration", "") or ""
-            type_ = getattr(track, "type_", "") or ""
-            if type_ == "heading":
-                lines.append(f"  {title}")
-                continue
-            dur_str = f" ({dur})" if dur else ""
-            if pos:
-                lines.append(f"  {pos}. {title}{dur_str}")
-            else:
-                lines.append(f"  {title}{dur_str}")
+        lines.extend(_format_track_lines(tracklist))
 
     return "\n".join(lines)
 
@@ -461,18 +465,6 @@ def format_tracklist(release: Any) -> str:
         lines.append("  (no tracklist available)")
         return "\n".join(lines)
 
-    for track in tracklist:
-        pos = getattr(track, "position", "") or ""
-        title = getattr(track, "title", "") or ""
-        dur = getattr(track, "duration", "") or ""
-        type_ = getattr(track, "type_", "") or ""
-        if type_ == "heading":
-            lines.append(f"  {title}")
-            continue
-        dur_str = f" ({dur})" if dur else ""
-        if pos:
-            lines.append(f"  {pos}. {title}{dur_str}")
-        else:
-            lines.append(f"  {title}{dur_str}")
+    lines.extend(_format_track_lines(tracklist))
 
     return "\n".join(lines)
