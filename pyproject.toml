@@ -19,7 +19,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
-dependencies = [ "click>=8.3.1", "discogs-sdk>=0.3", "pydantic>=2.12.5" ]
+dependencies = [ "click>=8.3.1", "discogs-sdk>=0.3.0", "pydantic>=2.12.5" ]
 urls.Homepage = "https://github.com/jmfontaine/agent-discogs"
 urls.Issues = "https://github.com/jmfontaine/agent-discogs/issues"
 urls.Repository = "https://github.com/jmfontaine/agent-discogs"
@@ -36,6 +36,10 @@ dev = [
   "ruff>=0.15.2",
   "ty>=0.0.18",
 ]
+
+[tool.pyproject-fmt]
+keep_full_version = true
+max_supported_python = "3.14"
 
 [tool.deadcode]
 ignore-names = [ "_patch_get", "_patch_search", "_reset_singleton" ]
