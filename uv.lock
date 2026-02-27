@@ -27,7 +27,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.3.1" },
-    { name = "discogs-sdk", specifier = ">=0.3" },
+    { name = "discogs-sdk", specifier = ">=0.3.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
 ]
 
@@ -258,16 +258,16 @@ wheels = [
 
 [[package]]
 name = "discogs-sdk"
-version = "0.3.0"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/13/8d695dcc4f65f7e73004a28848335e1553de380f7499c3fecf9fe9b0e64b/discogs_sdk-0.3.0.tar.gz", hash = "sha256:023824f8170ea99cf45622abf66e59f601c79a215e4f03144f10c1f6b43a0f40", size = 33366, upload-time = "2026-02-23T23:20:55.731Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/32/75399ad46f7c60e63c5547a8a62b51e0a4e4c86e7f361e166d0f3c4f169b/discogs_sdk-0.3.1.tar.gz", hash = "sha256:ff5106e62ca3c763ee0caf94ea1737df3b54157852d9cbf16a92ac7240857bd9", size = 33614, upload-time = "2026-02-27T01:41:04.208Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8e/fd/c9201a727f95e07fb1e0c9df91ada4a96a2c25a46a3ee826f95b5f695082/discogs_sdk-0.3.0-py3-none-any.whl", hash = "sha256:aa92a305eafe32f02438b2b6058b30384532688ae8e02de09c9108fd6154d5e8", size = 60196, upload-time = "2026-02-23T23:20:54.533Z" },
+    { url = "https://files.pythonhosted.org/packages/72/93/1ee92319666f45d292beb923e28f545f3407f392aef82d5e544250ada3b7/discogs_sdk-0.3.1-py3-none-any.whl", hash = "sha256:3153ea24a61648f29880be8f99edd2f4120fce42d0384c167ee925ceacca1ab7", size = 60471, upload-time = "2026-02-27T01:41:02.916Z" },
 ]
 
 [[package]]
