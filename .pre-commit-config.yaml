@@ -29,6 +29,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: no-local-sdk
+        name: no-local-sdk
+        entry: "bash -c '! grep -q sources.discogs-sdk pyproject.toml || { echo \"Local discogs-sdk override found. Run just sdk-unlink\"; exit 1; }'"
+        language: system
+        files: pyproject.toml
+        pass_filenames: false
+
       - id: dead-code
         name: dead-code
         entry: bash -c 'output=$(uv run deadcode src tests 2>&1); echo "$output"; echo "$output" | grep -q "DC0" && exit 1 || exit 0'

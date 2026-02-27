@@ -16,8 +16,13 @@
       "Bash(just dead-code:*)",
       "Bash(just format:*)",
       "Bash(just qa:*)",
+      "Bash(just sdk-link:*)",
+      "Bash(just sdk-unlink:*)",
       "Bash(just test:*)",
       "Bash(uv run agent-discogs:*)",
+      "Bash(uv sync:*)",
+      "mcp__plugin_context7_context7__query-docs",
+      "mcp__plugin_context7_context7__resolve-library-id",
       "WebSearch"
     ]
   }

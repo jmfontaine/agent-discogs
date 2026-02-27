@@ -78,6 +78,41 @@ release:
     sleep 5
     gh run watch --exit-status "$(gh run list --workflow=publish.yml --branch="$tag" --limit=1 --json=databaseId --jq='.[0].databaseId')"
 
+# Use local discogs-sdk for development testing
+sdk-link:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if grep -q 'sources.discogs-sdk' pyproject.toml; then
+        echo "Already linked to local discogs-sdk"
+        exit 0
+    fi
+    python3 -c "
+    p = __import__('pathlib').Path('pyproject.toml')
+    t = p.read_text()
+    p.write_text(t.replace('[tool.deadcode]',
+        '[tool.uv]\nsources.discogs-sdk = { path = \"../discogs-sdk\", editable = true }\n\n[tool.deadcode]'))
+    "
+    uv run pyproject-fmt pyproject.toml
+    uv sync
+
+# Revert to published discogs-sdk
+sdk-unlink:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! grep -q 'sources.discogs-sdk' pyproject.toml; then
+        echo "Already using published discogs-sdk"
+        exit 0
+    fi
+    python3 -c "
+    import re, pathlib
+    p = pathlib.Path('pyproject.toml')
+    t = p.read_text()
+    t = re.sub(r'\n*\[tool\.uv\]\n[^[]*', '\n\n', t)
+    p.write_text(t)
+    "
+    uv run pyproject-fmt pyproject.toml
+    uv sync
+
 # Set local dev environment up
 setup:
     uv sync --all-extras --all-groups  # Install dependencies
