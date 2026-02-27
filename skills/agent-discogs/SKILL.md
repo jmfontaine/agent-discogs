@@ -7,6 +7,10 @@ description: >
   Use when asked to "find a record", "look up an album", "check vinyl
   prices", "what pressings exist", "explore an artist's discography",
   "identify a pressing by catalog number", "compare different pressings",
+  "how much is this record worth", "what's this album's value",
+  "what label released this", "who played on this album",
+  "find this song's album", "what year did this come out",
+  "look up this catalog number", "search the music database",
   or any task involving music collecting and the Discogs database.
 allowed-tools: Bash(agent-discogs:*)
 ---
@@ -47,6 +51,16 @@ Check status: `agent-discogs status`
    agent-discogs get versions @m4917 --country US
    ```
 
+## Output Format
+
+- **search** — numbered list of matches with refs, title, year, format. Replaces all stored refs.
+- **get release** — title, artists, label, format, tracklist summary, notes. Adds ref.
+- **get release --verbose** — full details including inline `[@a...]` and `[@l...]` refs for chaining.
+- **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
+- **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats.
+- **get versions** — table of pressings with country, year, format, label, and refs.
+- **get releases** — artist discography with type, year, and refs.
+
 ## Common Patterns
 
 | Goal | Commands |
@@ -81,15 +95,28 @@ agent-discogs get release @r367113 --json
 - **Don't guess IDs.** Always search first to find the right entity.
 - **Don't use `get versions` on a release ID.** Use a master ref (smart resolution costs an extra API call).
 
+## Error Recovery
+
+- **0 results** — broaden filters (drop `--year`, `--country`), try a different type (`master` instead of `release`), or simplify the query.
+- **Auth required** — price suggestions and search require `DISCOGS_TOKEN`. Run `agent-discogs status` to check.
+- **Invalid ref** — refs are session-scoped and reset on each search. Re-search to get fresh refs.
+- **Rate limited** — wait briefly and retry. Authenticated requests get 60/min; unauthenticated get 25/min.
+
 ## Refs
 
 Refs encode entity type and Discogs ID: `@a3857` (artist), `@r367113` (release), `@m4917` (master), `@l2919` (label). Raw numeric IDs also work.
+
+**Ref chaining:** `get release @r... --verbose` embeds inline `[@a...]` and `[@l...]` refs in the output. Use these to chain into artist discographies or label catalogs without an extra search.
 
 ## Key Concepts
 
 **Master** = canonical album. **Release** = specific pressing. **Version** = a release belonging to a master. Search masters to find all pressings; search releases to find a specific one. See [references/pressings-guide.md](references/pressings-guide.md) for details.
 
 **Formats**, **genres**, **identifiers**, and other Discogs-specific data conventions are documented in [references/discogs-domain.md](references/discogs-domain.md).
+
+## Token Efficiency
+
+Prefer the most specific command: `tracks @r...` over `get release @r...` when you only need the tracklist, and `price @r...` over `get release @r...` when you only need pricing. This reduces output tokens and avoids unnecessary data.
 
 ## Reference Docs
 
