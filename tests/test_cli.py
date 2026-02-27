@@ -742,26 +742,38 @@ class TestGetCommand:
         assert "error" in result.output.lower()
 
     def test_get_release_verbose(self) -> None:
+        artist = _fake(id=3857, name="Nine Inch Nails", join=None)
+        label = _fake(id=33244, name="Rhino Records (2)", catalog_number="R2 75933")
+        track = _fake(
+            position="1",
+            title="Hamburger Lady",
+            duration="4:12",
+            type_=None,
+            artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
+        )
         release = _fake(
             id=367113,
             title="The Downward Spiral",
             year=1994,
-            artists=None,
+            artists=[artist],
             community=None,
-            labels=None,
+            labels=[label],
             formats=None,
             genres=None,
             styles=None,
             num_for_sale=None,
             lowest_price=None,
             master_id=None,
-            tracklist=None,
+            tracklist=[track],
             notes="Pressed at Sterling Sound.",
         )
         self._set_client(_fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "release", "@r367113", "--verbose"])
         assert result.exit_code == 0
         assert "Notes: Pressed at Sterling Sound." in result.output
+        assert "[@a3857]" in result.output
+        assert "[@l33244]" in result.output
+        assert "[@a12589]" in result.output
 
     def test_get_release_no_verbose_hides_notes(self) -> None:
         release = _fake(

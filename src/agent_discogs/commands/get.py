@@ -346,7 +346,7 @@ def _dispatch(
     "--verbose",
     is_flag=True,
     default=False,
-    help="Show additional details (e.g., release notes)",
+    help="Show additional details (e.g., release notes, entity refs)",
 )
 def get(
     noun: str,

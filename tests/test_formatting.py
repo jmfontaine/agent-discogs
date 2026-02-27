@@ -520,6 +520,65 @@ class TestFormatReleaseVerbose:
         output = format_release(release, verbose=True)
         assert "Notes:" not in output
 
+    def test_verbose_includes_artist_refs(self) -> None:
+        artist = _fake(id=3857, name="Nine Inch Nails", join=None)
+        label = _fake(id=33244, name="Rhino Records (2)", catalog_number="R2 75933")
+        track = _fake(
+            position="1",
+            title="Hamburger Lady",
+            duration="4:12",
+            type_=None,
+            artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
+        )
+        release = _fake(
+            id=367113,
+            title="The Downward Spiral",
+            year=1994,
+            artists=[artist],
+            community=None,
+            labels=[label],
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=[track],
+        )
+        output = format_release(release, verbose=True)
+        assert "Nine Inch Nails [@a3857]" in output
+        assert "Rhino Records (2) [@l33244] (R2 75933)" in output
+        assert "Throbbing Gristle [@a12589] - Hamburger Lady" in output
+
+    def test_non_verbose_excludes_refs(self) -> None:
+        artist = _fake(id=3857, name="Nine Inch Nails", join=None)
+        label = _fake(id=33244, name="Rhino Records (2)", catalog_number="R2 75933")
+        track = _fake(
+            position="1",
+            title="Hamburger Lady",
+            duration="4:12",
+            type_=None,
+            artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
+        )
+        release = _fake(
+            id=367113,
+            title="The Downward Spiral",
+            year=1994,
+            artists=[artist],
+            community=None,
+            labels=[label],
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=[track],
+        )
+        output = format_release(release)
+        assert "[@a" not in output
+        assert "[@l" not in output
+
 
 class TestFormatArtistEdgeCases:
     def test_artist_with_members(self) -> None:

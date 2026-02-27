@@ -60,6 +60,7 @@ Check status: `agent-discogs status`
 | Get original pressing | `search master "<title>"` → `get versions @m...` → `get release @r...` |
 | Narrow release search | `search release "<title>" --artist "<name>"` |
 | Get release notes | `get release @r... --verbose` |
+| Get artist/label IDs from a release | `get release @r... --verbose` — inline `[@a...]` and `[@l...]` refs |
 | VA compilation tracks | `get release @r...` — per-track artists shown automatically |
 | Machine-readable output | Add `--json` to any command for raw JSON |
 

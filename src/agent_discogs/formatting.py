@@ -7,7 +7,7 @@ from typing import Any
 from agent_discogs.refs import make_ref
 
 
-def _artist_string(artists: list[Any] | None) -> str:
+def _artist_string(artists: list[Any] | None, *, verbose: bool = False) -> str:
     """Join artist credits into a display string."""
     if not artists:
         return "Unknown Artist"
@@ -15,6 +15,10 @@ def _artist_string(artists: list[Any] | None) -> str:
     for a in artists:
         name = getattr(a, "name", None) or "Unknown"
         parts.append(name)
+        if verbose:
+            artist_id = getattr(a, "id", None)
+            if artist_id is not None:
+                parts.append(f"[{make_ref('artist', artist_id)}]")
         join = getattr(a, "join", None)
         if join:
             parts.append(join)
@@ -35,27 +39,31 @@ def _format_string(formats: list[Any] | None) -> str:
     return ", ".join(parts)
 
 
-def _label_string(labels: list[Any] | None) -> str:
+def _label_string(labels: list[Any] | None, *, verbose: bool = False) -> str:
     """First label name and catalog number."""
     if not labels:
         return ""
     lbl = labels[0]
     name = getattr(lbl, "name", None) or ""
-    catno = getattr(lbl, "catalog_number", None) or ""
-    if catno:
-        return f"{name} ({catno})"
-    return name
+    ref_suffix = ""
+    if verbose:
+        label_id = getattr(lbl, "id", None)
+        if label_id is not None:
+            ref_suffix = f" [{make_ref('label', label_id)}]"
+    if catno := getattr(lbl, "catalog_number", None) or "":
+        return f"{name}{ref_suffix} ({catno})"
+    return f"{name}{ref_suffix}"
 
 
-def _track_artist_prefix(track: Any) -> str:
+def _track_artist_prefix(track: Any, *, verbose: bool = False) -> str:
     """Return 'Artist - ' prefix for a track, or '' if no track-level artists."""
     artists = getattr(track, "artists", None)
     if not artists:
         return ""
-    return _artist_string(artists) + " - "
+    return _artist_string(artists, verbose=verbose) + " - "
 
 
-def _format_track_lines(tracklist: list[Any]) -> list[str]:
+def _format_track_lines(tracklist: list[Any], *, verbose: bool = False) -> list[str]:
     """Format a tracklist into display lines with optional per-track artists."""
     lines: list[str] = []
     for track in tracklist:
@@ -66,7 +74,7 @@ def _format_track_lines(tracklist: list[Any]) -> list[str]:
         if type_ == "heading":
             lines.append(f"  {title}")
             continue
-        artist_prefix = _track_artist_prefix(track)
+        artist_prefix = _track_artist_prefix(track, verbose=verbose)
         dur_str = f" ({dur})" if dur else ""
         if pos:
             lines.append(f"  {pos}. {artist_prefix}{title}{dur_str}")
@@ -326,13 +334,13 @@ def format_price_guide(
 def format_release(release: Any, *, verbose: bool = False) -> str:
     """Format a full release detail view."""
     ref = make_ref("release", release.id)
-    artists = _artist_string(getattr(release, "artists", None))
+    artists = _artist_string(getattr(release, "artists", None), verbose=verbose)
     year = getattr(release, "year", None) or ""
     year_str = f" ({year})" if year else ""
 
     lines = [f'{ref} [release] "{release.title}" by {artists}{year_str}']
 
-    label = _label_string(getattr(release, "labels", None))
+    label = _label_string(getattr(release, "labels", None), verbose=verbose)
     if label:
         lines.append(f"Label: {label}")
 
@@ -386,7 +394,7 @@ def format_release(release: Any, *, verbose: bool = False) -> str:
     if tracklist:
         lines.append("")
         lines.append("Tracklist:")
-        lines.extend(_format_track_lines(tracklist))
+        lines.extend(_format_track_lines(tracklist, verbose=verbose))
 
     return "\n".join(lines)
 

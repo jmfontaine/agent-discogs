@@ -78,7 +78,7 @@ agent-discogs get price @r352665
 
 Nouns: `artist`, `label`, `master`, `price`, `release`, `releases`, `tracklist`, `versions`.
 
-Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`. Versions also accept `--country`, `--format`, and `--label` filters. Use `--json` for raw JSON output.
+Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`. Versions also accept `--country`, `--format`, and `--label` filters. Use `-v, --verbose` with `release` to include release notes and inline entity refs (`[@a...]`, `[@l...]`). Use `--json` for raw JSON output.
 
 ### tracks / price
 

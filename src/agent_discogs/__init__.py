@@ -44,7 +44,7 @@ Options:
   --json           Output raw JSON (search, get)
   --limit N        Results per page (search, get)
   --page N         Page number (search, get)
-  -v, --verbose    Show additional details (get)
+  -v, --verbose    Show additional details (get release)
   --version        Show version and exit
   --help           Show this message and exit
 

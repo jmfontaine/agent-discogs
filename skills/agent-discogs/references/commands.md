@@ -86,7 +86,7 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 | `--json` | Output raw JSON |
 | `--limit` | Results per page (default: 5) |
 | `--page` | Page number (default: 1) |
-| `-v, --verbose` | Show additional details (e.g., release notes) |
+| `-v, --verbose` | Show additional details: release notes, inline entity refs (`[@a...]`, `[@l...]`) for artists and labels |
 
 **Additional flags for `releases`:**
 
