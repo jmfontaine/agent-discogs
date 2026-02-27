@@ -249,9 +249,15 @@ def _get_versions(
 
     next_page_cmd = None
     if result.has_next:
-        next_page_cmd = (
-            f"agent-discogs get versions {master_ref} --page {result.page + 1}"
-        )
+        parts = [f"agent-discogs get versions {master_ref}"]
+        if country:
+            parts.append(f"--country {country}")
+        if format:
+            parts.append(f"--format {format}")
+        if label:
+            parts.append(f"--label {label}")
+        parts.append(f"--page {result.page + 1}")
+        next_page_cmd = " ".join(parts)
 
     print(
         format_master_versions(

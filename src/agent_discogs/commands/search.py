@@ -192,7 +192,21 @@ def search(
         cmd_parts = ["agent-discogs search"]
         if type_filter:
             cmd_parts.append(type_filter)
-        cmd_parts.append(f'"{query}"')
+        if query:
+            cmd_parts.append(f'"{query}"')
+        for flag, value in [
+            ("--artist", artist),
+            ("--barcode", barcode),
+            ("--catno", catno),
+            ("--country", country),
+            ("--format", format_),
+            ("--genre", genre),
+            ("--label", label),
+            ("--style", style),
+            ("--year", year),
+        ]:
+            if value:
+                cmd_parts.append(f"{flag} {value}")
         if release_type != "official":
             cmd_parts.append(f"--release-type {release_type}")
         cmd_parts.append(f"--page {result.page + 1}")

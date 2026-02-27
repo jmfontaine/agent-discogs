@@ -398,6 +398,39 @@ class TestSearchCommand:
         assert result.exit_code == 0
         assert "--release-type unofficial" in result.output
 
+    def test_search_filters_in_next_page(self) -> None:
+        """Next page command includes all active filters."""
+        item = _fake(
+            id=1, type="release", title="Test", year=None, label=None, format=["Vinyl"]
+        )
+        self._set_fetch_result(
+            PageResult(items=[item], page=1, total_items=50, total_pages=10)
+        )
+        result = CliRunner().invoke(
+            cli,
+            [
+                "search",
+                "test",
+                "--artist",
+                "Nine Inch Nails",
+                "--genre",
+                "Rock",
+                "--year",
+                "1994",
+                "--country",
+                "US",
+                "--format",
+                "Vinyl",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "--artist Nine Inch Nails" in result.output
+        assert "--genre Rock" in result.output
+        assert "--year 1994" in result.output
+        assert "--country US" in result.output
+        assert "--format Vinyl" in result.output
+        assert "--page 2" in result.output
+
     def test_release_type_default_next_page_omits_flag(self) -> None:
         """Next page command omits --release-type when official (default)."""
         item = _fake(
@@ -843,6 +876,46 @@ class TestGetCommand:
         )
         assert result.exit_code == 0
         assert "--role Main" in result.output
+        assert "--page 2" in result.output
+
+    def test_get_versions_filters_in_next_page(self) -> None:
+        """Next page command includes --country, --format, --label when active."""
+        master = _fake(id=4917, title="TDS")
+        self._set_client(_fake_client(masters_get=lambda _id: master))
+
+        ver = _fake(
+            id=367113,
+            released="1994",
+            country="US",
+            label="Nothing",
+            catno="INT-92346",
+            format="Vinyl",
+        )
+        self._monkeypatch.setattr(
+            "agent_discogs.commands.get.fetch_page",
+            lambda *_a, **_kw: PageResult(
+                items=[ver], page=1, total_items=50, total_pages=10
+            ),
+        )
+
+        result = CliRunner().invoke(
+            cli,
+            [
+                "get",
+                "versions",
+                "@m4917",
+                "--country",
+                "US",
+                "--format",
+                "Vinyl",
+                "--label",
+                "Nothing",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "--country US" in result.output
+        assert "--format Vinyl" in result.output
+        assert "--label Nothing" in result.output
         assert "--page 2" in result.output
 
     def test_get_versions_with_filters(self) -> None:
