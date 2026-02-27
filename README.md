@@ -29,6 +29,14 @@ pip install agent-discogs
 
 Requires Python 3.10+.
 
+### AI Coding Agent Skill
+
+Install the skill so your AI coding agent can use agent-discogs automatically:
+
+```bash
+npx skills upgrade jmfontaine/agent-discogs
+```
+
 ## Authentication
 
 Set your personal access token from [your Discogs developer settings](https://www.discogs.com/settings/developers):
