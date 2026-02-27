@@ -49,11 +49,11 @@ A token is required for search and price lookups. Without it, only direct entity
 Search the Discogs database. Aliases: `find`, `query`.
 
 ```bash
-agent-discogs search "Pretty Hate Machine"
-agent-discogs search release "Pretty Hate Machine" --year 1989
+agent-discogs search "The Downward Spiral"
+agent-discogs search release "The Downward Spiral" --year 1994
 agent-discogs search artist "Nine Inch Nails" --limit 10
 agent-discogs search label "Nothing Records"
-agent-discogs search release "Pretty Hate Machine" --release-type all
+agent-discogs search release "The Downward Spiral" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
 ```
 
