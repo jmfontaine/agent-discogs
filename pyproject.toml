@@ -42,4 +42,4 @@ keep_full_version = true
 max_supported_python = "3.14"
 
 [tool.deadcode]
-ignore-names = [ "_patch_get", "_patch_search", "_reset_singleton" ]
+ignore-names = [ "_patch_get", "_patch_search", "_reset_singleton", "format_help" ]

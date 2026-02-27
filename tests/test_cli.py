@@ -62,16 +62,35 @@ class TestCLIBasics:
     def test_help(self) -> None:
         result = CliRunner().invoke(cli, ["--help"])
         assert result.exit_code == 0
-        assert "search" in result.output
-        assert "get" in result.output
+        # Commands section
+        assert "search [type] <query>" in result.output
+        assert "get <noun> <ref>" in result.output
+        assert "tracks <ref>" in result.output
+        assert "price <ref>" in result.output
+        assert "cache clear" in result.output
         assert "status" in result.output
-        assert "tracks" in result.output
-        assert "price" in result.output
+        # Aliases
+        assert "aliases: find, query" in result.output
+        assert "aliases: fetch, show" in result.output
+        # Search types and get nouns
+        assert "Search Types:" in result.output
+        assert "Get Nouns:" in result.output
+        # Ref system explanation
+        assert "@a3857 (artist)" in result.output
+        assert "@r367113 (release)" in result.output
+        # Environment
+        assert "DISCOGS_TOKEN" in result.output
+        # Examples
+        assert "Examples:" in result.output
+        assert 'agent-discogs search "The Downward Spiral"' in result.output
 
     def test_no_args_shows_help(self) -> None:
         result = CliRunner().invoke(cli, [])
         assert result.exit_code == 0
-        assert "Usage:" in result.output or "search" in result.output
+        assert "agent-discogs - token-efficient Discogs CLI" in result.output
+        assert "Commands:" in result.output
+        assert "Refs:" in result.output
+        assert "Examples:" in result.output
 
     def test_search_help(self) -> None:
         result = CliRunner().invoke(cli, ["search", "--help"])

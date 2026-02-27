@@ -20,6 +20,48 @@ ALIASES: dict[str, str] = {
 }
 
 
+_HELP_TEXT = """\
+agent-discogs - token-efficient Discogs CLI for AI agents
+
+Usage: agent-discogs <command> [args] [options]
+
+Commands:
+  search [type] <query>      Search database (aliases: find, query)
+  get <noun> <ref>            Get entity details (aliases: fetch, show)
+  tracks <ref>                Shortcut: get tracklist <ref>
+  price <ref>                 Shortcut: get price <ref>
+  cache clear                 Clear HTTP cache
+  status                      Show session and auth info
+
+Search Types:  artist, label, master, release
+Get Nouns:     artist, label, master, price, release, releases, tracklist, versions
+
+Refs:
+  Search results return typed refs: @a3857 (artist), @r367113 (release),
+  @m3719 (master), @l647 (label). Use refs with get commands.
+
+Options:
+  --json           Output raw JSON (search, get)
+  --limit N        Results per page (search, get)
+  --page N         Page number (search, get)
+  -v, --verbose    Show additional details (get)
+  --version        Show version and exit
+  --help           Show this message and exit
+
+Environment:
+  DISCOGS_TOKEN    Personal access token (higher rate limit, required for price data)
+
+Examples:
+  agent-discogs search "The Downward Spiral"
+  agent-discogs search artist "Nine Inch Nails"
+  agent-discogs get release @522533
+  agent-discogs get versions @m3719 --country US --format Vinyl
+  agent-discogs tracks @522533
+  agent-discogs price @522533
+  agent-discogs get releases @a3857 --role Main --limit 5
+"""
+
+
 class AliasGroup(click.Group):
     """Click group that supports command aliases."""
 
@@ -41,8 +83,8 @@ class AliasGroup(click.Group):
             return cmd.name, cmd, remaining
         return None, None, args
 
-    def format_usage(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
-        super().format_usage(ctx, formatter)
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        formatter.write(_HELP_TEXT)
 
     def invoke(self, ctx: click.Context) -> Any:
         try:
