@@ -12,19 +12,19 @@ agent-discogs price @r352665           # price guide shortcut
 ## Installation
 
 ```bash
-pipx install agent-discogs
+pipx install git+https://github.com/jmfontaine/agent-discogs.git
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install agent-discogs
+uv tool install git+https://github.com/jmfontaine/agent-discogs.git
 ```
 
 Or with pip:
 
 ```bash
-pip install agent-discogs
+pip install git+https://github.com/jmfontaine/agent-discogs.git
 ```
 
 Requires Python 3.10+.
@@ -34,7 +34,7 @@ Requires Python 3.10+.
 Install the skill so your AI coding agent can use agent-discogs automatically:
 
 ```bash
-npx skills upgrade jmfontaine/agent-discogs
+npx skills add jmfontaine/agent-discogs
 ```
 
 ## Authentication
