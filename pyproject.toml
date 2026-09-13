@@ -82,25 +82,26 @@ lint.select = [
   "YTT",   # flake8-2020
 ]
 lint.ignore = [
-  "EM101",   # exception messages are the product; hoisting them buys nothing
-  "EM102",   # ditto, for f-string messages
-  "PLC0415", # imports are deliberately lazy to keep CLI startup fast
-  "PLR0911", # formatters branch a lot by design
-  "PLR0912", # ditto
-  "PLR0913", # click commands are wide by nature
-  "PLR0915", # formatters are long by nature
-  "PLR0917", # ditto, for positional arguments
-  "TC001",   # `from __future__ import annotations` already defers the cost, so
-  "TC002",   # moving imports into TYPE_CHECKING blocks only hurts readability
-  "TC003",   # ditto, for stdlib imports
-  "TRY003",  # see EM101: long messages outside the exception class are fine here
+  "EM101",   # raw-string-in-exception - the test doubles that raise use one-off literals; naming them first adds a line and no clarity
+  "EM102",   # f-string-in-exception - refs.py and get.py interpolate the offending ref or noun, which is what makes the message actionable
+  "PLC0415", # import-outside-top-level - errors.py and __init__.py import discogs_sdk lazily so --help and --version never pay to load it
+  "PLR0911", # too-many-return-statements - format_error() returns one tailored message per SDK exception type
+  "PLR0912", # too-many-branches - verbose release output walks a long list of independently optional Discogs fields
+  "PLR0913", # too-many-arguments - click hands every command option to the callback as its own keyword argument
+  "PLR0915", # too-many-statements - formatters append output line by line, which puts one of them just over the 50-statement limit
+  "PLR0917", # too-many-positional-arguments - the internal _get_* helpers mirror their command's full option list
+  "TC001",   # typing-only-first-party-import - annotations are already deferred by __future__, so guarding PageResult only splits json_output.py's imports in two
+  "TC002",   # typing-only-third-party-import - a TYPE_CHECKING guard would hide that pagination.py is built on Discogs and BaseModel
+  "TC003",   # typing-only-standard-library-import - importing Callable, Iterator or Mapping costs nothing worth guarding
+  "TRY003",  # raise-vanilla-args - these messages are read by agents, so they belong at the raise site rather than in an exception subclass
 ]
 lint.per-file-ignores."tests/**" = [
-  "ARG",     # test doubles take arguments they never read
-  "PLR2004", # IDs and counts read better inline than as named constants
-  "S101",    # pytest asserts
-  "S108",    # hardcoded /tmp path in a cache-dir test
-  "SLF001",  # tests reset singletons and stub SDK plumbing
+  "ARG001",  # unused-function-argument - the fake _send() in test_pagination.py must accept params= because fetch_page passes it by keyword, then ignores it
+  "ARG005",  # unused-lambda-argument - the SimpleNamespace lambdas standing in for SDK methods take the real signature and use only part of it
+  "PLR2004", # magic-value-comparison - assertions compare against literal Discogs IDs and counts, which read better inline than as named constants
+  "S101",    # assert - pytest expresses every assertion this way
+  "S108",    # hardcoded-temp-file - test_formatting.py only formats /tmp/test-cache into the status output; nothing is created or written there
+  "SLF001",  # private-member-access - test_client.py resets the module-level _client singleton around each test
 ]
 
 [tool.pyproject-fmt]
