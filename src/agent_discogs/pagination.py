@@ -41,10 +41,10 @@ def fetch_page(
     SyncPage exposes pagination metadata (total_items, total_pages, etc.)
     but no way to access the current page's items without iterating.
     """
-    url = client._build_url(path)
-    response = client._send("GET", url, params=params)
+    url = client._build_url(path)  # noqa: SLF001
+    response = client._send("GET", url, params=params)  # noqa: SLF001
     body = response.json()
-    client._maybe_raise(
+    client._maybe_raise(  # noqa: SLF001
         response.status_code,
         body,
         retry_after=response.headers.get("Retry-After"),

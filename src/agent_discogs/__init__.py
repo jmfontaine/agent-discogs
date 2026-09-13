@@ -83,7 +83,11 @@ class AliasGroup(click.Group):
             return cmd.name, cmd, remaining
         return None, None, args
 
-    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+    def format_help(
+        self,
+        ctx: click.Context,  # noqa: ARG002  # part of click's Command API
+        formatter: click.HelpFormatter,
+    ) -> None:
         formatter.write(_HELP_TEXT)
 
     def invoke(self, ctx: click.Context) -> Any:
@@ -97,7 +101,9 @@ class AliasGroup(click.Group):
             raise
         except click.exceptions.UsageError:
             raise
-        except Exception as e:
+        # Last-resort boundary: any escaped exception becomes agent-readable text
+        # instead of a traceback.
+        except Exception as e:  # noqa: BLE001
             from agent_discogs.errors import format_error
 
             print(format_error(e), file=sys.stderr)

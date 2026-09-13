@@ -202,7 +202,7 @@ def _get_versions(
     page: int,
     limit: int,
     country: str | None,
-    format: str | None,
+    format: str | None,  # noqa: A002  # click option name for --format
     label: str | None,
     json_output: bool,
 ) -> None:
@@ -278,7 +278,7 @@ def _dispatch(
     page: int,
     limit: int,
     country: str | None,
-    format: str | None,
+    format: str | None,  # noqa: A002  # click option name for --format
     label: str | None,
     role: str | None,
     verbose: bool,
@@ -324,7 +324,9 @@ def _dispatch(
                 label=label,
                 json_output=json_output,
             )
-    except Exception as e:
+    # format_error() maps every exception to recovery-oriented text, so catching
+    # broadly is the point.
+    except Exception as e:  # noqa: BLE001
         print(format_error(e, f"{noun.title()} {ref}"), file=sys.stderr)
         sys.exit(1)
 
@@ -362,7 +364,8 @@ def get(
 ) -> None:
     """Get entity details.
 
-    NOUN is the entity type: artist, label, master, price, release, releases, tracklist, versions.
+    NOUN is the entity type: artist, label, master, price, release, releases,
+    tracklist, versions.
     REF is a typed ref (@r123, @a456) or raw Discogs ID.
     """
     _dispatch(

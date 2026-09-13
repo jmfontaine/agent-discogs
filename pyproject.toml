@@ -37,6 +37,72 @@ dev = [
   "ty>=0.0.18",
 ]
 
+[tool.ruff]
+line-length = 88
+lint.select = [
+  "A",     # flake8-builtins
+  "ARG",   # flake8-unused-arguments
+  "ASYNC", # flake8-async
+  "B",     # flake8-bugbear
+  "BLE",   # flake8-blind-except
+  "C4",    # flake8-comprehensions
+  "DTZ",   # flake8-datetimez
+  "E",     # pycodestyle errors
+  "EM",    # flake8-errmsg
+  "EXE",   # flake8-executable
+  "F",     # Pyflakes
+  "FA",    # flake8-future-annotations
+  "FLY",   # flynt
+  "FURB",  # refurb
+  "G",     # flake8-logging-format
+  "I",     # isort
+  "ICN",   # flake8-import-conventions
+  "INT",   # flake8-gettext
+  "ISC",   # flake8-implicit-str-concat
+  "LOG",   # flake8-logging
+  "N",     # pep8-naming
+  "PERF",  # Perflint
+  "PGH",   # pygrep-hooks
+  "PIE",   # flake8-pie
+  "PL",    # Pylint
+  "PT",    # flake8-pytest-style
+  "PTH",   # flake8-use-pathlib
+  "PYI",   # flake8-pyi
+  "RET",   # flake8-return
+  "RSE",   # flake8-raise
+  "RUF",   # Ruff-specific rules
+  "S",     # flake8-bandit
+  "SIM",   # flake8-simplify
+  "SLF",   # flake8-self
+  "TC",    # flake8-type-checking
+  "TID",   # flake8-tidy-imports
+  "TRY",   # tryceratops
+  "UP",    # pyupgrade
+  "W",     # pycodestyle warnings
+  "YTT",   # flake8-2020
+]
+lint.ignore = [
+  "EM101",   # exception messages are the product; hoisting them buys nothing
+  "EM102",   # ditto, for f-string messages
+  "PLC0415", # imports are deliberately lazy to keep CLI startup fast
+  "PLR0911", # formatters branch a lot by design
+  "PLR0912", # ditto
+  "PLR0913", # click commands are wide by nature
+  "PLR0915", # formatters are long by nature
+  "PLR0917", # ditto, for positional arguments
+  "TC001",   # `from __future__ import annotations` already defers the cost, so
+  "TC002",   # moving imports into TYPE_CHECKING blocks only hurts readability
+  "TC003",   # ditto, for stdlib imports
+  "TRY003",  # see EM101: long messages outside the exception class are fine here
+]
+lint.per-file-ignores."tests/**" = [
+  "ARG",     # test doubles take arguments they never read
+  "PLR2004", # IDs and counts read better inline than as named constants
+  "S101",    # pytest asserts
+  "S108",    # hardcoded /tmp path in a cache-dir test
+  "SLF001",  # tests reset singletons and stub SDK plumbing
+]
+
 [tool.pyproject-fmt]
 keep_full_version = true
 max_supported_python = "3.14"

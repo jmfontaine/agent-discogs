@@ -16,7 +16,7 @@ CACHE_DIR = (
 
 def get_client() -> Discogs:
     """Get or create the Discogs SDK client."""
-    global _client
+    global _client  # noqa: PLW0603  # module-level singleton is the point
     if _client is not None:
         return _client
 

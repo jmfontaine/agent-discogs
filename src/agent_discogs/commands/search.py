@@ -25,7 +25,7 @@ def _build_search_params(
     barcode: str | None,
     catno: str | None,
     country: str | None,
-    format: str | None,
+    format: str | None,  # noqa: A002  # click option name for --format
     genre: str | None,
     label: str | None,
     style: str | None,
@@ -37,19 +37,23 @@ def _build_search_params(
     if type_filter:
         params["type"] = type_filter
 
-    for name, value in [
-        ("year", year),
-        ("genre", genre),
-        ("style", style),
-        ("country", country),
-        ("format", format),
-        ("catno", catno),
-        ("barcode", barcode),
-        ("artist", artist),
-        ("label", label),
-    ]:
-        if value:
-            params[name] = value
+    params.update(
+        {
+            name: value
+            for name, value in [
+                ("year", year),
+                ("genre", genre),
+                ("style", style),
+                ("country", country),
+                ("format", format),
+                ("catno", catno),
+                ("barcode", barcode),
+                ("artist", artist),
+                ("label", label),
+            ]
+            if value
+        }
+    )
 
     return params
 
@@ -178,7 +182,9 @@ def search(
                 limit,
                 keep=lambda item: not _is_unofficial(item),
             )
-    except Exception as e:
+    # format_error() maps every exception to recovery-oriented text, so catching
+    # broadly is the point.
+    except Exception as e:  # noqa: BLE001
         print(format_error(e, "Search"), file=sys.stderr)
         sys.exit(1)
 

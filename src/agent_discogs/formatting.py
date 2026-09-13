@@ -104,12 +104,13 @@ def _urls_short(urls: list[str] | None) -> str:
         return ""
     domains = []
     for url in urls:
+        # Per-URL try/except: one malformed URL must not discard the others.
         try:
             parts = url.split("//", 1)
             domain = parts[1].split("/", 1)[0] if len(parts) > 1 else parts[0]
             domain = domain.removeprefix("www.")
             domains.append(domain)
-        except (IndexError, AttributeError):
+        except (IndexError, AttributeError):  # noqa: PERF203
             continue
     return ", ".join(domains)
 
@@ -147,7 +148,10 @@ def format_artist_releases(
     next_page_cmd: str | None,
 ) -> str:
     """Format artist releases/discography."""
-    header = f'Releases by {artist_ref} "{artist_name}" (page {page}, {len(releases)} of {total_results:,} results)'
+    header = (
+        f'Releases by {artist_ref} "{artist_name}" '
+        f"(page {page}, {len(releases)} of {total_results:,} results)"
+    )
     lines = [header, ""]
 
     for rel in releases:
@@ -241,7 +245,10 @@ def format_master_versions(
     next_page_cmd: str | None,
 ) -> str:
     """Format master release versions."""
-    header = f'Versions of {master_ref} "{master_title}" (page {page}, {len(versions)} of {total_results:,} versions)'
+    header = (
+        f'Versions of {master_ref} "{master_title}" '
+        f"(page {page}, {len(versions)} of {total_results:,} versions)"
+    )
     lines = [header, ""]
 
     for ver in versions:
@@ -409,7 +416,10 @@ def format_search_results(
 ) -> str:
     """Format search results as compact text."""
     type_label = type_filter or "all"
-    header = f'Search: {type_label} "{query}" (page {page}, {len(results)} of {total_results:,} results)'
+    header = (
+        f'Search: {type_label} "{query}" '
+        f"(page {page}, {len(results)} of {total_results:,} results)"
+    )
     lines = [header, ""]
 
     for result in results:

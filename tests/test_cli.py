@@ -228,7 +228,7 @@ class TestSearchCommand:
 
     def test_search_error(self) -> None:
         def _raise(*_a: object, **_kw: object) -> None:
-            raise Exception("connection failed")
+            raise RuntimeError("connection failed")
 
         self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _raise)
         result = CliRunner().invoke(cli, ["search", "test query"])
@@ -734,7 +734,7 @@ class TestGetCommand:
 
     def test_get_error_handling(self) -> None:
         def _raise(_id: int) -> None:
-            raise Exception("API down")
+            raise RuntimeError("API down")
 
         self._set_client(_fake_client(artists_get=_raise))
         result = CliRunner().invoke(cli, ["get", "artist", "@a1"])
@@ -1041,7 +1041,7 @@ class TestExceptionHandling:
             *_a: object,
             **_kw: object,
         ) -> None:
-            raise click.exceptions.Abort()
+            raise click.exceptions.Abort
 
         monkeypatch.setattr("agent_discogs.commands.get._dispatch", _raise_abort)
         result = CliRunner().invoke(cli, ["get", "artist", "@a1"])
