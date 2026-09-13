@@ -51,6 +51,10 @@ Options:
 Environment:
   DISCOGS_TOKEN    Personal access token (higher rate limit, required for price data)
 
+Price data also needs seller settings filled out on the Discogs account the
+token belongs to (discogs.com/settings/seller). Without them the API answers
+404 and only 'price' is affected.
+
 Examples:
   agent-discogs search "The Downward Spiral"
   agent-discogs search artist "Nine Inch Nails"

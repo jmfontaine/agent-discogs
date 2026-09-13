@@ -29,6 +29,10 @@ export DISCOGS_TOKEN=<your-token>  # discogs.com/settings/developers
 
 Without a token: 25 req/min, no search, no price suggestions.
 
+`price` additionally requires that the token's account has filled out its
+seller settings (discogs.com/settings/seller) — Discogs returns 404 for price
+suggestions otherwise. A token alone covers every other command.
+
 Check status: `agent-discogs status`
 
 ## Core Workflow
@@ -99,6 +103,7 @@ agent-discogs get release @r367113 --json
 
 - **0 results** — broaden filters (drop `--year`, `--country`), try a different type (`master` instead of `release`), or simplify the query.
 - **Auth required** — price suggestions and search require `DISCOGS_TOKEN`. Run `agent-discogs status` to check.
+- **"Price data requires seller settings"** — not a bad ref. The release exists, but Discogs only serves price suggestions to accounts with seller settings filled out. Nothing to retry: use `get release @r...` for the `num_for_sale`/`lowest_price` summary instead.
 - **Invalid ref** — refs are session-scoped and reset on each search. Re-search to get fresh refs.
 - **Rate limited** — wait briefly and retry. Authenticated requests get 60/min; unauthenticated get 25/min.
 

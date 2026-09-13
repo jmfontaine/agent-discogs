@@ -73,7 +73,7 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 | `artist` | `@a` or numeric ID | Artist profile |
 | `label` | `@l` or numeric ID | Label profile |
 | `master` | `@m` or numeric ID | Master release details |
-| `price` | `@r` or numeric ID | Marketplace pricing (requires auth) |
+| `price` | `@r` or numeric ID | Marketplace pricing (requires auth *and* seller settings on the token's account) |
 | `release` | `@r` or numeric ID | Full release details with tracklist |
 | `releases` | `@a` or numeric ID | Artist discography (paginated) |
 | `tracklist` | `@r` or numeric ID | Tracklist only (from a release) |

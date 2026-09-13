@@ -3,6 +3,20 @@
 from __future__ import annotations
 
 
+def _api_message(exc: Exception) -> str:
+    """Pull the Discogs-supplied message out of an API error's response body.
+
+    The SDK types `response_body` as `dict | str` and means it: JSON error
+    payloads arrive as a dict, while the binary endpoints hand `_maybe_raise()`
+    the raw `response.text`.
+    """
+    body = getattr(exc, "response_body", None)
+    if isinstance(body, str):
+        return body
+    message = body.get("message") if isinstance(body, dict) else None
+    return message if isinstance(message, str) else ""
+
+
 def format_error(exc: Exception, context: str | None = None) -> str:
     """Map an exception to a recovery-oriented error message.
 
@@ -18,6 +32,18 @@ def format_error(exc: Exception, context: str | None = None) -> str:
     )
 
     if isinstance(exc, NotFoundError):
+        # Discogs overloads 404 for the marketplace endpoints: a release that
+        # does not exist and a release whose price data the caller may not read
+        # both come back as 404, and only the body tells them apart. Without
+        # this branch, `price` tells an agent to go search for a release it
+        # just looked up successfully.
+        message = _api_message(exc)
+        if "seller settings" in message.lower():
+            return (
+                f"✗ Price data requires seller settings. Discogs said: {message}\n"
+                "  Fill them out at discogs.com/settings/seller, then retry.\n"
+                "  Other commands work without them."
+            )
         entity = context or "Resource"
         return f'✗ {entity} not found. Try: agent-discogs search "<title>"'
 

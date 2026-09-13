@@ -26,6 +26,32 @@ class TestFormatError:
         result = format_error(exc, context="Artist @a123")
         assert "Artist @a123 not found" in result
 
+    def test_not_found_from_incomplete_seller_settings(self) -> None:
+        # Discogs answers the price endpoints with 404 when the account has no
+        # seller settings, so the generic "not found, go search" advice sends
+        # the caller after a release that does exist.
+        exc = NotFoundError(
+            "not found",
+            status_code=404,
+            response_body={"message": "You must fill out your seller settings first."},
+        )
+        result = format_error(exc, context="Price @r6276183")
+        assert "seller settings" in result
+        assert "discogs.com/settings/seller" in result
+        assert "not found. Try" not in result
+
+    def test_not_found_from_seller_settings_with_plain_text_body(self) -> None:
+        # The SDK's binary endpoints pass `response.text` straight through, so
+        # response_body is a bare string rather than a parsed JSON payload.
+        exc = NotFoundError(
+            "not found",
+            status_code=404,
+            response_body="You must fill out your seller settings first.",
+        )
+        result = format_error(exc, context="Price @r6276183")
+        assert "seller settings" in result
+        assert "not found. Try" not in result
+
     def test_authentication_error(self) -> None:
         exc = AuthenticationError("bad token", status_code=401, response_body={})
         result = format_error(exc)

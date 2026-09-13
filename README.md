@@ -45,7 +45,9 @@ Set your personal access token from [your Discogs developer settings](https://ww
 export DISCOGS_TOKEN="your-token-here"
 ```
 
-A token is required for search and price lookups. Without it, only direct entity lookups work (25 requests/minute). With a token, all commands are available at 60 requests/minute.
+A token is required for search and price lookups. Without it, only direct entity lookups work (25 requests/minute). With a token, every command except `price` is available at 60 requests/minute.
+
+`price` needs one thing more than a token: Discogs only returns price suggestions to accounts that have filled out their [seller settings](https://www.discogs.com/settings/seller). Until you do, the endpoint answers 404 and `price` tells you so; every other command is unaffected.
 
 > [!TIP]
 > Use a `.env` file with [direnv](https://direnv.net/) to avoid exporting tokens manually in every shell.
