@@ -32,10 +32,10 @@ def _format_string(formats: list[Any] | None) -> str:
     parts = []
     for f in formats:
         name = getattr(f, "name", None) or ""
-        descs = getattr(f, "descriptions", None) or []
+        descriptions = getattr(f, "descriptions", None) or []
         if name:
             parts.append(name)
-        parts.extend(descs)
+        parts.extend(descriptions)
     return ", ".join(parts)
 
 
