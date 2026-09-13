@@ -23,7 +23,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - name: Build
         run: uv build
       - name: Publish to PyPI
