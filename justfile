@@ -19,9 +19,26 @@ deps-update:
 # Find dead code
 dead-code:
     #!/usr/bin/env bash
-    output=$(uv run deadcode src tests 2>&1)
+    # KLUDGE: deadcode runs on Python 3.13 via uvx, not the project's 3.14, and
+    # is deliberately not a dev dependency. deadcode 2.4.1 calls ast.Str, which
+    # Python 3.14 removed, so it crashes outright on 3.14. Upstream is dormant:
+    # no release since 2024-08, and the crash is open as
+    # https://github.com/albertas/deadcode/issues/37
+    # Pinning the interpreter is safe because deadcode only parses source that
+    # already has to support Python 3.10. It would break if this project ever
+    # adopts 3.14-only syntax.
+    # Remove the pin and restore the dev dependency once deadcode supports 3.14.
+    output=$(uvx --python 3.13 deadcode@2.4.1 src tests 2>&1)
+    status=$?
     echo "$output"
-    echo "$output" | grep -q "DC0" && exit 1 || exit 0
+    # KLUDGE: deadcode exits 0 even when it *does* report findings, so grepping
+    # its DC0* codes is the only way to fail on them. Test the exit status too:
+    # checking output alone treats a crash as success, because a traceback
+    # contains no "DC0". That is exactly how the 3.14 breakage above stayed
+    # invisible here while CI (which runs with `bash -e`) failed on it.
+    if [ "$status" -ne 0 ] || grep -q "DC0" <<<"$output"; then
+        exit 1
+    fi
 
 # Run formatters
 format:

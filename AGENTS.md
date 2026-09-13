@@ -19,7 +19,7 @@ just lint               # ruff check
 just lint-fix           # ruff check --fix
 just format             # ruff format + pyproject-fmt
 just type-check         # ty check
-just dead-code          # deadcode src tests
+just dead-code          # deadcode src tests (via uvx, Python 3.13)
 just deps-unused        # deptry src
 just deps-update        # Update deps to latest versions
 just verify-types       # Audit public API type annotation coverage
@@ -70,7 +70,13 @@ Search results replace all refs. Single-entity lookups (`get`) are additive. Sma
 ## Dependencies
 
 - Runtime: `click`, `discogs-sdk`, `pydantic`
-- Dev: pytest, pytest-cov, ruff, ty, pyright, deadcode, deptry, pyproject-fmt
+- Dev: deptry, pyproject-fmt, pyright, pytest, pytest-cov, ruff, ty
+- KLUDGE: `deadcode` is deliberately *not* a dev dependency. It crashes on
+  Python 3.14 (it calls `ast.Str`, which 3.14 removed) and upstream is
+  dormant, so `just dead-code` runs it through `uvx` pinned to Python 3.13.
+  The justfile recipe, the CI step, and the pre-commit hook each carry
+  `KLUDGE` comments with the details — grep for `KLUDGE` before changing the
+  dead-code check, and do not "simplify" its exit-code handling.
 
 ## Discogs API Documentation
 

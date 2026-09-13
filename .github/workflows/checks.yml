@@ -24,9 +24,27 @@ jobs:
         run: uv sync --all-extras --all-groups
       - name: Check dead code
         run: |
-          output=$(uv run deadcode src tests 2>&1)
+          # KLUDGE: deadcode runs on Python 3.13, not this job's 3.14, and is
+          # not a dev dependency. deadcode 2.4.1 calls ast.Str, which Python
+          # 3.14 removed, so it crashes on 3.14. Upstream is dormant: no
+          # release since 2024-08, crash open as
+          # https://github.com/albertas/deadcode/issues/37
+          # Safe because deadcode only parses source that must already support
+          # 3.10. The explicit --python beats the job's UV_PYTHON=3.14.
+          # Remove the pin once deadcode supports 3.14.
+          #
+          # KLUDGE: `|| status=$?` rather than a plain `status=$?`, because
+          # this step's shell is `bash -e`: a failing command substitution
+          # aborts the step before `echo "$output"` can surface the traceback.
+          output=$(uvx --python 3.13 deadcode@2.4.1 src tests 2>&1) || status=$?
           echo "$output"
-          echo "$output" | grep -q "DC0" && exit 1 || exit 0
+          # KLUDGE: deadcode exits 0 even when it *does* report findings, so
+          # grepping its DC0* codes is the only way to fail on them. Test the
+          # status too: output alone treats a crash as success, since a
+          # traceback has no "DC0" in it.
+          if [ -n "${status:-}" ] || grep -q "DC0" <<<"$output"; then
+            exit 1
+          fi
       - name: Check pyproject.toml
         run: uv run pyproject-fmt --check pyproject.toml
       - name: Check formatting

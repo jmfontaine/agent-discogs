@@ -27,7 +27,6 @@ scripts.agent-discogs = "agent_discogs:main"
 
 [dependency-groups]
 dev = [
-  "deadcode>=2.4.1",
   "deptry>=0.24",
   "pyproject-fmt>=2.16.1",
   "pyright>=1.1.408",
