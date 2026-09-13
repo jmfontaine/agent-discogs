@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 
 from agent_discogs.formatting import (
     format_artist,
@@ -106,7 +107,7 @@ class TestUrlsShort:
         from agent_discogs.formatting import _urls_short
 
         # Non-string triggers AttributeError → continue
-        assert _urls_short([123]) == ""  # type: ignore[list-item]
+        assert _urls_short(cast("list[str]", [123])) == ""
 
     def test_empty_urls(self) -> None:
         from agent_discogs.formatting import _urls_short

@@ -307,9 +307,10 @@ def format_price_guide(
         "Poor (P)",
     ]
 
-    conditions = getattr(price_suggestions, "conditions", {})
-    if callable(conditions):
-        conditions = conditions()  # type: ignore[operator]
+    conditions: Any = getattr(price_suggestions, "conditions", {})
+    # Some SDK versions expose `conditions` as a zero-arg method, not a mapping.
+    if conditions is not None and not isinstance(conditions, dict):
+        conditions = conditions()
 
     if conditions:
         for cond in condition_order:

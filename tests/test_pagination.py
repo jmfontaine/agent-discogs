@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -30,7 +31,7 @@ class _FakeModel(BaseModel):
 
 
 def _make_fake_client(
-    body: dict[str, object],
+    body: Mapping[str, object],
     status_code: int = 200,
 ) -> Any:
     """Build a fake Discogs client that returns a canned response."""
@@ -133,7 +134,7 @@ class TestFetchFilteredPage:
         )
 
         result = fetch_filtered_page(
-            cast(Any, client),
+            cast("Any", client),
             "/test",
             {},
             _FakeModel,
