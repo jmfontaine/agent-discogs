@@ -77,30 +77,39 @@ Search results replace all refs. Single-entity lookups (`get`) are additive. Sma
   The justfile recipe, the CI step, and the pre-commit hook each carry
   `KLUDGE` comments with the details — grep for `KLUDGE` before changing the
   dead-code check, and do not "simplify" its exit-code handling.
-- Python 3.15 is not claimed yet, even though it now works. discogs-sdk 0.4.0
-  declares `pydantic>=2.14.0b2,<2.15; python_version=='3.15'` — pydantic 2.13
-  pins a pydantic-core with no cp315 wheels — so the committed lockfile
-  carries a 3.15-only pydantic branch (2.14.0b2 with pydantic-core 2.49.0,
-  both wheels). Nothing builds from sdist any more, and no local flag is
-  needed to exercise it:
-  `UV_PROJECT_ENVIRONMENT=.venv315 uv sync --all-extras --all-groups \
-  --python 3.15 --locked`, then `UV_PROJECT_ENVIRONMENT=.venv315 uv run \
-  --python 3.15 --locked pytest`. The full suite passes there.
-  Do not prune that lock branch with `[tool.uv] environments`: it is
-  marker-gated on `python_full_version == '3.15.*'`, so it is inert on
-  3.10–3.14, and pruning it makes the 3.15 exercise above unresolvable.
-  Claiming support needs the `3.15` trove classifier, `max_supported_python`,
-  and a `3.15` entry in the `checks.yml` test matrix — a separate decision,
-  because until pydantic 2.14 is final a 3.15 install resolves the SDK's
-  pinned beta.
-  If a 3.15 marker of our own ever becomes necessary, copy the SDK's
-  equality-star form (`python_version == '3.15'`, published as
-  `python_full_version == '3.15.*'`), which matches release candidates.
-  `python_version >= '3.15'` does not: uv-build rewrites it — and every
-  pre-release boundary such as `3.15.0.dev0` or `3.15.0rc1` — to
-  `python_full_version >= '3.15'` in the published metadata, and under PEP 440
-  a release candidate sorts *below* 3.15.0, so the marker is false on exactly
-  the interpreters that need it and pip fails to resolve at all.
+- Python 3.15 is supported, and it is the one interpreter that resolves a
+  **pre-release** pydantic. That split is deliberate, inherited from
+  discogs-sdk 0.4.0: stable Pythons get stable pydantic, 3.15 gets the beta.
+  The SDK declares `pydantic>=2.14.0b2,<2.15; python_version=='3.15'` because
+  pydantic 2.13 pins a pydantic-core with no cp315 wheels, and 2.14's
+  pydantic-core (2.49.0) is the first with them. So the committed lockfile
+  carries a 3.15-only pydantic branch, and every install path — `uv sync`,
+  `uv pip install`, plain `pip install` — picks 2.14.0b2 there with no
+  pre-release flag, because a specifier naming `2.14.0b2` enables pre-release
+  selection for that package on its own. Nothing builds from sdist.
+  Consequences to keep in mind:
+  - Do not prune the 3.15 lock branch with `[tool.uv] environments`. It is
+    marker-gated on `python_full_version == '3.15.*'`, so it is inert on
+    3.10–3.14, and pruning it makes the `3.15` CI leg unresolvable.
+  - Our own `pydantic>=2.12.5` floor stays as is. It neither needs nor grants
+    pre-release permission; the SDK's marker-scoped clause does that.
+  - A pydantic 2.14 beta regression surfaces as a red `3.15` test leg here.
+    Check `pydantic.VERSION` in that job before suspecting this project.
+  - Exercise 3.15 locally with
+    `UV_PROJECT_ENVIRONMENT=.venv315 uv sync --all-extras --all-groups \
+    --python 3.15 --locked`, then `UV_PROJECT_ENVIRONMENT=.venv315 uv run \
+    --python 3.15 --locked pytest`.
+  - If a 3.15 marker of our own ever becomes necessary, copy the SDK's
+    equality-star form (`python_version == '3.15'`, published as
+    `python_full_version == '3.15.*'`), which matches release candidates.
+    `python_version >= '3.15'` does not: uv-build rewrites it — and every
+    pre-release boundary such as `3.15.0.dev0` or `3.15.0rc1` — to
+    `python_full_version >= '3.15'` in the published metadata, and under
+    PEP 440 a release candidate sorts *below* 3.15.0, so the marker is false
+    on exactly the interpreters that need it and pip fails to resolve at all.
+  When pydantic 2.14 goes final the split disappears on its own: the `>=2.12.5`
+  floor resolves a 3.15-capable stable pydantic everywhere, and no metadata
+  here changes.
 
 ## Discogs API Documentation
 
