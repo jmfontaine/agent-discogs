@@ -40,15 +40,14 @@ def fetch_page(
     We need exactly one page of items without triggering additional requests.
     SyncPage exposes pagination metadata (total_items, total_pages, etc.)
     but no way to access the current page's items without iterating.
+
+    `_send()` is the SDK's HTTP-error boundary: it maps a failing response to
+    the matching DiscogsAPIError subclass before returning, so the body parsed
+    below is always a success payload.
     """
     url = client._build_url(path)  # noqa: SLF001
     response = client._send("GET", url, params=params)  # noqa: SLF001
     body = response.json()
-    client._maybe_raise(  # noqa: SLF001
-        response.status_code,
-        body,
-        retry_after=response.headers.get("Retry-After"),
-    )
 
     pagination = body.get("pagination", {})
     raw_items = body.get(items_key, [])

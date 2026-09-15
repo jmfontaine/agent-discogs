@@ -34,7 +34,11 @@ def _make_fake_client(
     body: Mapping[str, object],
     status_code: int = 200,
 ) -> Any:
-    """Build a fake Discogs client that returns a canned response."""
+    """Build a fake Discogs client that returns a canned response.
+
+    The real `_send()` is the SDK's HTTP-error boundary: it raises before
+    returning, so nothing downstream of it needs to re-check the status.
+    """
     response = SimpleNamespace(
         json=lambda: body,
         status_code=status_code,
@@ -43,7 +47,6 @@ def _make_fake_client(
     return SimpleNamespace(
         _build_url=lambda path: f"https://api.discogs.com{path}",
         _send=lambda method, url, params=None: response,
-        _maybe_raise=lambda *_a, **_kw: None,
     )
 
 
@@ -130,7 +133,6 @@ class TestFetchFilteredPage:
         client = SimpleNamespace(
             _build_url=lambda path: f"https://api.discogs.com{path}",
             _send=_send,
-            _maybe_raise=lambda *_a, **_kw: None,
         )
 
         result = fetch_filtered_page(

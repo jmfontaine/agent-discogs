@@ -48,7 +48,7 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 
 - `client.py` — Singleton `Discogs` client. Reads `DISCOGS_TOKEN` from env. Cache dir: `~/.cache/agent-discogs`.
 - `refs.py` — Typed ref system (`@a3857`, `@r367113`, `@m3719`, `@l647`). `make_ref()` creates refs, `parse_ref()` parses them. Raw numeric IDs return type `"unknown"`.
-- `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`, `_maybe_raise`).
+- `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`). `_send()` is the SDK's HTTP-error boundary — it raises the mapped `DiscogsAPIError` subclass before returning, so callers never re-check the status.
 - `formatting.py` — All output formatting. Returns plain strings, callers `print()` them.
 - `errors.py` — Maps SDK exceptions to recovery-oriented error messages.
 - `json_output.py` — JSON serialization helpers for `--json` flag. `dump_entity()` for single objects, `dump_page()` for paginated results.
@@ -77,31 +77,30 @@ Search results replace all refs. Single-entity lookups (`get`) are additive. Sma
   The justfile recipe, the CI step, and the pre-commit hook each carry
   `KLUDGE` comments with the details — grep for `KLUDGE` before changing the
   dead-code check, and do not "simplify" its exit-code handling.
-- Python 3.15 is deliberately **not** supported yet, and the blocker is
-  pydantic, not this project. 3.15.0rc2 runs the whole test suite and every
-  live command cleanly, with no source changes and no deprecation warnings.
-  But cp315 wheels for pydantic-core start at 2.48.0, and the newest stable
-  pydantic (2.13.5) pins pydantic-core 2.46.5, so a 3.15 install builds the
-  Rust extension from sdist — which needs a Rust toolchain and, on macOS 26+,
-  yields a library dyld refuses to load ("mis-aligned LINKEDIT string pool").
-  Only the pydantic 2.14 betas pin a wheel-bearing pydantic-core.
-  To exercise 3.15 today, without touching the committed lockfile:
+- Python 3.15 is not claimed yet, even though it now works. discogs-sdk 0.4.0
+  declares `pydantic>=2.14.0b2,<2.15; python_version=='3.15'` — pydantic 2.13
+  pins a pydantic-core with no cp315 wheels — so the committed lockfile
+  carries a 3.15-only pydantic branch (2.14.0b2 with pydantic-core 2.49.0,
+  both wheels). Nothing builds from sdist any more, and no local flag is
+  needed to exercise it:
   `UV_PROJECT_ENVIRONMENT=.venv315 uv sync --all-extras --all-groups \
-  --python 3.15 --prerelease-package pydantic=allow --upgrade-package pydantic`
-  (then `git checkout uv.lock`). Scope the pre-release to pydantic rather than
-  passing a global `--prerelease allow`, which would also pull pre-release
-  pytest, ruff and ty and confuse a 3.15 failure with a dev-tool one.
-  Unblock condition: once pydantic 2.14 is final, the existing `>=2.12.5`
-  floor resolves to a 3.15-capable pydantic on its own. Adding support is then
-  only: the `3.15` trove classifier, `max_supported_python`, and a `3.15` entry
-  in the `checks.yml` test matrix. No dependency changes.
-  Do not try to force it sooner with an environment marker. `python_version
-  >= '3.15'` is correct at face value (PEP 508 makes it major.minor), but
-  uv-build rewrites it — and every pre-release boundary such as `3.15.0.dev0`
-  or `3.15.0rc1` — to `python_full_version >= '3.15'` in the published
-  metadata, and under PEP 440 a release candidate sorts *below* 3.15.0, so the
-  marker is false on exactly the interpreters that need it and pip fails to
-  resolve at all.
+  --python 3.15 --locked`, then `UV_PROJECT_ENVIRONMENT=.venv315 uv run \
+  --python 3.15 --locked pytest`. The full suite passes there.
+  Do not prune that lock branch with `[tool.uv] environments`: it is
+  marker-gated on `python_full_version == '3.15.*'`, so it is inert on
+  3.10–3.14, and pruning it makes the 3.15 exercise above unresolvable.
+  Claiming support needs the `3.15` trove classifier, `max_supported_python`,
+  and a `3.15` entry in the `checks.yml` test matrix — a separate decision,
+  because until pydantic 2.14 is final a 3.15 install resolves the SDK's
+  pinned beta.
+  If a 3.15 marker of our own ever becomes necessary, copy the SDK's
+  equality-star form (`python_version == '3.15'`, published as
+  `python_full_version == '3.15.*'`), which matches release candidates.
+  `python_version >= '3.15'` does not: uv-build rewrites it — and every
+  pre-release boundary such as `3.15.0.dev0` or `3.15.0rc1` — to
+  `python_full_version >= '3.15'` in the published metadata, and under PEP 440
+  a release candidate sorts *below* 3.15.0, so the marker is false on exactly
+  the interpreters that need it and pip fails to resolve at all.
 
 ## Discogs API Documentation
 

@@ -7,8 +7,9 @@ def _api_message(exc: Exception) -> str:
     """Pull the Discogs-supplied message out of an API error's response body.
 
     The SDK types `response_body` as `dict | str` and means it: JSON error
-    payloads arrive as a dict, while the binary endpoints hand `_maybe_raise()`
-    the raw `response.text`.
+    payloads arrive as a dict, while its HTTP-error boundary passes
+    `response.text` verbatim for anything that is not a JSON object — gateway
+    HTML, plain text, or an empty body.
     """
     body = getattr(exc, "response_body", None)
     if isinstance(body, str):
