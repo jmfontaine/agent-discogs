@@ -678,7 +678,7 @@ class TestGetCommand:
             released="1994",
             country="US",
             label="Nothing",
-            catno="INT-92346",
+            catalog_number="INT-92346",
             format="Vinyl",
         )
         self._monkeypatch.setattr(
@@ -703,7 +703,7 @@ class TestGetCommand:
             released="2020",
             country="UK",
             label="L",
-            catno="C",
+            catalog_number="C",
             format="CD",
         )
         self._monkeypatch.setattr(
@@ -900,7 +900,7 @@ class TestGetCommand:
             released="1994",
             country="US",
             label="Nothing",
-            catno="INT-92346",
+            catalog_number="INT-92346",
             format="Vinyl",
         )
         self._monkeypatch.setattr(

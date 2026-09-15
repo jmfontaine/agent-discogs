@@ -256,7 +256,7 @@ def format_master_versions(
         released = getattr(ver, "released", "") or ""
         country = getattr(ver, "country", "") or ""
         label = getattr(ver, "label", "") or ""
-        catno = getattr(ver, "catno", "") or ""
+        catno = getattr(ver, "catalog_number", "") or ""
         fmt = getattr(ver, "format", "") or ""
 
         parts = [f"{ref} [release]"]

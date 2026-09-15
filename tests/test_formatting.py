@@ -393,7 +393,7 @@ class TestFormatMasterVersions:
                 released="1994",
                 country="US",
                 label="Nothing Records",
-                catno="INT-92346",
+                catalog_number="INT-92346",
                 format="Vinyl, LP",
             ),
             _fake(
@@ -401,7 +401,7 @@ class TestFormatMasterVersions:
                 released="2017",
                 country="US",
                 label="Interscope",
-                catno="",
+                catalog_number="",
                 format="Vinyl, 2xLP, 180g",
             ),
         ]
@@ -1002,7 +1002,7 @@ class TestFormatMasterVersionsEdgeCases:
                 released="",
                 country="",
                 label="",
-                catno="",
+                catalog_number="",
                 format="",
             ),
         ]
@@ -1018,7 +1018,7 @@ class TestFormatMasterVersionsEdgeCases:
                 released="",
                 country="",
                 label="SomeLabel",
-                catno="",
+                catalog_number="",
                 format="",
             ),
         ]
