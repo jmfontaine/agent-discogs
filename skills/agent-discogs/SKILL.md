@@ -17,121 +17,17 @@ allowed-tools: Bash(agent-discogs:*)
 
 # agent-discogs
 
-CLI for searching and exploring the Discogs music database. Returns compact text output with a ref system for chaining commands.
+Token-efficient Discogs CLI for AI agents. Typed refs (`@r847868`, `@m3719`, `@a3857`, `@l647`) flow from one command into the next.
 
-## Setup
+Install: `pip install agent-discogs` (or `uv tool install agent-discogs`), then `export DISCOGS_TOKEN=<token>` from discogs.com/settings/developers.
 
-Requires `DISCOGS_TOKEN` for full access (60 req/min, search, price data):
+## Start here
 
-```bash
-export DISCOGS_TOKEN=<your-token>  # discogs.com/settings/developers
-```
-
-Without a token: 25 req/min, no search, no price suggestions.
-
-`price` additionally requires that the token's account has filled out its
-seller settings (discogs.com/settings/seller) — Discogs returns 404 for price
-suggestions otherwise. A token alone covers every other command.
-
-Check status: `agent-discogs status`
-
-## Core Workflow
-
-1. **Search** — find entities by name
-   ```bash
-   agent-discogs search release "The Downward Spiral" --year 1994
-   ```
-2. **Inspect** — get full details using refs from search output
-   ```bash
-   agent-discogs get release @r367113
-   ```
-3. **Drill down** — tracklist, pricing
-   ```bash
-   agent-discogs tracks @r367113
-   agent-discogs price @r367113
-   ```
-4. **Explore** — discography, versions
-   ```bash
-   agent-discogs get versions @m4917 --country US
-   ```
-
-## Output Format
-
-- **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches.
-- **get release** — title, artists, label, format, tracklist summary, notes. Adds ref.
-- **get release --verbose** — full details including inline `[@a...]` and `[@l...]` refs for chaining.
-- **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
-- **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats.
-- **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`.
-- **get releases** — artist discography: ref, `[type]`, title, year, label, format, role.
-
-## Common Patterns
-
-| Goal | Commands |
-|------|----------|
-| Find a specific pressing | `search release "<title>" --year --country` → `get release @r...` |
-| Compare pressings | `search master "<title>"` → `get versions @m...` |
-| Pick among look-alike rows | Compare catalog number and `have N` in the row itself; `have` is popularity, not identification. Same catno on several rows means variants: see `get release @r...` |
-| Release → all its pressings | Copy `→ @m...` from any release row → `get versions @m...` |
-| Explore discography | `search artist "<name>"` → `get releases @a...` |
-| Check price | `search release "<title>"` → `price @r...` |
-| Identify by catalog number | `search release --catno "INT-92346"` → `get release @r...` |
-| Find by barcode | `search release --barcode "606949235024"` |
-| Get original pressing | `search master "<title>"` → `get versions @m...` → `get release @r...` |
-| Narrow release search | `search release "<title>" --artist "<name>"` |
-| Get release notes | `get release @r... --verbose` |
-| Get artist/label IDs from a release | `get release @r... --verbose` — inline `[@a...]` and `[@l...]` refs |
-| VA compilation tracks | `get release @r...` — per-track artists shown automatically |
-| Machine-readable output | Add `--json` to any command for raw JSON |
-
-## Machine-Readable Output
-
-All commands support `--json` for raw JSON output, useful for piping into other tools or extracting structured data:
+This file is a discovery stub, not the usage guide. Before running any `agent-discogs` command, load the workflow guide from the CLI itself so the instructions match the installed version:
 
 ```bash
-agent-discogs search release "Blue Monday" --artist "New Order" --json
-agent-discogs get release @r367113 --json
+agent-discogs skills get core          # workflows, output format, common patterns, troubleshooting
+agent-discogs skills get core --full   # plus the full command reference, search patterns, pressings guide, Discogs data model
 ```
 
-## Anti-Patterns
-
-- **Don't search without a type filter** when you know the entity type.
-- **Don't fetch full release details just to check price.** Use `price @r...` directly.
-- **Don't paginate through all results.** Narrow with filters first.
-- **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list. Filtered lists (the default search, `--role`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
-- **Don't guess IDs.** Always search first to find the right entity.
-- **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref (smart resolution costs an extra API call).
-
-## Error Recovery
-
-- **0 results** — broaden filters (drop `--year`, `--country`), try a different type (`master` instead of `release`), or simplify the query.
-- **Auth required** — price suggestions and search require `DISCOGS_TOKEN`. Run `agent-discogs status` to check.
-- **"Price data requires seller settings"** — not a bad ref. The release exists, but Discogs only serves price suggestions to accounts with seller settings filled out. Nothing to retry: use `get release @r...` for the `num_for_sale`/`lowest_price` summary instead.
-- **Invalid ref** — refs are session-scoped and reset on each search. Re-search to get fresh refs.
-- **Rate limited** — wait briefly and retry. Authenticated requests get 60/min; unauthenticated get 25/min.
-- **"Continue scan:" instead of "Next page:"** — the filter was sparse and the scan stopped at 5 API calls before filling the page. The next window may also be short or empty; keep pasting the printed command until it disappears (no footer = nothing left to scan). Counts shown as `≤N` are the unfiltered upper bound.
-
-## Refs
-
-Refs encode entity type and Discogs ID: `@a3857` (artist), `@r367113` (release), `@m4917` (master), `@l2919` (label). Raw numeric IDs also work.
-
-**Ref chaining:** `get release @r... --verbose` embeds inline `[@a...]` and `[@l...]` refs in the output. Use these to chain into artist discographies or label catalogs without an extra search.
-
-## Key Concepts
-
-**Master** = canonical album. **Release** = specific pressing. **Version** = a release belonging to a master. Search masters to find all pressings; search releases to find a specific one. See [references/pressings-guide.md](references/pressings-guide.md) for details.
-
-**Formats**, **genres**, **identifiers**, and other Discogs-specific data conventions are documented in [references/discogs-domain.md](references/discogs-domain.md).
-
-## Token Efficiency
-
-Prefer the most specific command: `tracks @r...` over `get release @r...` when you only need the tracklist, and `price @r...` over `get release @r...` when you only need pricing. This reduces output tokens and avoids unnecessary data.
-
-## Reference Docs
-
-| Document | Content |
-|----------|---------|
-| [references/commands.md](references/commands.md) | Full command reference with all flags |
-| [references/search-patterns.md](references/search-patterns.md) | Effective search strategies |
-| [references/pressings-guide.md](references/pressings-guide.md) | Master/release/version mental model |
-| [references/discogs-domain.md](references/discogs-domain.md) | Discogs data model: formats, genres, country, artists, labels, identifiers |
+`agent-discogs skills` lists everything the installed version ships.

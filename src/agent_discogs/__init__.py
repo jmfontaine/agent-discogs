@@ -10,6 +10,7 @@ import click
 from agent_discogs.commands.cache import cache
 from agent_discogs.commands.get import get, price, tracks
 from agent_discogs.commands.search import search
+from agent_discogs.commands.skills import skills
 from agent_discogs.commands.status import status
 
 ALIASES: dict[str, str] = {
@@ -31,6 +32,7 @@ Commands:
   tracks <ref>                Shortcut: get tracklist <ref>
   price <ref>                 Shortcut: get price <ref>
   cache clear                 Clear HTTP cache
+  skills [get <name>]         Print the bundled agent guide (start: skills get core)
   status                      Show session and auth info
 
 Search Types:  artist, label, master, release
@@ -130,6 +132,7 @@ cli.add_command(cache)
 cli.add_command(get)
 cli.add_command(price)
 cli.add_command(search)
+cli.add_command(skills)
 cli.add_command(status)
 cli.add_command(tracks)
 

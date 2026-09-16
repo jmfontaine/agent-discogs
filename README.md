@@ -37,6 +37,8 @@ Install the skill so your AI coding agent can use agent-discogs automatically:
 npx skills upgrade jmfontaine/agent-discogs
 ```
 
+The installed skill is a thin pointer; the usage guide itself ships inside the package and is served by `agent-discogs skills get core`, so agents always read instructions that match the version they run (see [skills](#skills)).
+
 ## Authentication
 
 Set your personal access token from [your Discogs developer settings](https://www.discogs.com/settings/developers):
@@ -113,6 +115,17 @@ Manage the HTTP response cache:
 
 ```bash
 agent-discogs cache clear
+```
+
+### skills
+
+Print the bundled agent guide. The content ships in the package, so it always matches the installed version:
+
+```bash
+agent-discogs skills                   # list bundled skills with the installed version
+agent-discogs skills get core          # workflows, output format, common patterns, troubleshooting
+agent-discogs skills get core --full   # plus references: command reference, search patterns, pressings guide, Discogs data model
+agent-discogs skills path [core]       # directory holding the bundled skill files
 ```
 
 ## Ref system

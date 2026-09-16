@@ -114,4 +114,6 @@ ignore-names = [
   "_patch_search",
   "_reset_singleton",
   "format_help",
+  "get_skill",        # click subcommands are registered by decorator, invisible to deadcode
+  "skill_path",
 ]

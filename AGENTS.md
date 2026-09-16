@@ -43,6 +43,7 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 - `commands/get.py` — Get entity details by noun (`artist`, `label`, `master`, `price`, `release`, `releases`, `tracklist`, `versions`). Also defines `tracks` and `price` shortcut commands.
 - `commands/status.py` — Show session/auth info.
 - `commands/cache.py` — Cache management (`clear`).
+- `commands/skills.py` — Serves the bundled agent guide (`skills`, `skills get core [--full]`, `skills path`). Content lives in `src/agent_discogs/skills/core/` (`SKILL.md` + `references/*.md`) and ships in the wheel. `skills/agent-discogs/SKILL.md` at the repo root is a thin discovery stub that points agents at `agent-discogs skills get core`; do not put feature content there.
 
 ### Core Modules
 
@@ -64,7 +65,7 @@ Search results replace all refs. Single-entity lookups (`get`) are additive. Sma
 ## Testing
 
 - Tests use `click.testing.CliRunner` for in-process CLI testing (no subprocess).
-- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`.
+- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`.
 - No special fixtures or mocking framework beyond `unittest.mock`.
 
 ## Dependencies
@@ -120,6 +121,7 @@ Search results replace all refs. Single-entity lookups (`get`) are additive. Sma
 - Python 3.10+ required
 - `py.typed` marker present (PEP 561)
 - Run `git` commands directly, never with `git -C`
+- When adding or changing user-facing behaviour (commands, flags, output shape, errors), update all of: `_HELP_TEXT` in `src/agent_discogs/__init__.py`, `README.md`, and `src/agent_discogs/skills/core/` (`SKILL.md` for workflow/overview, `references/*.md` for detail). Agents load the bundled skill from the installed binary, so stale content there is a live bug.
 
 ## Releasing
 
