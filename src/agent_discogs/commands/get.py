@@ -21,7 +21,13 @@ from agent_discogs.formatting import (
     format_tracklist,
 )
 from agent_discogs.json_output import dump_entity, dump_list, dump_page
-from agent_discogs.pagination import fetch_filtered_page, fetch_page
+from agent_discogs.pagination import (
+    DEFAULT_LIMIT,
+    fetch_filtered_page,
+    fetch_page,
+    next_page_cmd,
+    parse_cursor,
+)
 from agent_discogs.refs import make_ref, parse_ref
 
 # Which entity type each noun expects
@@ -131,8 +137,9 @@ def _get_releases(
     client: Discogs,
     entity_id: int,
     *,
-    page: int,
+    page: int | None,
     limit: int,
+    after: str | None,
     role: str | None,
     json_output: bool,
 ) -> None:
@@ -143,6 +150,7 @@ def _get_releases(
     path = f"/artists/{entity_id}/releases"
     params: dict[str, Any] = {}
 
+    # --page/--after validity is checked in _dispatch before any API call.
     if role:
         role_lower = role.lower()
         result = fetch_filtered_page(
@@ -151,12 +159,12 @@ def _get_releases(
             params,
             ArtistRelease,
             "releases",
-            page,
-            limit,
+            limit=limit,
             keep=lambda item: role_lower in (getattr(item, "role", "") or "").lower(),
+            cursor=after,
         )
     else:
-        params["page"] = page
+        params["page"] = page or 1
         params["per_page"] = limit
         result = fetch_page(client, path, params, ArtistRelease, "releases")
 
@@ -164,13 +172,15 @@ def _get_releases(
         dump_page(result)
         return
 
-    next_page_cmd = None
+    footer_cmd = None
     if result.has_next:
-        parts = [f"agent-discogs get releases {artist_ref}"]
-        if role:
-            parts.append(f"--role {role}")
-        parts.append(f"--page {result.page + 1}")
-        next_page_cmd = " ".join(parts)
+        footer_cmd = next_page_cmd(
+            ["get", "releases", artist_ref],
+            role=role,
+            limit=limit if limit != DEFAULT_LIMIT else None,
+            after=result.next_cursor,
+            page=None if result.filtered else result.page + 1,
+        )
 
     print(
         format_artist_releases(
@@ -179,7 +189,9 @@ def _get_releases(
             artist_name,
             result.page,
             result.total_items,
-            next_page_cmd,
+            footer_cmd,
+            filtered=result.filtered,
+            capped=result.capped,
         )
     )
 
@@ -199,7 +211,7 @@ def _get_versions(
     entity_id: int,
     ref_string: str,
     *,
-    page: int,
+    page: int | None,
     limit: int,
     country: str | None,
     format: str | None,  # noqa: A002  # click option name for --format
@@ -227,7 +239,7 @@ def _get_versions(
 
     master_ref = make_ref("master", master_id)
 
-    params: dict[str, Any] = {"page": page, "per_page": limit}
+    params: dict[str, Any] = {"page": page or 1, "per_page": limit}
     if country:
         params["country"] = country
     if format:
@@ -247,17 +259,16 @@ def _get_versions(
         dump_page(result)
         return
 
-    next_page_cmd = None
+    footer_cmd = None
     if result.has_next:
-        parts = [f"agent-discogs get versions {master_ref}"]
-        if country:
-            parts.append(f"--country {country}")
-        if format:
-            parts.append(f"--format {format}")
-        if label:
-            parts.append(f"--label {label}")
-        parts.append(f"--page {result.page + 1}")
-        next_page_cmd = " ".join(parts)
+        footer_cmd = next_page_cmd(
+            ["get", "versions", master_ref],
+            country=country,
+            format=format,
+            label=label,
+            limit=limit if limit != DEFAULT_LIMIT else None,
+            page=result.page + 1,
+        )
 
     print(
         format_master_versions(
@@ -266,16 +277,45 @@ def _get_versions(
             master_title,
             result.page,
             result.total_items,
-            next_page_cmd,
+            footer_cmd,
         )
     )
+
+
+def _pagination_flag_error(
+    noun: str, *, page: int | None, after: str | None, role: str | None
+) -> str | None:
+    """Reject --page/--after combinations that make no sense for this noun.
+
+    Checked before any API call so a bad flag never costs a request or gets
+    masked by an auth/network failure.
+    """
+    filtered = noun == "releases" and bool(role)
+    if after is not None and not filtered:
+        return (
+            "--after only continues a client-side filtered listing "
+            "(get releases --role). This command pages server-side or is not "
+            "paginated; use --page where applicable."
+        )
+    if filtered and page is not None:
+        return (
+            "--page is not available while results are filtered client-side "
+            "(--role). Use the Next page command from the previous output."
+        )
+    if after is not None:
+        try:
+            parse_cursor(after)
+        except ValueError as exc:
+            return str(exc)
+    return None
 
 
 def _dispatch(
     noun: str,
     ref: str,
     *,
-    page: int,
+    page: int | None,
+    after: str | None,
     limit: int,
     country: str | None,
     format: str | None,  # noqa: A002  # click option name for --format
@@ -285,6 +325,11 @@ def _dispatch(
     json_output: bool,
 ) -> None:
     """Shared dispatch logic for get, tracks, and price commands."""
+    flag_error = _pagination_flag_error(noun, page=page, after=after, role=role)
+    if flag_error:
+        print(f"✗ {flag_error}", file=sys.stderr)
+        sys.exit(1)
+
     client = get_client()
 
     try:
@@ -305,6 +350,7 @@ def _dispatch(
                 client,
                 entity_id,
                 page=page,
+                after=after,
                 limit=limit,
                 role=role,
                 json_output=json_output,
@@ -334,14 +380,18 @@ def _dispatch(
 @click.command()
 @click.argument("noun", type=click.Choice(GET_NOUNS))
 @click.argument("ref")
+@click.option(
+    "--after",
+    help="Continuation cursor copied from a previous Next page / Continue scan line",
+)
 @click.option("--country", help="Filter versions by country")
 @click.option("--format", "format_", help="Filter versions by format")
 @click.option(
     "--json", "json_output", is_flag=True, default=False, help="Output raw JSON"
 )
 @click.option("--label", help="Filter versions by label")
-@click.option("--limit", type=int, default=5, help="Results per page")
-@click.option("--page", type=int, default=1, help="Page number")
+@click.option("--limit", type=int, default=DEFAULT_LIMIT, help="Results per page")
+@click.option("--page", type=int, help="Page number (server-side pages only)")
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
 @click.option(
     "-v",
@@ -354,11 +404,12 @@ def get(
     noun: str,
     ref: str,
     json_output: bool,
+    after: str | None,
     country: str | None,
     format_: str | None,
     label: str | None,
     limit: int,
-    page: int,
+    page: int | None,
     role: str | None,
     verbose: bool,
 ) -> None:
@@ -372,6 +423,7 @@ def get(
         noun,
         ref,
         page=page,
+        after=after,
         limit=limit,
         country=country,
         format=format_,
@@ -392,8 +444,9 @@ def tracks(ref: str, json_output: bool) -> None:
     _dispatch(
         "tracklist",
         ref,
-        page=1,
-        limit=5,
+        page=None,
+        after=None,
+        limit=DEFAULT_LIMIT,
         country=None,
         format=None,
         label=None,
@@ -413,8 +466,9 @@ def price(ref: str, json_output: bool) -> None:
     _dispatch(
         "price",
         ref,
-        page=1,
-        limit=5,
+        page=None,
+        after=None,
+        limit=DEFAULT_LIMIT,
         country=None,
         format=None,
         label=None,

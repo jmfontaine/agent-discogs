@@ -4,7 +4,30 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent_discogs.pagination import MAX_API_CALLS
 from agent_discogs.refs import make_ref
+
+
+def _page_counts(
+    page: int, shown: int, total: int, noun: str, *, filtered: bool, capped: bool
+) -> str:
+    """`(page 2, 5 of ≤23 results; scan capped at 5 API calls)`.
+
+    `≤` marks a client-side filtered list whose total is the unfiltered API
+    count; the capped note means the scan stopped early and the page may be
+    short.
+    """
+    bound = "≤" if filtered else ""
+    note = f"; scan capped at {MAX_API_CALLS} API calls" if capped else ""
+    return f"(page {page}, {shown} of {bound}{total:,} {noun}{note})"
+
+
+def _footer(next_page_cmd: str | None, *, capped: bool) -> list[str]:
+    """Continuation footer. `Continue scan:` warns the next window may be short."""
+    if not next_page_cmd:
+        return []
+    label = "Continue scan" if capped else "Next page"
+    return ["", f"{label}: {next_page_cmd}"]
 
 
 def _artist_string(artists: list[Any] | None, *, verbose: bool = False) -> str:
@@ -211,32 +234,29 @@ def format_artist_releases(
     page: int,
     total_results: int,
     next_page_cmd: str | None,
+    *,
+    filtered: bool = False,
+    capped: bool = False,
 ) -> str:
     """Format artist releases/discography."""
-    header = (
-        f'Releases by {artist_ref} "{artist_name}" '
-        f"(page {page}, {len(releases)} of {total_results:,} results)"
+    counts = _page_counts(
+        page, len(releases), total_results, "results", filtered=filtered, capped=capped
     )
-    lines = [header, ""]
+    lines = [f'Releases by {artist_ref} "{artist_name}" {counts}', ""]
 
-    for rel in releases:
-        rel_type = getattr(rel, "type", "release")
-        lines.append(
-            _release_row(
-                ref=make_ref(rel_type, rel.id),
-                type_=rel_type,
-                title=rel.title,
-                year=getattr(rel, "year", None),
-                label=getattr(rel, "label", None),
-                fmt=getattr(rel, "format", None),
-                role=getattr(rel, "role", None),
-            )
+    lines.extend(
+        _release_row(
+            ref=make_ref(getattr(rel, "type", "release"), rel.id),
+            type_=getattr(rel, "type", "release"),
+            title=rel.title,
+            year=getattr(rel, "year", None),
+            label=getattr(rel, "label", None),
+            fmt=getattr(rel, "format", None),
+            role=getattr(rel, "role", None),
         )
-
-    if next_page_cmd:
-        lines.append("")
-        lines.append(f"Next page: {next_page_cmd}")
-
+        for rel in releases
+    )
+    lines.extend(_footer(next_page_cmd, capped=capped))
     return "\n".join(lines)
 
 
@@ -308,11 +328,10 @@ def format_master_versions(
     next_page_cmd: str | None,
 ) -> str:
     """Format master release versions."""
-    header = (
-        f'Versions of {master_ref} "{master_title}" '
-        f"(page {page}, {len(versions)} of {total_results:,} versions)"
+    counts = _page_counts(
+        page, len(versions), total_results, "versions", filtered=False, capped=False
     )
-    lines = [header, ""]
+    lines = [f'Versions of {master_ref} "{master_title}" {counts}', ""]
 
     lines.extend(
         _release_row(
@@ -327,10 +346,7 @@ def format_master_versions(
         for ver in versions
     )
 
-    if next_page_cmd:
-        lines.append("")
-        lines.append(f"Next page: {next_page_cmd}")
-
+    lines.extend(_footer(next_page_cmd, capped=False))
     return "\n".join(lines)
 
 
@@ -469,6 +485,9 @@ def format_search_results(
     total_results: int,
     next_page_cmd: str | None,
     filters: dict[str, str] | None = None,
+    *,
+    filtered: bool = False,
+    capped: bool = False,
 ) -> str:
     """Format search results as compact text.
 
@@ -481,8 +500,10 @@ def format_search_results(
         p for p in (f'"{query}"' if query else "", _format_filters(filters)) if p
     )
     head = " ".join(p for p in ("Search:", type_filter or "all", subject) if p)
-    header = f"{head} (page {page}, {len(results)} of {total_results:,} results)"
-    lines = [header, ""]
+    counts = _page_counts(
+        page, len(results), total_results, "results", filtered=filtered, capped=capped
+    )
+    lines = [f"{head} {counts}", ""]
 
     for result in results:
         result_type = _search_result_type(result)
@@ -515,10 +536,7 @@ def format_search_results(
         else:
             lines.append(_release_row(ref=ref, type_=show_type, title=result.title))
 
-    if next_page_cmd:
-        lines.append("")
-        lines.append(f"Next page: {next_page_cmd}")
-
+    lines.extend(_footer(next_page_cmd, capped=capped))
     return "\n".join(lines)
 
 

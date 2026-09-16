@@ -67,7 +67,7 @@ agent-discogs search release "The Downward Spiral" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
 ```
 
-Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (default: 5) and `--page` for pagination.
+Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (default: 5) for page size. To continue, paste the `Next page:` command printed under the results: the default `--release-type official` filter is applied client-side, so continuation is a cursor (`--after`), not a page number. `--page` works only with `--release-type all` (server-side pages) or artist/label searches.
 
 Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for raw JSON output.
 
@@ -88,7 +88,7 @@ agent-discogs get price @r352665
 
 Nouns: `artist`, `label`, `master`, `price`, `release`, `releases`, `tracklist`, `versions`.
 
-Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`. Versions also accept `--country`, `--format`, and `--label` filters. Use `-v, --verbose` with `release` to include release notes and inline entity refs (`[@a...]`, `[@l...]`). Use `--json` for raw JSON output.
+Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`; `releases --role` filters client-side and continues via the printed `--after` cursor instead. Versions also accept `--country`, `--format`, and `--label` filters. Use `-v, --verbose` with `release` to include release notes and inline entity refs (`[@a...]`, `[@l...]`). Use `--json` for raw JSON output.
 
 ### tracks / price
 

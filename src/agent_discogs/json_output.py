@@ -27,13 +27,22 @@ def dump_list(key: str, items: list[Any]) -> None:
 
 
 def dump_page(result: PageResult) -> None:
-    """Print paginated results as JSON with envelope."""
+    """Print paginated results as JSON with envelope.
+
+    Client-side filtered pages add `filtered` (total is an upper bound),
+    `capped`, and `next_cursor` (pass back via `--after`).
+    """
+    pagination: dict[str, Any] = {
+        "page": result.page,
+        "total_items": result.total_items,
+        "total_pages": result.total_pages,
+    }
+    if result.filtered:
+        pagination["filtered"] = True
+        pagination["capped"] = result.capped
+        pagination["next_cursor"] = result.next_cursor
     data = {
-        "pagination": {
-            "page": result.page,
-            "total_items": result.total_items,
-            "total_pages": result.total_pages,
-        },
+        "pagination": pagination,
         "results": [item.model_dump() for item in result.items],
     }
     print(json.dumps(data, indent=2, default=str))

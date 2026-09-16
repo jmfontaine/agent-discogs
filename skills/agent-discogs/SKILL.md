@@ -98,6 +98,7 @@ agent-discogs get release @r367113 --json
 - **Don't search without a type filter** when you know the entity type.
 - **Don't fetch full release details just to check price.** Use `price @r...` directly.
 - **Don't paginate through all results.** Narrow with filters first.
+- **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list. Filtered lists (the default search, `--role`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
 - **Don't guess IDs.** Always search first to find the right entity.
 - **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref (smart resolution costs an extra API call).
 
@@ -108,6 +109,7 @@ agent-discogs get release @r367113 --json
 - **"Price data requires seller settings"** — not a bad ref. The release exists, but Discogs only serves price suggestions to accounts with seller settings filled out. Nothing to retry: use `get release @r...` for the `num_for_sale`/`lowest_price` summary instead.
 - **Invalid ref** — refs are session-scoped and reset on each search. Re-search to get fresh refs.
 - **Rate limited** — wait briefly and retry. Authenticated requests get 60/min; unauthenticated get 25/min.
+- **"Continue scan:" instead of "Next page:"** — the filter was sparse and the scan stopped at 5 API calls before filling the page. The next window may also be short or empty; keep pasting the printed command until it disappears (no footer = nothing left to scan). Counts shown as `≤N` are the unfiltered upper bound.
 
 ## Refs
 

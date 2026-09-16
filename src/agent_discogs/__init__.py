@@ -43,7 +43,10 @@ Refs:
 Options:
   --json           Output raw JSON (search, get)
   --limit N        Results per page (search, get)
-  --page N         Page number (search, get)
+  --page N         Page number for server-side pages (search, get)
+  --after CURSOR   Continue a client-side filtered list; copy from Next page /
+                   Continue scan (search with --release-type official|unofficial,
+                   get releases --role)
   -v, --verbose    Show additional details (get release)
   --version        Show version and exit
   --help           Show this message and exit

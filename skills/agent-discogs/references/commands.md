@@ -36,7 +36,8 @@ agent-discogs search [type] <query> [--flags]
 | `--json` | Output raw JSON |
 | `--label` | Filter by label name |
 | `--limit` | Results per page (default: 5) |
-| `--page` | Page number (default: 1) |
+| `--page` | Page number. Only for server-side pages: `--release-type all`, or artist/label searches. Rejected on the default filtered path. |
+| `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (filtered searches only) |
 | `--release-type` | Filter by release type: `official` (default), `unofficial`, `all` |
 | `--style` | Filter by style |
 | `--year` | Filter by release year |
@@ -53,7 +54,8 @@ agent-discogs search release --catno "INT-92346"
 agent-discogs search release --barcode "606949235024"
 agent-discogs search release "Blue Monday" --artist "New Order"
 agent-discogs search release "Pretty Hate Machine" --format "Vinyl" --country US
-agent-discogs search release "The Downward Spiral" --page 2 --limit 10
+agent-discogs search release "The Downward Spiral" --release-type all --page 2 --limit 10
+agent-discogs search release "The Downward Spiral" --after 2:1.5   # cursor copied from the previous footer
 agent-discogs search release "Pretty Hate Machine" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
 ```
@@ -85,7 +87,8 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 |------|-------------|
 | `--json` | Output raw JSON |
 | `--limit` | Results per page (default: 5) |
-| `--page` | Page number (default: 1) |
+| `--page` | Page number (server-side pages: `versions`, `releases` without `--role`) |
+| `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` only) |
 | `-v, --verbose` | Show additional details: release notes, inline entity refs (`[@a...]`, `[@l...]`) for artists and labels |
 
 **Additional flags for `releases`:**
@@ -117,6 +120,7 @@ agent-discogs get price @r367113
 agent-discogs get releases @a3857
 agent-discogs get releases @a3857 --page 2 --limit 10
 agent-discogs get releases @a3857 --role Remix
+agent-discogs get releases @a3857 --role Remix --after 2:6.0   # cursor copied from the previous footer
 agent-discogs get versions @m4917
 agent-discogs get versions @m4917 --country US --format "Vinyl"
 agent-discogs get release @r367113 --verbose

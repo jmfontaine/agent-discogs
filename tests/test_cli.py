@@ -235,7 +235,8 @@ class TestSearchCommand:
         assert result.exit_code == 1
         assert "error" in result.output.lower()
 
-    def test_search_pagination_next(self) -> None:
+    def test_search_pagination_next_uses_cursor(self) -> None:
+        """Default (official) search pages by cursor; header marks the bound."""
         result_item = _fake(
             id=1, type="release", title="Test", year=None, label=None, format=None
         )
@@ -244,16 +245,94 @@ class TestSearchCommand:
         )
         result = CliRunner().invoke(cli, ["search", "test"])
         assert result.exit_code == 0
-        assert "Next page:" in result.output
-        assert "--page 2" in result.output
+        assert "of ≤50 results" in result.output
+        assert "Next page: agent-discogs search test --after 2:6.0" in result.output
+        assert "--page" not in result.output
 
-    def test_search_pagination_no_next(self) -> None:
+    def _forbid_fetch(self) -> None:
+        def _boom(*_a: object, **_kw: object) -> None:
+            raise AssertionError("API call made before flag validation")
+
+        self._monkeypatch.setattr("agent_discogs.commands.search.fetch_page", _boom)
+        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _boom)
+
+    def test_search_page_rejected_on_filtered_path(self) -> None:
+        self._forbid_fetch()
+        result = CliRunner().invoke(cli, ["search", "test", "--page", "2"])
+        assert result.exit_code == 1
+        assert "--page is not available" in result.output
+        assert "--release-type all" in result.output
+
+    def test_search_after_rejected_on_server_side_path(self) -> None:
+        self._forbid_fetch()
+        result = CliRunner().invoke(
+            cli, ["search", "artist", "test", "--after", "2:1.0"]
+        )
+        assert result.exit_code == 1
+        assert "--after only continues" in result.output
+
+    def test_search_invalid_cursor_rejected_before_request(self) -> None:
+        self._forbid_fetch()
+        result = CliRunner().invoke(cli, ["search", "test", "--after", "garbage"])
+        assert result.exit_code == 1
+        assert "Invalid --after cursor" in result.output
+
+    def test_search_server_side_pagination(self) -> None:
+        """--release-type all pages server-side with --page and no ≤ bound."""
         self._set_fetch_result(
             PageResult(items=[], page=3, total_items=15, total_pages=3)
         )
-        result = CliRunner().invoke(cli, ["search", "test", "--page", "3"])
+        result = CliRunner().invoke(
+            cli, ["search", "test", "--release-type", "all", "--page", "3"]
+        )
         assert result.exit_code == 0
+        assert "(page 3, 0 of 15 results)" in result.output
         assert "Next page:" not in result.output
+
+    def test_search_footer_is_shell_safe_and_keeps_limit(self) -> None:
+        result_item = _fake(
+            id=1, type="release", title="Test", year=None, label=None, format=None
+        )
+        self._set_fetch_result(
+            PageResult(items=[result_item], page=1, total_items=50, total_pages=10)
+        )
+        result = CliRunner().invoke(
+            cli,
+            [
+                "search",
+                "release",
+                "Plastic Dreams",
+                "--label",
+                "R & S Records",
+                "--limit",
+                "1",
+            ],
+        )
+        assert result.exit_code == 0
+        assert (
+            "Next page: agent-discogs search release 'Plastic Dreams' "
+            "--label 'R & S Records' --limit 1 --after 2:2.0"
+        ) in result.output
+
+    def test_search_capped_scan_footer(self) -> None:
+        """Sparse filter: 5 API calls, no match, Continue scan footer."""
+        bootleg = _fake(
+            id=1,
+            type="release",
+            title="Boot",
+            year=None,
+            label=None,
+            format=["Unofficial Release"],
+        )
+        self._set_fetch_result(
+            PageResult(items=[bootleg], page=1, total_items=500, total_pages=34)
+        )
+        result = CliRunner().invoke(cli, ["search", "test"])
+        assert result.exit_code == 0
+        assert (
+            "(page 1, 0 of ≤500 results; scan capped at 5 API calls)" in result.output
+        )
+        assert "Continue scan: agent-discogs search test --after 2:6.0" in result.output
 
     def test_search_with_type_in_next_page(self) -> None:
         result_item = _fake(
@@ -424,12 +503,12 @@ class TestSearchCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "--artist Nine Inch Nails" in result.output
+        assert "--artist 'Nine Inch Nails'" in result.output
         assert "--genre Rock" in result.output
         assert "--year 1994" in result.output
         assert "--country US" in result.output
         assert "--format Vinyl" in result.output
-        assert "--page 2" in result.output
+        assert "--after 2:6.0" in result.output
 
     def test_release_type_default_next_page_omits_flag(self) -> None:
         """Next page command omits --release-type when official (default)."""
@@ -493,38 +572,39 @@ class TestSearchCommand:
         # Direct path uses per_page=limit (5), not limit*3 (15)
         assert fetch_params["per_page"] == 5
 
-    def test_filtered_search_user_page_2(self) -> None:
-        """Filtered search with --page 2 skips items from page 1."""
-        call_count = 0
+    def test_filtered_search_continues_from_cursor(self) -> None:
+        """--after resumes at the API page and offset encoded in the cursor."""
+        seen: list[tuple[int, int]] = []
 
-        def _mock_fetch(*_a: object, **_kw: object) -> PageResult:
-            nonlocal call_count
-            call_count += 1
+        def _mock_fetch(
+            _client: object, _path: object, params: dict[str, object], *_a: object
+        ) -> PageResult:
+            page = int(str(params["page"]))
+            seen.append((page, int(str(params["per_page"]))))
             items = [
                 _fake(
-                    id=call_count * 10 + i,
+                    id=page * 10 + i,
                     type="release",
-                    title=f"Official {call_count}-{i}",
+                    title=f"Official {page}-{i}",
                     year=None,
                     label=None,
                     format=["Vinyl"],
                 )
-                for i in range(3)
+                for i in range(9)
             ]
-            return PageResult(
-                items=items,
-                page=call_count,
-                total_items=30,
-                total_pages=10,
-            )
+            return PageResult(items=items, page=page, total_items=30, total_pages=4)
 
         self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _mock_fetch)
         result = CliRunner().invoke(
-            cli, ["search", "test", "--limit", "3", "--page", "2"]
+            cli, ["search", "test", "--limit", "3", "--after", "2:1.3"]
         )
         assert result.exit_code == 0
-        # Page 2 means skip first 3 items, show next 3
-        assert "Official 2" in result.output
+        assert seen == [(1, 9)]
+        assert "(page 2, 3 of ≤30 results)" in result.output
+        assert "Official 1-3" in result.output
+        assert "Official 1-5" in result.output
+        assert "Official 1-2" not in result.output
+        assert "--limit 3 --after 3:1.6" in result.output
 
     def test_filtered_search_multi_page(self) -> None:
         """Filtering consumes multiple API pages to fill the limit."""
@@ -912,8 +992,59 @@ class TestGetCommand:
             cli, ["get", "releases", "@a3857", "--role", "Main"]
         )
         assert result.exit_code == 0
-        assert "--role Main" in result.output
-        assert "--page 2" in result.output
+        assert "of ≤50 results" in result.output
+        assert (
+            "Next page: agent-discogs get releases @a3857 --role Main --after 2:6.0"
+            in result.output
+        )
+
+    def _set_exploding_client(self) -> None:
+        """Any resource access proves validation ran after I/O started."""
+
+        def _boom(_id: int) -> None:
+            raise AssertionError("API call made before flag validation")
+
+        self._set_client(
+            _fake_client(
+                artists_get=_boom,
+                labels_get=_boom,
+                masters_get=_boom,
+                releases_get=_boom,
+            )
+        )
+        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _boom)
+        self._monkeypatch.setattr("agent_discogs.commands.get.fetch_page", _boom)
+
+    def test_get_releases_role_rejects_page_before_io(self) -> None:
+        self._set_exploding_client()
+        result = CliRunner().invoke(
+            cli, ["get", "releases", "@a3857", "--role", "Main", "--page", "2"]
+        )
+        assert result.exit_code == 1
+        assert "--page is not available" in result.output
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["get", "releases", "@a3857", "--after", "2:1.0"],
+            ["get", "versions", "@m3719", "--after", "2:1.0"],
+            ["get", "release", "@r847868", "--after", "2:1.0"],
+            ["get", "artist", "@a3857", "--after", "2:1.0"],
+        ],
+    )
+    def test_get_after_rejected_unless_role_filtered(self, argv: list[str]) -> None:
+        self._set_exploding_client()
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 1
+        assert "--after only continues" in result.output
+
+    def test_get_invalid_cursor_rejected_before_io(self) -> None:
+        self._set_exploding_client()
+        result = CliRunner().invoke(
+            cli, ["get", "releases", "@a3857", "--role", "Main", "--after", "nope"]
+        )
+        assert result.exit_code == 1
+        assert "Invalid --after cursor" in result.output
 
     def test_get_versions_filters_in_next_page(self) -> None:
         """Next page command includes --country, --format, --label when active."""
@@ -1125,10 +1256,54 @@ class TestJsonSearch:
         result = CliRunner().invoke(cli, ["search", "--json", "test"])
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert data["pagination"]["page"] == 1
-        assert data["pagination"]["total_items"] == 1
+        assert data["pagination"] == {
+            "page": 1,
+            "total_items": 1,
+            "total_pages": 1,
+            "filtered": True,
+            "capped": False,
+            "next_cursor": None,  # raw rows exhausted
+        }
         assert len(data["results"]) == 1
         assert data["results"][0]["id"] == 367113
+
+    def test_search_json_filtered_cursor_and_capped(self) -> None:
+        """Agents consume the cursor from JSON: present when more rows remain,
+        `capped` when the scan stopped early."""
+        item = _fake_model(id=1, type="release", title="X", format=None)
+        bootleg = _fake_model(
+            id=2, type="release", title="B", format=["Unofficial Release"]
+        )
+
+        def more(*_a: object, **_kw: object) -> PageResult:
+            return PageResult(items=[item] * 15, page=1, total_items=30, total_pages=2)
+
+        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", more)
+        data = json.loads(CliRunner().invoke(cli, ["search", "--json", "t"]).output)
+        assert data["pagination"]["filtered"] is True
+        assert data["pagination"]["capped"] is False
+        assert data["pagination"]["next_cursor"] == "2:1.5"
+
+        def sparse(*_a: object, **_kw: object) -> PageResult:
+            return PageResult(items=[bootleg], page=1, total_items=500, total_pages=34)
+
+        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", sparse)
+        data = json.loads(CliRunner().invoke(cli, ["search", "--json", "t"]).output)
+        assert data["results"] == []
+        assert data["pagination"]["capped"] is True
+        assert data["pagination"]["next_cursor"] == "2:6.0"
+
+    def test_search_json_server_side_has_no_cursor_keys(self) -> None:
+        item = _fake_model(id=1, type="artist", title="X")
+
+        def mock(*_a: object, **_kw: object) -> PageResult:
+            return PageResult(items=[item], page=1, total_items=9, total_pages=2)
+
+        self._monkeypatch.setattr("agent_discogs.commands.search.fetch_page", mock)
+        data = json.loads(
+            CliRunner().invoke(cli, ["search", "--json", "artist", "x"]).output
+        )
+        assert data["pagination"] == {"page": 1, "total_items": 9, "total_pages": 2}
 
     def test_search_json_no_text_formatting(self) -> None:
         """--json should not contain text formatting artifacts."""
