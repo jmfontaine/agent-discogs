@@ -140,6 +140,10 @@ setup:
 test *args:
     uv run pytest --cov --cov-report=term-missing {{ args }}
 
+# Run live-API tests (doc examples resolve against Discogs; needs DISCOGS_TOKEN)
+test-live *args:
+    uv run pytest -m live --no-cov {{ args }}
+
 # Run type checker
 type-check:
     uv run ty check

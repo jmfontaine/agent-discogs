@@ -48,7 +48,7 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 ### Core Modules
 
 - `client.py` — Singleton `Discogs` client. Reads `DISCOGS_TOKEN` from env. Cache dir: `~/.cache/agent-discogs`.
-- `refs.py` — Typed ref system (`@a3857`, `@r367113`, `@m3719`, `@l647`). `make_ref()` creates refs, `parse_ref()` parses them. Raw numeric IDs return type `"unknown"`.
+- `refs.py` — Typed ref system (`@a3857`, `@r847868`, `@m3719`, `@l647`). `make_ref()` creates refs, `parse_ref()` parses them. Raw numeric IDs return type `"unknown"`.
 - `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`). `_send()` is the SDK's HTTP-error boundary — it raises the mapped `DiscogsAPIError` subclass before returning, so callers never re-check the status.
 - `formatting.py` — All output formatting. Returns plain strings, callers `print()` them.
 - `errors.py` — Maps SDK exceptions to recovery-oriented error messages.
@@ -60,13 +60,14 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 
 ### Ref System
 
-Search results replace all refs. Single-entity lookups (`get`) are additive. Smart resolution: `get versions @r123` auto-resolves a release ref to its `master_id`.
+Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so nothing is stored between invocations and refs never expire. Smart resolution: `get versions @r123` auto-resolves a release ref to its `master_id`.
 
 ## Testing
 
 - Tests use `click.testing.CliRunner` for in-process CLI testing (no subprocess).
-- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`.
+- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_doc_examples.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`.
 - No special fixtures or mocking framework beyond `unittest.mock`.
+- `tests/test_doc_examples.py` checks every `@ref` in the docs against `KNOWN_REFS`. Its `live`-marked half resolves each ref against the real API; `just test` excludes it, `just test-live` runs it (needs `DISCOGS_TOKEN`). Adding a new example ID to any doc means adding it to `KNOWN_REFS`.
 
 ## Dependencies
 

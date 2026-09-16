@@ -25,18 +25,18 @@ A **version** is simply a release that belongs to a master. When you list versio
 
 | You want to... | Use |
 |----------------|-----|
-| Find all pressings of an album | `search master` → `get versions @m4917` |
+| Find all pressings of an album | `search master` → `get versions @m3719` |
 | Find a specific pressing | `search release` with filters |
-| Compare pressings across countries | `get versions @m4917 --country US` vs `--country UK` |
-| Get details of one pressing | `get release @r367113` |
-| See the canonical tracklist | `get master @m4917` |
+| Compare pressings across countries | `get versions @m3719 --country US` vs `--country UK` |
+| Get details of one pressing | `get release @r847868` |
+| See the canonical tracklist | `get master @m3719` |
 
 ## Finding the Original Pressing
 
 1. Search for the master: `agent-discogs search master "The Downward Spiral"`
-2. List versions: `agent-discogs get versions @m4917`
+2. List versions: `agent-discogs get versions @m3719`
 3. Look for the earliest year and original country
-4. Get details: `agent-discogs get release @r367113`
+4. Get details: `agent-discogs get release @r847868`
 
 ## Common Pressing Attributes
 

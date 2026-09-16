@@ -24,7 +24,7 @@ agent-discogs search label "Nothing Records"
 ```bash
 # Search for the master, then explore versions
 agent-discogs search master "The Downward Spiral"
-agent-discogs get versions @m4917
+agent-discogs get versions @m3719
 ```
 
 ## Filter Combinations

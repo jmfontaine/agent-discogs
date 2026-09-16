@@ -77,7 +77,7 @@ class TestCLIBasics:
         assert "Get Nouns:" in result.output
         # Ref system explanation
         assert "@a3857 (artist)" in result.output
-        assert "@r367113 (release)" in result.output
+        assert "@r847868 (release)" in result.output
         # Environment
         assert "DISCOGS_TOKEN" in result.output
         # Examples

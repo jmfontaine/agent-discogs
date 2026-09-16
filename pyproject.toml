@@ -108,6 +108,12 @@ lint.per-file-ignores."tests/**" = [
 keep_full_version = true
 max_supported_python = "3.15"
 
+[tool.pytest]
+ini_options.addopts = "-m 'not live'"
+ini_options.markers = [
+  "live: hits the real Discogs API; run with `just test-live` (needs DISCOGS_TOKEN)",
+]
+
 [tool.deadcode]
 ignore-names = [
   "_patch_get",

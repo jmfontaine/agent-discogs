@@ -32,22 +32,22 @@ Check status: `agent-discogs status`
    ```
 2. **Inspect** — get full details using refs from search output
    ```bash
-   agent-discogs get release @r367113
+   agent-discogs get release @r847868
    ```
 3. **Drill down** — tracklist, pricing
    ```bash
-   agent-discogs tracks @r367113
-   agent-discogs price @r367113
+   agent-discogs tracks @r847868
+   agent-discogs price @r847868
    ```
 4. **Explore** — discography, versions
    ```bash
-   agent-discogs get versions @m4917 --country US
+   agent-discogs get versions @m3719 --country US
    ```
 
 ## Output Format
 
 - **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches.
-- **get release** — title, artists, label, format, tracklist summary, notes. Adds ref.
+- **get release** — title, artists, label, format, community stats, market summary, master ref, full tracklist. Adds ref.
 - **get release --verbose** — full details including inline `[@a...]` and `[@l...]` refs for chaining.
 - **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
 - **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats.
@@ -71,15 +71,15 @@ Check status: `agent-discogs status`
 | Get release notes | `get release @r... --verbose` |
 | Get artist/label IDs from a release | `get release @r... --verbose` — inline `[@a...]` and `[@l...]` refs |
 | VA compilation tracks | `get release @r...` — per-track artists shown automatically |
-| Machine-readable output | Add `--json` to any command for raw JSON |
+| Machine-readable output | Add `--json` to `search`, `get`, `tracks`, or `price` |
 
 ## Machine-Readable Output
 
-All commands support `--json` for raw JSON output, useful for piping into other tools or extracting structured data:
+`search`, `get`, `tracks`, and `price` support `--json` for raw JSON output, useful for piping into other tools or extracting structured data (`status`, `cache`, and `skills` are text-only):
 
 ```bash
 agent-discogs search release "Blue Monday" --artist "New Order" --json
-agent-discogs get release @r367113 --json
+agent-discogs get release @r20755 --json
 ```
 
 ## Anti-Patterns
@@ -96,13 +96,13 @@ agent-discogs get release @r367113 --json
 - **0 results** — broaden filters (drop `--year`, `--country`), try a different type (`master` instead of `release`), or simplify the query.
 - **Auth required** — price suggestions and search require `DISCOGS_TOKEN`. Run `agent-discogs status` to check.
 - **"Price data requires seller settings"** — not a bad ref. The release exists, but Discogs only serves price suggestions to accounts with seller settings filled out. Nothing to retry: use `get release @r...` for the `num_for_sale`/`lowest_price` summary instead.
-- **Invalid ref** — refs are session-scoped and reset on each search. Re-search to get fresh refs.
+- **Invalid ref** — refs are Discogs IDs and never expire; there is no session. Check the prefix matches the noun (`@r` release, `@m` master, `@a` artist, `@l` label). A bare `@123` is invalid: either add the type letter or pass the raw number `123`.
 - **Rate limited** — wait briefly and retry. Authenticated requests get 60/min; unauthenticated get 25/min.
 - **"Continue scan:" instead of "Next page:"** — the filter was sparse and the scan stopped at 5 API calls before filling the page. The next window may also be short or empty; keep pasting the printed command until it disappears (no footer = nothing left to scan). Counts shown as `≤N` are the unfiltered upper bound.
 
 ## Refs
 
-Refs encode entity type and Discogs ID: `@a3857` (artist), `@r367113` (release), `@m4917` (master), `@l2919` (label). Raw numeric IDs also work.
+Refs encode entity type and Discogs ID: `@a3857` (artist), `@r847868` (release), `@m3719` (master), `@l647` (label). Raw numeric IDs also work.
 
 **Ref chaining:** `get release @r... --verbose` embeds inline `[@a...]` and `[@l...]` refs in the output. Use these to chain into artist discographies or label catalogs without an extra search.
 

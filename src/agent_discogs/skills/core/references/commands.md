@@ -105,25 +105,25 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 | `--format` | Filter versions by format |
 | `--label` | Filter versions by label |
 
-**Smart resolution:** `get versions @r367113` where `@r367113` is a release will auto-resolve to the release's master_id and fetch versions. Errors with a hint if the release has no master.
+**Smart resolution:** `get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. Errors with a hint if the release has no master.
 
 **Examples:**
 
 ```bash
-agent-discogs get release @r367113
-agent-discogs get release 367113
+agent-discogs get release @r847868
+agent-discogs get release 847868
 agent-discogs get artist @a3857
-agent-discogs get master @m4917
-agent-discogs get label @l2919
-agent-discogs get tracklist @r367113
-agent-discogs get price @r367113
+agent-discogs get master @m3719
+agent-discogs get label @l647
+agent-discogs get tracklist @r847868
+agent-discogs get price @r847868
 agent-discogs get releases @a3857
 agent-discogs get releases @a3857 --page 2 --limit 10
 agent-discogs get releases @a3857 --role Remix
 agent-discogs get releases @a3857 --role Remix --after 2:6.0   # cursor copied from the previous footer
-agent-discogs get versions @m4917
-agent-discogs get versions @m4917 --country US --format "Vinyl"
-agent-discogs get release @r367113 --verbose
+agent-discogs get versions @m3719
+agent-discogs get versions @m3719 --country US --format "Vinyl"
+agent-discogs get release @r847868 --verbose
 ```
 
 ## status
@@ -150,5 +150,5 @@ agent-discogs cache clear
 | `agent-discogs query ...` | `agent-discogs search ...` |
 | `agent-discogs fetch ...` | `agent-discogs get ...` |
 | `agent-discogs show ...` | `agent-discogs get ...` |
-| `agent-discogs tracks @r367113` | `agent-discogs get tracklist @r367113` |
-| `agent-discogs price @r367113` | `agent-discogs get price @r367113` |
+| `agent-discogs tracks @r847868` | `agent-discogs get tracklist @r847868` |
+| `agent-discogs price @r847868` | `agent-discogs get price @r847868` |

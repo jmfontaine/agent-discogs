@@ -4,7 +4,7 @@ A token-efficient Discogs CLI for AI agents that minimizes API calls.
 
 ```bash
 agent-discogs search "Nine Inch Nails"
-agent-discogs get release @r3857       # ref from search output
+agent-discogs get release @r352665      # ref from search output
 agent-discogs tracks @r352665          # tracklist shortcut
 agent-discogs price @r352665           # price guide shortcut
 ```

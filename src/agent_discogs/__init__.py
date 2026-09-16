@@ -39,7 +39,7 @@ Search Types:  artist, label, master, release
 Get Nouns:     artist, label, master, price, release, releases, tracklist, versions
 
 Refs:
-  Search results return typed refs: @a3857 (artist), @r367113 (release),
+  Search results return typed refs: @a3857 (artist), @r847868 (release),
   @m3719 (master), @l647 (label). Use refs with get commands.
 
 Options:
@@ -63,10 +63,10 @@ token belongs to (discogs.com/settings/seller). Without them the API answers
 Examples:
   agent-discogs search "The Downward Spiral"
   agent-discogs search artist "Nine Inch Nails"
-  agent-discogs get release @522533
+  agent-discogs get release @r847868
   agent-discogs get versions @m3719 --country US --format Vinyl
-  agent-discogs tracks @522533
-  agent-discogs price @522533
+  agent-discogs tracks @r847868
+  agent-discogs price @r847868
   agent-discogs get releases @a3857 --role Main --limit 5
 """
 
