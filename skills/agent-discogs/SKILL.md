@@ -57,13 +57,13 @@ Check status: `agent-discogs status`
 
 ## Output Format
 
-- **search** — numbered list of matches with refs, title, year, format. Replaces all stored refs.
+- **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches.
 - **get release** — title, artists, label, format, tracklist summary, notes. Adds ref.
 - **get release --verbose** — full details including inline `[@a...]` and `[@l...]` refs for chaining.
 - **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
 - **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats.
-- **get versions** — table of pressings with country, year, format, label, and refs.
-- **get releases** — artist discography with type, year, and refs.
+- **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`.
+- **get releases** — artist discography: ref, `[type]`, title, year, label, format, role.
 
 ## Common Patterns
 
@@ -71,6 +71,8 @@ Check status: `agent-discogs status`
 |------|----------|
 | Find a specific pressing | `search release "<title>" --year --country` → `get release @r...` |
 | Compare pressings | `search master "<title>"` → `get versions @m...` |
+| Pick among look-alike rows | Compare catalog number and `have N` in the row itself; `have` is popularity, not identification. Same catno on several rows means variants: see `get release @r...` |
+| Release → all its pressings | Copy `→ @m...` from any release row → `get versions @m...` |
 | Explore discography | `search artist "<name>"` → `get releases @a...` |
 | Check price | `search release "<title>"` → `price @r...` |
 | Identify by catalog number | `search release --catno "INT-92346"` → `get release @r...` |
@@ -97,7 +99,7 @@ agent-discogs get release @r367113 --json
 - **Don't fetch full release details just to check price.** Use `price @r...` directly.
 - **Don't paginate through all results.** Narrow with filters first.
 - **Don't guess IDs.** Always search first to find the right entity.
-- **Don't use `get versions` on a release ID.** Use a master ref (smart resolution costs an extra API call).
+- **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref (smart resolution costs an extra API call).
 
 ## Error Recovery
 

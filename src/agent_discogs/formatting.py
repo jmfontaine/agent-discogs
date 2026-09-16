@@ -98,6 +98,71 @@ def _search_result_type(result: Any) -> str:
     return getattr(result, "type", "release") or "release"
 
 
+def _community_have(obj: Any) -> int | None:
+    """Community 'have' count from a search result or master version, if present."""
+    community = getattr(obj, "community", None)
+    if community is None:
+        stats = getattr(obj, "stats", None)
+        community = getattr(stats, "community", None)
+    if community is None:
+        return None
+    have = getattr(community, "have", None)
+    if have is None:
+        have = getattr(community, "in_collection", None)
+    return have if isinstance(have, int) else None
+
+
+def _release_row(
+    *,
+    ref: str,
+    type_: str | None = None,
+    title: str | None = None,
+    year: object = None,
+    country: str | None = None,
+    label: str | None = None,
+    catno: str | None = None,
+    fmt: str | None = None,
+    role: str | None = None,
+    have: int | None = None,
+    master_ref: str | None = None,
+) -> str:
+    """One list row: everything an agent needs to pick or navigate, nothing else.
+
+    Shared by search, versions, and discography views so a release looks the
+    same wherever it appears. Every part is optional and omitted when empty.
+    """
+    parts = [ref]
+    if type_:
+        parts.append(f"[{type_}]")
+    if title:
+        parts.append(f'"{title}"')
+    meta = " ".join(str(p) for p in (year, country) if p)
+    if meta:
+        parts.append(meta)
+    if label or catno:
+        parts.append("· " + " ".join(p for p in (label, catno) if p))
+    if fmt:
+        parts.append(f"· {fmt}")
+    if role:
+        parts.append(f"· {role}")
+    if have is not None:
+        parts.append(f"· have {have:,}")
+    if master_ref:
+        parts.append(f"→ {master_ref}")
+    return " ".join(parts)
+
+
+def _format_filters(filters: dict[str, str] | None) -> str:
+    """Render applied filters for a list header: `year=1994 label="R & S"`."""
+    if not filters:
+        return ""
+    parts = []
+    for key, value in filters.items():
+        shown = f'"{value}"' if " " in value else value
+        parts.append(f"{key}={shown}")
+    return " ".join(parts)
+
+
 def _urls_short(urls: list[str] | None) -> str:
     """Extract domain names from URLs for compact display."""
     if not urls:
@@ -156,19 +221,17 @@ def format_artist_releases(
 
     for rel in releases:
         rel_type = getattr(rel, "type", "release")
-        ref = make_ref(rel_type, rel.id)
-        title = rel.title
-        year = getattr(rel, "year", None) or ""
-        role = getattr(rel, "role", "") or ""
-
-        parts = [f"{ref} [{rel_type}]"]
-        parts.append(f'"{title}"')
-        if year:
-            parts.append(f"({year})")
-        if role:
-            parts.append(f"· {role}")
-
-        lines.append(" ".join(parts))
+        lines.append(
+            _release_row(
+                ref=make_ref(rel_type, rel.id),
+                type_=rel_type,
+                title=rel.title,
+                year=getattr(rel, "year", None),
+                label=getattr(rel, "label", None),
+                fmt=getattr(rel, "format", None),
+                role=getattr(rel, "role", None),
+            )
+        )
 
     if next_page_cmd:
         lines.append("")
@@ -251,27 +314,18 @@ def format_master_versions(
     )
     lines = [header, ""]
 
-    for ver in versions:
-        ref = make_ref("release", ver.id)
-        released = getattr(ver, "released", "") or ""
-        country = getattr(ver, "country", "") or ""
-        label = getattr(ver, "label", "") or ""
-        catno = getattr(ver, "catalog_number", "") or ""
-        fmt = getattr(ver, "format", "") or ""
-
-        parts = [f"{ref} [release]"]
-        if released:
-            parts.append(f"({released})")
-        if country:
-            parts.append(country)
-        if label and catno:
-            parts.append(f"· {label} {catno}")
-        elif label:
-            parts.append(f"· {label}")
-        if fmt:
-            parts.append(f"· {fmt}")
-
-        lines.append(" ".join(parts))
+    lines.extend(
+        _release_row(
+            ref=make_ref("release", ver.id),
+            year=getattr(ver, "released", None),
+            country=getattr(ver, "country", None),
+            label=getattr(ver, "label", None),
+            catno=getattr(ver, "catalog_number", None),
+            fmt=getattr(ver, "format", None),
+            have=_community_have(ver),
+        )
+        for ver in versions
+    )
 
     if next_page_cmd:
         lines.append("")
@@ -414,41 +468,52 @@ def format_search_results(
     page: int,
     total_results: int,
     next_page_cmd: str | None,
+    filters: dict[str, str] | None = None,
 ) -> str:
-    """Format search results as compact text."""
-    type_label = type_filter or "all"
-    header = (
-        f'Search: {type_label} "{query}" '
-        f"(page {page}, {len(results)} of {total_results:,} results)"
+    """Format search results as compact text.
+
+    The `[type]` tag is shown only for untyped searches; with a type filter the
+    ref prefix already carries it. Release rows carry country, catalog number,
+    community have-count, and the master ref so an agent can pick and navigate
+    without a detail call.
+    """
+    subject = " ".join(
+        p for p in (f'"{query}"' if query else "", _format_filters(filters)) if p
     )
+    head = " ".join(p for p in ("Search:", type_filter or "all", subject) if p)
+    header = f"{head} (page {page}, {len(results)} of {total_results:,} results)"
     lines = [header, ""]
 
     for result in results:
         result_type = _search_result_type(result)
         ref = make_ref(result_type, result.id)
-        title = result.title
-        year = getattr(result, "year", None) or ""
-
-        parts = [f"{ref} [{result_type}]"]
+        show_type = None if type_filter else result_type
 
         if result_type in ("release", "master"):
-            parts.append(f'"{title}"')
-            if year:
-                parts.append(f"({year})")
             label_list = getattr(result, "label", None)
             fmt_list = getattr(result, "format", None)
-            extras = []
-            if label_list:
-                extras.append(label_list[0])
-            if fmt_list:
-                extras.append(", ".join(fmt_list))
-            if extras:
-                parts.append("·")
-                parts.append(" · ".join(extras))
+            master_id = getattr(result, "master_id", None)
+            master_ref = (
+                make_ref("master", master_id)
+                if result_type == "release" and master_id
+                else None
+            )
+            lines.append(
+                _release_row(
+                    ref=ref,
+                    type_=show_type,
+                    title=result.title,
+                    year=getattr(result, "year", None),
+                    country=getattr(result, "country", None),
+                    label=label_list[0] if label_list else None,
+                    catno=getattr(result, "catalog_number", None),
+                    fmt=", ".join(fmt_list) if fmt_list else None,
+                    have=_community_have(result),
+                    master_ref=master_ref,
+                )
+            )
         else:
-            parts.append(f'"{title}"')
-
-        lines.append(" ".join(parts))
+            lines.append(_release_row(ref=ref, type_=show_type, title=result.title))
 
     if next_page_cmd:
         lines.append("")

@@ -443,6 +443,31 @@ class TestSearchCommand:
         assert result.exit_code == 0
         assert "--release-type" not in result.output
 
+    def test_release_type_header_echo_only_when_it_applies(self) -> None:
+        """Header shows release-type when non-default on release/master searches,
+        never on artist/label searches where the option is a no-op."""
+        item = _fake(
+            id=1, type="release", title="Test", year=None, label=None, format=["Vinyl"]
+        )
+        self._set_fetch_result(
+            PageResult(items=[item], page=1, total_items=1, total_pages=1)
+        )
+        result = CliRunner().invoke(cli, ["search", "test", "--release-type", "all"])
+        assert 'Search: all "test" release-type=all' in result.output
+
+        result = CliRunner().invoke(cli, ["search", "release", "test"])
+        assert "release-type" not in result.output.split("\n")[0]
+
+        artist = _fake(id=1, type="artist", title="Test")
+        self._set_fetch_result(
+            PageResult(items=[artist], page=1, total_items=1, total_pages=1)
+        )
+        result = CliRunner().invoke(
+            cli, ["search", "artist", "test", "--release-type", "unofficial"]
+        )
+        assert result.exit_code == 0
+        assert "release-type" not in result.output.split("\n")[0]
+
     def test_artist_search_skips_release_filter(self) -> None:
         """Artist type search uses direct fetch, not filtered overfetch."""
         fetch_params: dict[str, object] = {}

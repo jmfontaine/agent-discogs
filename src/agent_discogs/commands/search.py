@@ -218,6 +218,9 @@ def search(
         cmd_parts.append(f"--page {result.page + 1}")
         next_page_cmd = " ".join(cmd_parts)
 
+    filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}
+    if release_type != "official" and type_filter in (None, "release", "master"):
+        filters["release-type"] = release_type
     output = format_search_results(
         results=result.items,
         query=query,
@@ -225,5 +228,6 @@ def search(
         page=result.page,
         total_results=result.total_items,
         next_page_cmd=next_page_cmd,
+        filters=filters,
     )
     print(output)

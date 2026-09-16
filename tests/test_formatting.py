@@ -146,19 +146,25 @@ class TestFormatSearchResults:
         )
         assert 'Search: artist "Nine Inch Nails"' in output
         assert "page 1, 2 of 47 results" in output
-        assert '@a3857 [artist] "Nine Inch Nails"' in output
-        assert '@a4779331 [artist] "Dave Heath"' in output
+        # Typed search: the @a prefix already says [artist]
+        assert '@a3857 "Nine Inch Nails"' in output
+        assert "[artist]" not in output
+        assert '@a4779331 "Dave Heath"' in output
         assert "Next page:" in output
 
     def test_release_search(self) -> None:
         results = [
             _fake(
-                id=367113,
+                id=847868,
                 type="release",
                 title="Nine Inch Nails - The Downward Spiral",
                 year="1994",
-                label=["Nothing Records"],
-                format=["Vinyl", "LP"],
+                country="US",
+                label=["Nothing Records", "Interscope Records"],
+                catalog_number="92346-2",
+                format=["CD", "Album"],
+                master_id=3719,
+                community=_fake(have=7544, want=1113),
             ),
         ]
         output = format_search_results(
@@ -166,13 +172,59 @@ class TestFormatSearchResults:
             query="The Downward Spiral",
             type_filter="release",
             page=1,
-            total_results=312,
+            total_results=6,
+            next_page_cmd=None,
+            filters={"year": "1994", "country": "US", "format": "CD"},
+        )
+        assert (
+            'Search: release "The Downward Spiral" year=1994 country=US format=CD '
+            "(page 1, 1 of 6 results)"
+        ) in output
+        assert (
+            '@r847868 "Nine Inch Nails - The Downward Spiral" 1994 US '
+            "· Nothing Records 92346-2 · CD, Album · have 7,544 → @m3719"
+        ) in output
+        assert "Next page:" not in output
+
+    def test_untyped_search_keeps_type_tags_and_no_master_arrow_on_masters(
+        self,
+    ) -> None:
+        results = [
+            _fake(
+                id=3719,
+                type="master",
+                title="Nine Inch Nails - The Downward Spiral",
+                year="1994",
+                label=["Nothing Records"],
+                format=["CD", "Album"],
+                master_id=3719,
+            ),
+            _fake(id=3857, type="artist", title="Nine Inch Nails"),
+        ]
+        output = format_search_results(
+            results=results,
+            query="Downward Spiral",
+            type_filter=None,
+            page=1,
+            total_results=2,
             next_page_cmd=None,
         )
-        assert "@r367113 [release]" in output
-        assert "(1994)" in output
-        assert "Nothing Records" in output
-        assert "Next page:" not in output
+        assert 'Search: all "Downward Spiral"' in output
+        assert '@m3719 [master] "Nine Inch Nails - The Downward Spiral" 1994' in output
+        assert "→" not in output
+        assert '@a3857 [artist] "Nine Inch Nails"' in output
+
+    def test_filter_only_search_header(self) -> None:
+        output = format_search_results(
+            results=[],
+            query="",
+            type_filter="release",
+            page=1,
+            total_results=0,
+            next_page_cmd=None,
+            filters={"catno": "92346-2", "label": "R & S Records"},
+        )
+        assert 'Search: release catno=92346-2 label="R & S Records" (page 1' in output
 
     def test_no_results(self) -> None:
         output = format_search_results(
@@ -357,18 +409,20 @@ class TestFormatArtistReleases:
     def test_artist_releases(self) -> None:
         releases = [
             _fake(
-                id=4917,
+                id=3373,
                 type="master",
-                title="The Downward Spiral",
-                year=1994,
+                title="Down In It",
+                year=1989,
                 role="Main",
             ),
             _fake(
-                id=367113,
+                id=4401,
                 type="release",
                 title="Pretty Hate Machine",
                 year=1989,
                 role="Main",
+                label="TVT Records",
+                format="CD, Album",
             ),
         ]
         output = format_artist_releases(
@@ -380,8 +434,11 @@ class TestFormatArtistReleases:
             next_page_cmd="agent-discogs get releases @a3857 --page 2",
         )
         assert 'Releases by @a3857 "Nine Inch Nails"' in output
-        assert "@m4917 [master]" in output
-        assert "@r367113 [release]" in output
+        assert '@m3373 [master] "Down In It" 1989 · Main' in output
+        assert (
+            '@r4401 [release] "Pretty Hate Machine" 1989 '
+            "· TVT Records · CD, Album · Main"
+        ) in output
         assert "Next page:" in output
 
 
@@ -389,12 +446,13 @@ class TestFormatMasterVersions:
     def test_master_versions(self) -> None:
         versions = [
             _fake(
-                id=367113,
+                id=847868,
                 released="1994",
                 country="US",
                 label="Nothing Records",
-                catalog_number="INT-92346",
-                format="Vinyl, LP",
+                catalog_number="92346-2",
+                format="CD, Album",
+                stats=_fake(community=_fake(in_collection=7544, in_wantlist=1113)),
             ),
             _fake(
                 id=9876543,
@@ -407,16 +465,20 @@ class TestFormatMasterVersions:
         ]
         output = format_master_versions(
             versions,
-            "@m4917",
+            "@m3719",
             "The Downward Spiral",
             page=1,
-            total_results=498,
-            next_page_cmd="agent-discogs get versions @m4917 --page 2",
+            total_results=28,
+            next_page_cmd="agent-discogs get versions @m3719 --page 2",
         )
-        assert 'Versions of @m4917 "The Downward Spiral"' in output
-        assert "@r367113 [release]" in output
-        assert "US" in output
-        assert "Nothing Records INT-92346" in output
+        assert 'Versions of @m3719 "The Downward Spiral"' in output
+        # Versions are always releases: no [release] tag, no parens around year
+        assert (
+            "@r847868 1994 US · Nothing Records 92346-2 · CD, Album · have 7,544"
+            in output
+        )
+        assert "@r9876543 2017 US · Interscope · Vinyl, 2xLP, 180g" in output
+        assert "[release]" not in output
         assert "Next page:" in output
 
 
