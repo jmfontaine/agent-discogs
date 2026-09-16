@@ -13,6 +13,8 @@ from agent_discogs.errors import format_error
 from agent_discogs.formatting import (
     format_artist,
     format_artist_releases,
+    format_credits,
+    format_identifiers,
     format_label,
     format_master,
     format_master_versions,
@@ -33,6 +35,8 @@ from agent_discogs.refs import make_ref, parse_ref
 # Which entity type each noun expects
 NOUN_EXPECTED_TYPE = {
     "artist": "artist",
+    "credits": "release",
+    "identifiers": "release",
     "label": "label",
     "master": "master",
     "price": "release",
@@ -42,16 +46,9 @@ NOUN_EXPECTED_TYPE = {
     "versions": "master",
 }
 
-GET_NOUNS = [
-    "artist",
-    "label",
-    "master",
-    "price",
-    "release",
-    "releases",
-    "tracklist",
-    "versions",
-]
+NOUN_ALIASES = {"ids": "identifiers"}
+
+GET_NOUNS = [*NOUN_EXPECTED_TYPE, *NOUN_ALIASES]
 
 
 def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
@@ -77,10 +74,12 @@ def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
         if noun == "versions" and entity_type == "release":
             return entity_type, entity_id
 
-        article = "an" if expected[0] in "aeiou" else "a"
+        def _a(word: str) -> str:
+            return f"an {word}" if word[0] in "aeiou" else f"a {word}"
+
         raise ValueError(
-            f"{ref_string} is a {entity_type}, not {article} {expected}. "
-            f"Use {article} {expected} ref or ID with 'get {noun}'."
+            f"{ref_string} is {_a(entity_type)}, not {_a(expected)}. "
+            f"Use {_a(expected)} ref or ID with 'get {noun}'."
         )
 
     return entity_type, entity_id
@@ -92,6 +91,22 @@ def _get_artist(client: Discogs, entity_id: int, *, json_output: bool) -> None:
         dump_entity(artist)
     else:
         print(format_artist(artist))
+
+
+def _get_credits(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+    release = client.releases.get(entity_id)
+    if json_output:
+        dump_list("credits", getattr(release, "extra_artists", None) or [])
+    else:
+        print(format_credits(release))
+
+
+def _get_identifiers(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+    release = client.releases.get(entity_id)
+    if json_output:
+        dump_list("identifiers", getattr(release, "identifiers", None) or [])
+    else:
+        print(format_identifiers(release))
 
 
 def _get_label(client: Discogs, entity_id: int, *, json_output: bool) -> None:
@@ -337,6 +352,10 @@ def _dispatch(
 
         if noun == "artist":
             _get_artist(client, entity_id, json_output=json_output)
+        elif noun == "credits":
+            _get_credits(client, entity_id, json_output=json_output)
+        elif noun == "identifiers":
+            _get_identifiers(client, entity_id, json_output=json_output)
         elif noun == "master":
             _get_master(client, entity_id, json_output=json_output)
         elif noun == "label":
@@ -415,12 +434,12 @@ def get(
 ) -> None:
     """Get entity details.
 
-    NOUN is the entity type: artist, label, master, price, release, releases,
-    tracklist, versions.
+    NOUN is the entity type: artist, credits, identifiers (alias: ids), label,
+    master, price, release, releases, tracklist, versions.
     REF is a typed ref (@r123, @a456) or raw Discogs ID.
     """
     _dispatch(
-        noun,
+        NOUN_ALIASES.get(noun, noun),
         ref,
         page=page,
         after=after,

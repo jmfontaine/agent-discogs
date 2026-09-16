@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from agent_discogs.pagination import MAX_API_CALLS
@@ -30,18 +31,21 @@ def _footer(next_page_cmd: str | None, *, capped: bool) -> list[str]:
     return ["", f"{label}: {next_page_cmd}"]
 
 
-def _artist_string(artists: list[Any] | None, *, verbose: bool = False) -> str:
-    """Join artist credits into a display string."""
+def _artist_string(artists: list[Any] | None) -> str:
+    """Join artist credits into a display string, each with its ref.
+
+    Refs are always shown: the artist is the most common next hop from a
+    release, and `[@a3857]` costs three tokens.
+    """
     if not artists:
         return "Unknown Artist"
     parts = []
     for a in artists:
         name = getattr(a, "name", None) or "Unknown"
         parts.append(name)
-        if verbose:
-            artist_id = getattr(a, "id", None)
-            if artist_id is not None:
-                parts.append(f"[{make_ref('artist', artist_id)}]")
+        artist_id = getattr(a, "id", None)
+        if artist_id is not None:
+            parts.append(f"[{make_ref('artist', artist_id)}]")
         join = getattr(a, "join", None)
         if join:
             parts.append(join)
@@ -62,31 +66,82 @@ def _format_string(formats: list[Any] | None) -> str:
     return ", ".join(parts)
 
 
-def _label_string(labels: list[Any] | None, *, verbose: bool = False) -> str:
-    """First label name and catalog number."""
+def _label_string(labels: list[Any] | None) -> str:
+    """First label name with its ref and catalog number."""
     if not labels:
         return ""
     lbl = labels[0]
     name = getattr(lbl, "name", None) or ""
     ref_suffix = ""
-    if verbose:
-        label_id = getattr(lbl, "id", None)
-        if label_id is not None:
-            ref_suffix = f" [{make_ref('label', label_id)}]"
+    label_id = getattr(lbl, "id", None)
+    if label_id is not None:
+        ref_suffix = f" [{make_ref('label', label_id)}]"
     if catno := getattr(lbl, "catalog_number", None) or "":
         return f"{name}{ref_suffix} ({catno})"
     return f"{name}{ref_suffix}"
 
 
-def _track_artist_prefix(track: Any, *, verbose: bool = False) -> str:
+_ROLE_SPLIT = re.compile(r",\s*(?![^\[]*\])")  # commas outside [bracketed] notes
+
+
+def format_credits(release: Any) -> str:
+    """Release credits grouped by role, each person with an artist ref.
+
+    Discogs stores one entry per person with a comma-joined role string such
+    as `Producer [Production], Written-By`; we invert that so an agent asking
+    "who produced this?" reads one line.
+    """
+    ref = make_ref("release", release.id)
+    entries = getattr(release, "extra_artists", None) or []
+    lines = [f'Credits: {ref} "{release.title}" ({len(entries)})', ""]
+    if not entries:
+        lines.append("  (no credits listed)")
+        return "\n".join(lines)
+
+    by_role: dict[str, list[str]] = {}
+    for credit in entries:
+        name = getattr(credit, "name", None) or "Unknown"
+        artist_id = getattr(credit, "id", None)
+        tag = f" [{make_ref('artist', artist_id)}]" if artist_id else ""
+        tracks = getattr(credit, "tracks", None) or ""
+        scope = f" ({tracks})" if tracks else ""
+        for role in _ROLE_SPLIT.split(getattr(credit, "role", None) or ""):
+            by_role.setdefault(role.strip() or "Other", []).append(
+                f"{name}{tag}{scope}"
+            )
+    lines.extend(
+        f"{role}: {', '.join(names)}" for role, names in sorted(by_role.items())
+    )
+    return "\n".join(lines)
+
+
+def format_identifiers(release: Any) -> str:
+    """Barcodes, matrix/runout, and other identifiers: what tells pressings apart."""
+    ref = make_ref("release", release.id)
+    identifiers = getattr(release, "identifiers", None) or []
+    lines = [f'Identifiers: {ref} "{release.title}"', ""]
+    if not identifiers:
+        lines.append("  (no identifiers listed)")
+        return "\n".join(lines)
+    for ident in identifiers:
+        desc = getattr(ident, "description", None)
+        suffix = f" ({desc})" if desc else ""
+        lines.append(
+            f"{getattr(ident, 'type', None) or 'Other'}: "
+            f"{getattr(ident, 'value', None) or ''}{suffix}"
+        )
+    return "\n".join(lines)
+
+
+def _track_artist_prefix(track: Any) -> str:
     """Return 'Artist - ' prefix for a track, or '' if no track-level artists."""
     artists = getattr(track, "artists", None)
     if not artists:
         return ""
-    return _artist_string(artists, verbose=verbose) + " - "
+    return _artist_string(artists) + " - "
 
 
-def _format_track_lines(tracklist: list[Any], *, verbose: bool = False) -> list[str]:
+def _format_track_lines(tracklist: list[Any]) -> list[str]:
     """Format a tracklist into display lines with optional per-track artists."""
     lines: list[str] = []
     for track in tracklist:
@@ -97,7 +152,7 @@ def _format_track_lines(tracklist: list[Any], *, verbose: bool = False) -> list[
         if type_ == "heading":
             lines.append(f"  {title}")
             continue
-        artist_prefix = _track_artist_prefix(track, verbose=verbose)
+        artist_prefix = _track_artist_prefix(track)
         dur_str = f" ({dur})" if dur else ""
         if pos:
             lines.append(f"  {pos}. {artist_prefix}{title}{dur_str}")
@@ -410,21 +465,34 @@ def format_price_guide(
 
 
 def format_release(release: Any, *, verbose: bool = False) -> str:
-    """Format a full release detail view."""
+    """Format a full release detail view.
+
+    `verbose` appends notes, credits, and identifiers: the facets that matter
+    when identifying a pressing or asking who worked on it.
+    """
     ref = make_ref("release", release.id)
-    artists = _artist_string(getattr(release, "artists", None), verbose=verbose)
+    artists = _artist_string(getattr(release, "artists", None))
     year = getattr(release, "year", None) or ""
     year_str = f" ({year})" if year else ""
 
     lines = [f'{ref} [release] "{release.title}" by {artists}{year_str}']
 
-    label = _label_string(getattr(release, "labels", None), verbose=verbose)
+    label = _label_string(getattr(release, "labels", None))
     if label:
         lines.append(f"Label: {label}")
 
     fmt = _format_string(getattr(release, "formats", None))
     if fmt:
         lines.append(f"Format: {fmt}")
+
+    country = getattr(release, "country", None)
+    released = getattr(release, "released", None)
+    # `released` repeats the header year unless it carries a month/day.
+    origin = [f"Country: {country}" if country else ""]
+    if released and released != str(year):
+        origin.append(f"Released: {released}")
+    if any(origin):
+        lines.append(" · ".join(p for p in origin if p))
 
     genres = getattr(release, "genres", None)
     if genres:
@@ -462,17 +530,20 @@ def format_release(release: Any, *, verbose: bool = False) -> str:
         lines.append(f"Master: {master_ref}")
 
     if verbose:
-        notes = getattr(release, "notes", None)
+        notes = (getattr(release, "notes", None) or "").strip()
         if notes:
-            notes = notes.strip()
-            if notes:
-                lines.append(f"Notes: {notes}")
+            lines.append(f"Notes: {notes}")
 
     tracklist = getattr(release, "tracklist", None)
     if tracklist:
         lines.append("")
         lines.append("Tracklist:")
-        lines.extend(_format_track_lines(tracklist, verbose=verbose))
+        lines.extend(_format_track_lines(tracklist))
+
+    if verbose:
+        for section in (format_credits(release), format_identifiers(release)):
+            lines.append("")
+            lines.extend(section.split("\n"))
 
     return "\n".join(lines)
 

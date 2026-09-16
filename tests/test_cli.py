@@ -741,6 +741,42 @@ class TestGetCommand:
         assert "Price Guide:" in result.output
         assert "$100.00" in result.output
 
+    def test_get_credits(self) -> None:
+        release = _fake(
+            id=847868,
+            title="The Downward Spiral",
+            extra_artists=[
+                _fake(id=20661, name="Flood", role="Producer [Production]", tracks="")
+            ],
+        )
+        self._set_client(_fake_client(releases_get=lambda _id: release))
+        result = CliRunner().invoke(cli, ["get", "credits", "@r847868"])
+        assert result.exit_code == 0
+        assert 'Credits: @r847868 "The Downward Spiral" (1)' in result.output
+        assert "Producer [Production]: Flood [@a20661]" in result.output
+
+    def test_get_identifiers_and_ids_alias(self) -> None:
+        release = _fake(
+            id=847868,
+            title="The Downward Spiral",
+            identifiers=[
+                _fake(type="Barcode", value="765449234620", description="Scanned")
+            ],
+        )
+        self._set_client(_fake_client(releases_get=lambda _id: release))
+        full = CliRunner().invoke(cli, ["get", "identifiers", "@r847868"])
+        alias = CliRunner().invoke(cli, ["get", "ids", "@r847868"])
+        assert full.exit_code == 0
+        assert "Barcode: 765449234620 (Scanned)" in full.output
+        assert alias.output == full.output
+
+    def test_get_credits_rejects_non_release_ref(self) -> None:
+        self._set_client(_fake_client())
+        result = CliRunner().invoke(cli, ["get", "credits", "@a3857"])
+        assert result.exit_code == 1
+        assert "@a3857 is an artist, not a release" in result.output
+        assert "Use a release ref or ID with 'get credits'" in result.output
+
     def test_get_tracklist(self) -> None:
         track = _fake(
             position="A1", title="Mr. Self Destruct", duration="4:09", type_=None
@@ -1405,6 +1441,28 @@ class TestJsonGet:
         data = json.loads(result.output)
         assert isinstance(data["tracklist"], list)
         assert data["tracklist"][0]["title"] == "Track One"
+
+    def test_get_credits_and_identifiers_json(self) -> None:
+        credit = _fake_model(id=20661, name="Flood", role="Producer", tracks="")
+        ident = _fake_model(type="Barcode", value="765449234620", description=None)
+        release = _fake(id=123, extra_artists=[credit], identifiers=[ident])
+        self._set_client(_fake_client(releases_get=lambda _id: release))
+
+        data = json.loads(
+            CliRunner().invoke(cli, ["get", "--json", "credits", "@r123"]).output
+        )
+        assert data == {"credits": [credit.model_dump()]}
+        data = json.loads(
+            CliRunner().invoke(cli, ["get", "--json", "ids", "@r123"]).output
+        )
+        assert data == {"identifiers": [ident.model_dump()]}
+
+        empty = _fake(id=123, extra_artists=None, identifiers=None)
+        self._set_client(_fake_client(releases_get=lambda _id: empty))
+        data = json.loads(
+            CliRunner().invoke(cli, ["get", "--json", "credits", "@r123"]).output
+        )
+        assert data == {"credits": []}
 
     def test_get_price_json(self) -> None:
         price_suggestions = _fake_model(conditions={"Mint (M)": {"value": 100.0}})

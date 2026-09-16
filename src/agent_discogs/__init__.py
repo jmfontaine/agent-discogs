@@ -36,7 +36,8 @@ Commands:
   status                      Show session and auth info
 
 Search Types:  artist, label, master, release
-Get Nouns:     artist, label, master, price, release, releases, tracklist, versions
+Get Nouns:     artist, credits, identifiers (ids), label, master, price, release,
+               releases, tracklist, versions
 
 Refs:
   Search results return typed refs: @a3857 (artist), @r847868 (release),
@@ -49,7 +50,7 @@ Options:
   --after CURSOR   Continue a client-side filtered list; copy from Next page /
                    Continue scan (search with --release-type official|unofficial,
                    get releases --role)
-  -v, --verbose    Show additional details (get release)
+  -v, --verbose    get release: also print notes, credits, identifiers
   --version        Show version and exit
   --help           Show this message and exit
 

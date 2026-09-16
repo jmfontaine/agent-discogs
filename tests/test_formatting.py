@@ -8,6 +8,8 @@ from typing import cast
 from agent_discogs.formatting import (
     format_artist,
     format_artist_releases,
+    format_credits,
+    format_identifiers,
     format_label,
     format_master,
     format_master_versions,
@@ -583,9 +585,10 @@ class TestFormatReleaseVerbose:
         output = format_release(release, verbose=True)
         assert "Notes:" not in output
 
-    def test_verbose_includes_artist_refs(self) -> None:
+    def test_refs_are_always_inline(self) -> None:
+        """Artist, label, and per-track artist refs never need --verbose."""
         artist = _fake(id=3857, name="Nine Inch Nails", join=None)
-        label = _fake(id=33244, name="Rhino Records (2)", catalog_number="R2 75933")
+        label = _fake(id=647, name="Nothing Records", catalog_number="92346-2")
         track = _fake(
             position="1",
             title="Hamburger Lady",
@@ -594,37 +597,7 @@ class TestFormatReleaseVerbose:
             artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
         )
         release = _fake(
-            id=367113,
-            title="The Downward Spiral",
-            year=1994,
-            artists=[artist],
-            community=None,
-            labels=[label],
-            formats=None,
-            genres=None,
-            styles=None,
-            num_for_sale=None,
-            lowest_price=None,
-            master_id=None,
-            tracklist=[track],
-        )
-        output = format_release(release, verbose=True)
-        assert "Nine Inch Nails [@a3857]" in output
-        assert "Rhino Records (2) [@l33244] (R2 75933)" in output
-        assert "Throbbing Gristle [@a12589] - Hamburger Lady" in output
-
-    def test_non_verbose_excludes_refs(self) -> None:
-        artist = _fake(id=3857, name="Nine Inch Nails", join=None)
-        label = _fake(id=33244, name="Rhino Records (2)", catalog_number="R2 75933")
-        track = _fake(
-            position="1",
-            title="Hamburger Lady",
-            duration="4:12",
-            type_=None,
-            artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
-        )
-        release = _fake(
-            id=367113,
+            id=847868,
             title="The Downward Spiral",
             year=1994,
             artists=[artist],
@@ -639,8 +612,151 @@ class TestFormatReleaseVerbose:
             tracklist=[track],
         )
         output = format_release(release)
-        assert "[@a" not in output
-        assert "[@l" not in output
+        assert "Nine Inch Nails [@a3857]" in output
+        assert "Nothing Records [@l647] (92346-2)" in output
+        assert "Throbbing Gristle [@a12589] - Hamburger Lady" in output
+
+    def test_verbose_appends_credits_and_identifiers_after_tracklist(self) -> None:
+        release = _fake(
+            id=847868,
+            title="The Downward Spiral",
+            year=1994,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            notes="Slipcase.",
+            tracklist=[_fake(position="1", title="A", duration="", type_=None)],
+            extra_artists=[_fake(id=20661, name="Flood", role="Producer", tracks="")],
+            identifiers=[
+                _fake(type="Barcode", value="765449234620", description="Scanned")
+            ],
+        )
+        plain = format_release(release)
+        assert "Credits:" not in plain
+        assert "Identifiers:" not in plain
+
+        output = format_release(release, verbose=True)
+        order = [
+            output.index("Notes: Slipcase."),
+            output.index("Tracklist:"),
+            output.index('Credits: @r847868 "The Downward Spiral" (1)'),
+            output.index("Producer: Flood [@a20661]"),
+            output.index('Identifiers: @r847868 "The Downward Spiral"'),
+            output.index("Barcode: 765449234620 (Scanned)"),
+        ]
+        assert order == sorted(order)
+
+
+class TestFormatReleaseOrigin:
+    def _release(self, **kw: object) -> SimpleNamespace:
+        base: dict[str, object] = {
+            "id": 1,
+            "title": "X",
+            "year": 1994,
+            "artists": None,
+            "community": None,
+            "labels": None,
+            "formats": None,
+            "genres": None,
+            "styles": None,
+            "num_for_sale": None,
+            "lowest_price": None,
+            "master_id": None,
+            "tracklist": None,
+        }
+        return _fake(**{**base, **kw})
+
+    def test_country_and_full_date(self) -> None:
+        output = format_release(self._release(country="US", released="1994-03-08"))
+        assert "Country: US · Released: 1994-03-08" in output
+
+    def test_released_equal_to_year_is_not_repeated(self) -> None:
+        output = format_release(self._release(country="US", released="1994"))
+        assert "Country: US" in output
+        assert "Released:" not in output
+
+    def test_date_without_country(self) -> None:
+        output = format_release(self._release(released="1994-03-08"))
+        assert "Released: 1994-03-08" in output
+        assert "Country:" not in output
+
+    def test_neither(self) -> None:
+        output = format_release(self._release())
+        assert "Country:" not in output
+        assert "Released:" not in output
+
+
+class TestFormatCredits:
+    def test_groups_by_role_splitting_outside_brackets(self) -> None:
+        release = _fake(
+            id=847868,
+            title="The Downward Spiral",
+            extra_artists=[
+                _fake(
+                    id=27457,
+                    name="Trent Reznor",
+                    role="Written-By, Producer [Production]",
+                    tracks="",
+                ),
+                _fake(
+                    id=20661,
+                    name="Flood",
+                    role="Producer [Production]",
+                    tracks="1, 2, 5 to 7",
+                ),
+                _fake(
+                    id=2768,
+                    name="Alan Moulder",
+                    role="Engineer [Mixing, Additional]",
+                    tracks="",
+                ),
+                _fake(id=None, name="Unknown Tech", role="", tracks=""),
+            ],
+        )
+        output = format_credits(release)
+        assert output.startswith('Credits: @r847868 "The Downward Spiral" (4)\n')
+        assert "Engineer [Mixing, Additional]: Alan Moulder [@a2768]" in output
+        assert "Other: Unknown Tech" in output
+        assert (
+            "Producer [Production]: Trent Reznor [@a27457], "
+            "Flood [@a20661] (1, 2, 5 to 7)"
+        ) in output
+        assert "Written-By: Trent Reznor [@a27457]" in output
+
+    def test_no_credits(self) -> None:
+        output = format_credits(_fake(id=1, title="X", extra_artists=None))
+        assert "(0)" in output
+        assert "(no credits listed)" in output
+
+
+class TestFormatIdentifiers:
+    def test_lists_type_value_description(self) -> None:
+        release = _fake(
+            id=847868,
+            title="The Downward Spiral",
+            identifiers=[
+                _fake(type="Barcode", value="765449234620", description="Scanned"),
+                _fake(
+                    type="Matrix / Runout", value="3 92346-2 SRC**01", description=None
+                ),
+                _fake(type=None, value="LC 0120", description="Back cover"),
+            ],
+        )
+        output = format_identifiers(release)
+        assert output.startswith('Identifiers: @r847868 "The Downward Spiral"\n')
+        assert "Barcode: 765449234620 (Scanned)" in output
+        assert "Matrix / Runout: 3 92346-2 SRC**01\n" in output
+        assert "Other: LC 0120 (Back cover)" in output
+
+    def test_no_identifiers(self) -> None:
+        output = format_identifiers(_fake(id=1, title="X", identifiers=[]))
+        assert "(no identifiers listed)" in output
 
 
 class TestFormatArtistEdgeCases:

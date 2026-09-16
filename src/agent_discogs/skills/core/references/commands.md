@@ -73,10 +73,12 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 | Noun | Expected Ref Type | Description |
 |------|-------------------|-------------|
 | `artist` | `@a` or numeric ID | Artist profile |
+| `credits` | `@r` or numeric ID | Credits grouped by role, each person with an artist ref and track scope |
+| `identifiers` (alias `ids`) | `@r` or numeric ID | Barcodes, matrix/runout, label codes, rights societies |
 | `label` | `@l` or numeric ID | Label profile |
 | `master` | `@m` or numeric ID | Master release details |
 | `price` | `@r` or numeric ID | Marketplace pricing (requires auth *and* seller settings on the token's account) |
-| `release` | `@r` or numeric ID | Full release details with tracklist |
+| `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, tracklist |
 | `releases` | `@a` or numeric ID | Artist discography (paginated) |
 | `tracklist` | `@r` or numeric ID | Tracklist only (from a release) |
 | `versions` | `@m` or numeric ID | Master release versions (paginated) |
@@ -89,7 +91,7 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 | `--limit` | Results per page (default: 5) |
 | `--page` | Page number (server-side pages: `versions`, `releases` without `--role`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` only) |
-| `-v, --verbose` | Show additional details: release notes, inline entity refs (`[@a...]`, `[@l...]`) for artists and labels |
+| `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 
 **Additional flags for `releases`:**
 
@@ -117,6 +119,9 @@ agent-discogs get master @m3719
 agent-discogs get label @l647
 agent-discogs get tracklist @r847868
 agent-discogs get price @r847868
+agent-discogs get credits @r847868
+agent-discogs get identifiers @r847868
+agent-discogs get ids @r847868
 agent-discogs get releases @a3857
 agent-discogs get releases @a3857 --page 2 --limit 10
 agent-discogs get releases @a3857 --role Remix

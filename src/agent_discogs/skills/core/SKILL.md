@@ -47,8 +47,10 @@ Check status: `agent-discogs status`
 ## Output Format
 
 - **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches.
-- **get release** — title, artists, label, format, community stats, market summary, master ref, full tracklist. Adds ref.
-- **get release --verbose** — full details including inline `[@a...]` and `[@l...]` refs for chaining.
+- **get release** — title, artists `[@a...]`, label `[@l...]` + catalog number, format, country, release date, community stats, market summary, master ref, full tracklist. Refs are always inline.
+- **get release --verbose** — the above plus notes, credits, and identifiers.
+- **get credits** — who did what, grouped by role (Producer, Engineer, Mastered By, ...), each person with an `[@a...]` ref and the tracks they worked on.
+- **get identifiers** (alias `ids`) — barcodes, matrix/runout etchings, label codes, rights societies. This is what distinguishes pressings that share a catalog number.
 - **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
 - **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats.
 - **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`.
@@ -68,8 +70,10 @@ Check status: `agent-discogs status`
 | Find by barcode | `search release --barcode "606949235024"` |
 | Get original pressing | `search master "<title>"` → `get versions @m...` → `get release @r...` |
 | Narrow release search | `search release "<title>" --artist "<name>"` |
-| Get release notes | `get release @r... --verbose` |
-| Get artist/label IDs from a release | `get release @r... --verbose` — inline `[@a...]` and `[@l...]` refs |
+| Get release notes / credits / identifiers together | `get release @r... --verbose` |
+| Who produced / engineered / played on this? | `get credits @r...` → follow a `[@a...]` into `get releases @a...` |
+| Identify the disc in hand (same catno, several pressings) | `get identifiers @r...` for each candidate and compare Matrix / Runout |
+| Get artist/label refs from a release | `get release @r...` — `[@a...]` and `[@l...]` are always inline |
 | VA compilation tracks | `get release @r...` — per-track artists shown automatically |
 | Machine-readable output | Add `--json` to `search`, `get`, `tracks`, or `price` |
 
@@ -104,7 +108,7 @@ agent-discogs get release @r20755 --json
 
 Refs encode entity type and Discogs ID: `@a3857` (artist), `@r847868` (release), `@m3719` (master), `@l647` (label). Raw numeric IDs also work.
 
-**Ref chaining:** `get release @r... --verbose` embeds inline `[@a...]` and `[@l...]` refs in the output. Use these to chain into artist discographies or label catalogs without an extra search.
+**Ref chaining:** `get release` embeds `[@a...]` for its artists and `[@l...]` for its label; `get credits` embeds `[@a...]` per person. Copy them into `get releases @a...` or `get label @l...` without a search.
 
 ## Key Concepts
 

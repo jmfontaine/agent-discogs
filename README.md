@@ -88,9 +88,11 @@ agent-discogs get versions @m3719 --country US --format Vinyl
 agent-discogs get price @r352665
 ```
 
-Nouns: `artist`, `label`, `master`, `price`, `release`, `releases`, `tracklist`, `versions`.
+Nouns: `artist`, `credits`, `identifiers` (alias `ids`), `label`, `master`, `price`, `release`, `releases`, `tracklist`, `versions`.
 
-Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`; `releases --role` filters client-side and continues via the printed `--after` cursor instead. Versions also accept `--country`, `--format`, and `--label` filters. Use `-v, --verbose` with `release` to include release notes and inline entity refs (`[@a...]`, `[@l...]`). Use `--json` for raw JSON output.
+`release` output carries inline refs for its artists and label (`[@a...]`, `[@l...]`), plus country and release date. `credits` lists who did what on a release, grouped by role, each person with an artist ref. `identifiers` lists barcodes, matrix/runout etchings, and other codes: the data that tells two pressings with the same catalog number apart. `-v, --verbose` on `release` appends notes, credits, and identifiers in one call.
+
+Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`; `releases --role` filters client-side and continues via the printed `--after` cursor instead. Versions also accept `--country`, `--format`, and `--label` filters. Use `--json` for raw JSON output.
 
 ### tracks / price
 
