@@ -94,6 +94,7 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 | `--page` | Page number (server-side pages: `versions`, `releases` without `--role`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` only) |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
+| `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
 
 **Additional flags for `releases`:**
 

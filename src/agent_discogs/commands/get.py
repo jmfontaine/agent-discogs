@@ -167,12 +167,16 @@ def _get_price(client: Discogs, entity_id: int, mode: Mode) -> None:
         print(format_price_guide(release, price_suggestions, marketplace_stats))
 
 
-def _get_release(client: Discogs, entity_id: int, *, verbose: bool, mode: Mode) -> None:
+def _get_release(
+    client: Discogs, entity_id: int, *, verbose: bool, compact: bool, mode: Mode
+) -> None:
     release = client.releases.get(entity_id)
     if mode.json:
-        mode.emit_entity(release, lambda r: project_release(r, verbose=verbose))
+        mode.emit_entity(
+            release, lambda r: project_release(r, verbose=verbose, compact=compact)
+        )
     else:
-        print(format_release(release, verbose=verbose))
+        print(format_release(release, verbose=verbose, compact=compact))
 
 
 def _get_releases(
@@ -372,6 +376,7 @@ def _dispatch(
     label: str | None,
     role: str | None,
     verbose: bool,
+    compact: bool,
     mode: Mode,
 ) -> None:
     """Shared dispatch logic for get, tracks, and price commands."""
@@ -396,7 +401,7 @@ def _dispatch(
         elif noun == "price":
             _get_price(client, entity_id, mode)
         elif noun == "release":
-            _get_release(client, entity_id, verbose=verbose, mode=mode)
+            _get_release(client, entity_id, verbose=verbose, compact=compact, mode=mode)
         elif noun == "releases":
             _get_releases(
                 client,
@@ -458,6 +463,13 @@ def _json_options(command: Any) -> Any:
     "--after",
     help="Continuation cursor copied from a previous Next page / Continue scan line",
 )
+@click.option(
+    "-c",
+    "--compact",
+    is_flag=True,
+    default=False,
+    help="release: replace the tracklist with a one-line Tracks: summary",
+)
 @click.option("--country", help="Filter versions by country")
 @click.option("--format", "format_", help="Filter versions by format")
 @_json_options
@@ -478,6 +490,7 @@ def get(
     json_output: bool,
     full: bool,
     after: str | None,
+    compact: bool,
     country: str | None,
     format_: str | None,
     label: str | None,
@@ -503,6 +516,7 @@ def get(
         label=label,
         role=role,
         verbose=verbose,
+        compact=compact,
         mode=_mode(json_output, full),
     )
 
@@ -519,6 +533,7 @@ def _shortcut(noun: str, ref: str, json_output: bool, full: bool) -> None:
         label=None,
         role=None,
         verbose=False,
+        compact=False,
         mode=_mode(json_output, full),
     )
 

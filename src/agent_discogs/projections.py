@@ -17,6 +17,7 @@ from agent_discogs.formatting import (
     _truncate,
     _urls_short,
     credits_by_role,
+    track_summary,
 )
 from agent_discogs.refs import make_ref
 
@@ -79,10 +80,13 @@ def project_search_result(r: Any) -> dict[str, Any]:
     )
 
 
-def project_release(rel: Any, *, verbose: bool = False) -> dict[str, Any]:
+def project_release(
+    rel: Any, *, verbose: bool = False, compact: bool = False
+) -> dict[str, Any]:
     community = getattr(rel, "community", None)
     rating = getattr(community, "rating", None)
     master_id = getattr(rel, "master_id", None)
+    tracklist = getattr(rel, "tracklist", None) or []
     data = {
         "ref": make_ref("release", rel.id),
         "title": rel.title,
@@ -112,8 +116,12 @@ def project_release(rel: Any, *, verbose: bool = False) -> dict[str, Any]:
             "for_sale": getattr(rel, "num_for_sale", None),
             "lowest": getattr(rel, "lowest_price", None),
         },
-        "tracklist": _tracks(getattr(rel, "tracklist", None)),
     }
+    if compact and tracklist:
+        # Same one-line summary the text view prints as `Tracks:`.
+        data["tracks"] = track_summary(tracklist)
+    elif not compact:
+        data["tracklist"] = _tracks(tracklist)
     if verbose:
         # Same facets the text view adds under -v: notes, credits, identifiers.
         data["notes"] = (getattr(rel, "notes", None) or "").strip()

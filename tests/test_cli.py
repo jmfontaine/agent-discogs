@@ -942,6 +942,43 @@ class TestGetCommand:
         assert result.exit_code == 0
         assert "Notes:" not in result.output
 
+    def test_get_release_compact_text_and_json(self) -> None:
+        release = _fake_model(
+            id=847868,
+            title="The Downward Spiral",
+            year=1994,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=None,
+            tracklist=[
+                _fake(
+                    position="1", title="A", duration="4:30", type_=None, artists=None
+                ),
+                _fake(
+                    position="2", title="B", duration="4:24", type_=None, artists=None
+                ),
+            ],
+        )
+        self._set_client(_fake_client(releases_get=lambda _id: release))
+        text = CliRunner().invoke(cli, ["get", "release", "@r847868", "-c"])
+        assert text.exit_code == 0
+        assert "Tracks: 2 (8:54)" in text.output
+        assert "Tracklist:" not in text.output
+
+        data = json.loads(
+            CliRunner()
+            .invoke(cli, ["get", "release", "@r847868", "-c", "--json"])
+            .output
+        )
+        assert data["tracks"] == "2 (8:54)"
+        assert "tracklist" not in data
+
     def test_get_with_raw_id(self) -> None:
         release = _fake(
             id=367113,

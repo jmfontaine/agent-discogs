@@ -49,6 +49,7 @@ Check status: `agent-discogs status`
 - **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches.
 - **get release** — title, artists `[@a...]`, label `[@l...]` + catalog number, format, country, release date, community stats, market summary, master ref, full tracklist. Refs are always inline.
 - **get release --verbose** — the above plus notes, credits, and identifiers.
+- **get release --compact** — the above with the tracklist collapsed to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). Combine with `-v` to compare pressings without paying for tracklists.
 - **get credits** — who did what, grouped by role (Producer, Engineer, Mastered By, ...), each person with an `[@a...]` ref and the tracks they worked on.
 - **get identifiers** (alias `ids`) — barcodes, matrix/runout etchings, label codes, rights societies. This is what distinguishes pressings that share a catalog number.
 - **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
@@ -71,6 +72,7 @@ Check status: `agent-discogs status`
 | Get original pressing | `search master "<title>"` → `get versions @m...` → `get release @r...` |
 | Narrow release search | `search release "<title>" --artist "<name>"` |
 | Get release notes / credits / identifiers together | `get release @r... --verbose` |
+| Compare several pressings cheaply | `get release @r... -c` per candidate; `tracks @r...` only when the tracklist matters |
 | Who produced / engineered / played on this? | `get credits @r...` → follow a `[@a...]` into `get releases @a...` |
 | Identify the disc in hand (same catno, several pressings) | `get identifiers @r...` for each candidate and compare Matrix / Runout |
 | Get artist/label refs from a release | `get release @r...` — `[@a...]` and `[@l...]` are always inline |

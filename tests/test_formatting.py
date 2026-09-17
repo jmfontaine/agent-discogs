@@ -18,6 +18,7 @@ from agent_discogs.formatting import (
     format_search_results,
     format_status,
     format_tracklist,
+    track_summary,
 )
 
 
@@ -651,6 +652,95 @@ class TestFormatReleaseVerbose:
             output.index("Barcode: 765449234620 (Scanned)"),
         ]
         assert order == sorted(order)
+
+
+class TestTrackSummary:
+    def test_counts_tracks_and_sums_durations_past_an_hour(self) -> None:
+        tracks = [
+            _fake(position="1", title="A", duration="30:00", type_=None),
+            _fake(position="", title="Side B", duration="", type_="heading"),
+            _fake(position="2", title="B", duration="35:01", type_=None),
+        ]
+        assert track_summary(tracks) == "2 (65:01)"
+
+    def test_any_unknown_duration_drops_the_total(self) -> None:
+        """A partial sum would read as the release running time; count only."""
+        tracks = [
+            _fake(position="1", title="A", duration="4:30", type_=None),
+            _fake(position="2", title="B", duration="", type_=None),
+            _fake(position="3", title="C", duration="?", type_=None),
+        ]
+        assert track_summary(tracks) == "3"
+
+    def test_hours_minutes_seconds_durations(self) -> None:
+        tracks = [
+            _fake(position="1", title="A", duration="1:02:03", type_=None),
+            _fake(position="2", title="B", duration="0:57", type_=None),
+        ]
+        assert track_summary(tracks) == "2 (63:00)"
+
+    def test_no_known_durations_gives_count_only(self) -> None:
+        tracks = [_fake(position="1", title="A", duration=None, type_=None)]
+        assert track_summary(tracks) == "1"
+
+    def test_headings_only(self) -> None:
+        assert (
+            track_summary([_fake(title="Side A", duration="", type_="heading")]) == "0"
+        )
+
+
+class TestFormatReleaseCompact:
+    def _release(self, tracklist: list[SimpleNamespace] | None) -> SimpleNamespace:
+        return _fake(
+            id=847868,
+            title="The Downward Spiral",
+            year=1994,
+            artists=None,
+            community=None,
+            labels=None,
+            formats=None,
+            genres=None,
+            styles=None,
+            num_for_sale=None,
+            lowest_price=None,
+            master_id=3719,
+            notes="Slipcase.",
+            tracklist=tracklist,
+            extra_artists=[_fake(id=20661, name="Flood", role="Producer", tracks="")],
+            identifiers=None,
+        )
+
+    def test_compact_replaces_tracklist_with_summary(self) -> None:
+        release = self._release(
+            [
+                _fake(
+                    position="1", title="Mr. Self Destruct", duration="4:30", type_=None
+                ),
+                _fake(position="2", title="Piggy", duration="4:24", type_=None),
+            ]
+        )
+        output = format_release(release, compact=True)
+        assert "Master: @m3719\nTracks: 2 (8:54)" in output
+        assert "Tracklist:" not in output
+        assert "Mr. Self Destruct" not in output
+
+    def test_compact_with_verbose_keeps_facets(self) -> None:
+        release = self._release(
+            [_fake(position="1", title="A", duration="1:00", type_=None)]
+        )
+        output = format_release(release, compact=True, verbose=True)
+        order = [
+            output.index("Notes: Slipcase."),
+            output.index("Tracks: 1 (1:00)"),
+            output.index("Credits:"),
+            output.index("Producer: Flood [@a20661]"),
+        ]
+        assert order == sorted(order)
+
+    def test_compact_without_tracklist_prints_nothing_extra(self) -> None:
+        output = format_release(self._release(None), compact=True)
+        assert "Tracks:" not in output
+        assert "Tracklist:" not in output
 
 
 class TestFormatReleaseOrigin:

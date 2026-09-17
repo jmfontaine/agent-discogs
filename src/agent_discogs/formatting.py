@@ -470,11 +470,40 @@ def format_price_guide(
     return "\n".join(lines)
 
 
-def format_release(release: Any, *, verbose: bool = False) -> str:
+def track_summary(tracklist: list[Any]) -> str:
+    """`14 (65:01)`: track count and summed duration, for compact views.
+
+    Headings are not counted. The total is shown only when every counted track
+    has a valid duration; a partial sum would read as the whole release's
+    running time, so a single blank duration drops it to the bare count.
+    """
+    tracks = [
+        t for t in tracklist if (getattr(t, "type_", None) or "track") != "heading"
+    ]
+    seconds = 0
+    for track in tracks:
+        parts = (getattr(track, "duration", None) or "").split(":")
+        if not all(p.isdigit() for p in parts):
+            return str(len(tracks))
+        track_seconds = 0
+        for part in parts:
+            track_seconds = track_seconds * 60 + int(part)
+        seconds += track_seconds
+    if not tracks:
+        return "0"
+    minutes, secs = divmod(seconds, 60)
+    return f"{len(tracks)} ({minutes}:{secs:02d})"
+
+
+def format_release(
+    release: Any, *, verbose: bool = False, compact: bool = False
+) -> str:
     """Format a full release detail view.
 
     `verbose` appends notes, credits, and identifiers: the facets that matter
-    when identifying a pressing or asking who worked on it.
+    when identifying a pressing or asking who worked on it. `compact` replaces
+    the tracklist with a one-line `Tracks:` summary; `tracks @r...` is the
+    dedicated tracklist view.
     """
     ref = make_ref("release", release.id)
     artists = _artist_string(getattr(release, "artists", None))
@@ -540,8 +569,10 @@ def format_release(release: Any, *, verbose: bool = False) -> str:
         if notes:
             lines.append(f"Notes: {notes}")
 
-    tracklist = getattr(release, "tracklist", None)
-    if tracklist:
+    tracklist = getattr(release, "tracklist", None) or []
+    if tracklist and compact:
+        lines.append(f"Tracks: {track_summary(tracklist)}")
+    elif tracklist:
         lines.append("")
         lines.append("Tracklist:")
         lines.extend(_format_track_lines(tracklist))
