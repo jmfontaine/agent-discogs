@@ -56,6 +56,7 @@ Check status: `agent-discogs status`
 - **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats.
 - **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`.
 - **get releases** — artist discography: ref, `[type]`, title, year, label, format, role.
+- **get artist** — profile, `Members:` and `Former:` each with `[@a...]` refs. **get label** — profile, `Parent:` and `Sub-labels:` with `[@l...]` refs.
 
 ## Common Patterns
 
@@ -114,7 +115,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 
 Refs encode entity type and Discogs ID: `@a3857` (artist), `@r847868` (release), `@m3719` (master), `@l647` (label). Raw numeric IDs also work.
 
-**Ref chaining:** `get release` embeds `[@a...]` for its artists and `[@l...]` for its label; `get credits` embeds `[@a...]` per person. Copy them into `get releases @a...` or `get label @l...` without a search.
+**Ref chaining:** every entity view embeds refs for the entities it names: `get release` shows `[@a...]` artists and `[@l...]` labels, `get credits` shows `[@a...]` per person, `get artist` shows `[@a...]` members, `get label` shows `[@l...]` parent and sub-labels. Copy them into `get releases`, `get label`, `get artist` without a search.
 
 ## Key Concepts
 

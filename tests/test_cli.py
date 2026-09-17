@@ -1768,8 +1768,8 @@ class TestJsonGet:
             "name": "Nine Inch Nails",
             "profile": "Industrial rock project.",
             "urls": "nin.com, twitter.com",
-            # active members only, matching the text view
             "members": [{"ref": "@a27457", "name": "Trent Reznor"}],
+            "former": [{"ref": "@a4237", "name": "Chris Vrenna"}],
         }
 
     def test_get_label_json_projection(self) -> None:
@@ -1788,7 +1788,7 @@ class TestJsonGet:
         assert data == {
             "ref": "@l647",
             "name": "Nothing Records",
-            # no parent: the text view does not show one (yet)
+            "parent": {"ref": "@l2311", "name": "Interscope Records"},
             "sub_labels": [{"ref": "@l561260", "name": "NIN"}],
         }
 

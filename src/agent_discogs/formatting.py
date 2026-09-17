@@ -277,15 +277,32 @@ def format_artist(artist: Any) -> str:
     if urls:
         lines.append(f"URLs: {urls}")
 
-    members = getattr(artist, "members", None)
-    if members:
-        member_names = [
-            getattr(m, "name", "Unknown") for m in members if getattr(m, "active", True)
-        ]
-        if member_names:
-            lines.append(f"Members: {', '.join(member_names)}")
+    members = getattr(artist, "members", None) or []
+    current = [m for m in members if getattr(m, "active", True)]
+    former = [m for m in members if not getattr(m, "active", True)]
+    if current:
+        lines.append(f"Members: {named_refs(current, 'artist')}")
+    if former:
+        lines.append(f"Former: {named_refs(former, 'artist')}")
 
     return "\n".join(lines)
+
+
+def field(obj: Any, name: str) -> Any:
+    """Attribute or dict key: the SDK leaves untyped API fields as raw dicts."""
+    if isinstance(obj, dict):
+        return obj.get(name)
+    return getattr(obj, name, None)
+
+
+def named_refs(items: list[Any], entity_type: str) -> str:
+    """`Name [@a123], Other [@a456]`: every navigable name carries its ref."""
+    parts = []
+    for item in items:
+        name = field(item, "name") or "Unknown"
+        item_id = field(item, "id")
+        parts.append(f"{name} [{make_ref(entity_type, item_id)}]" if item_id else name)
+    return ", ".join(parts)
 
 
 def format_artist_releases(
@@ -334,10 +351,13 @@ def format_label(label: Any) -> str:
     if urls:
         lines.append(f"URLs: {urls}")
 
+    parent = getattr(label, "parent_label", None)
+    if parent:
+        lines.append(f"Parent: {named_refs([parent], 'label')}")
+
     sub_labels = getattr(label, "sub_labels", None)
     if sub_labels:
-        names = [getattr(s, "name", "Unknown") for s in sub_labels]
-        lines.append(f"Sub-labels: {', '.join(names)}")
+        lines.append(f"Sub-labels: {named_refs(sub_labels, 'label')}")
 
     return "\n".join(lines)
 

@@ -17,6 +17,7 @@ from agent_discogs.formatting import (
     _truncate,
     _urls_short,
     credits_by_role,
+    field,
     track_summary,
 )
 from agent_discogs.refs import make_ref
@@ -192,40 +193,46 @@ def project_price(release: Any, suggestions: Any, stats: Any) -> dict[str, Any]:
     )
 
 
+def _refs_of(items: list[Any], entity_type: str) -> list[dict[str, Any]]:
+    """`[{ref, name}]` for members, sub-labels, and a parent label."""
+    return [
+        {
+            "ref": make_ref(entity_type, field(i, "id")) if field(i, "id") else None,
+            "name": field(i, "name"),
+        }
+        for i in items
+    ]
+
+
 def project_artist(artist: Any) -> dict[str, Any]:
-    """Text parity: active members only (format_artist hides former ones)."""
+    """Text parity: `members` (current) and `former`, each with refs."""
+    members = getattr(artist, "members", None) or []
     return drop_empty(
         {
             "ref": make_ref("artist", artist.id),
             "name": artist.name,
             "profile": _truncate(getattr(artist, "profile", None)),
             "urls": _urls_short(getattr(artist, "urls", None)),
-            "members": [
-                {
-                    "ref": make_ref("artist", m.id) if getattr(m, "id", None) else None,
-                    "name": getattr(m, "name", None),
-                }
-                for m in getattr(artist, "members", None) or []
-                if getattr(m, "active", True)
-            ],
+            "members": _refs_of(
+                [m for m in members if getattr(m, "active", True)], "artist"
+            ),
+            "former": _refs_of(
+                [m for m in members if not getattr(m, "active", True)], "artist"
+            ),
         }
     )
 
 
 def project_label(label: Any) -> dict[str, Any]:
+    parent = getattr(label, "parent_label", None)
     return drop_empty(
         {
             "ref": make_ref("label", label.id),
             "name": label.name,
             "profile": _truncate(getattr(label, "profile", None)),
             "urls": _urls_short(getattr(label, "urls", None)),
-            "sub_labels": [
-                {
-                    "ref": make_ref("label", s.id) if getattr(s, "id", None) else None,
-                    "name": getattr(s, "name", None),
-                }
-                for s in getattr(label, "sub_labels", None) or []
-            ],
+            "parent": _refs_of([parent], "label")[0] if parent else None,
+            "sub_labels": _refs_of(getattr(label, "sub_labels", None) or [], "label"),
         }
     )
 

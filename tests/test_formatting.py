@@ -850,10 +850,10 @@ class TestFormatIdentifiers:
 
 
 class TestFormatArtistEdgeCases:
-    def test_artist_with_members(self) -> None:
-        m1 = _fake(name="Trent Reznor", active=True)
-        m2 = _fake(name="Robin Finck", active=True)
-        m3 = _fake(name="Chris Vrenna", active=False)
+    def test_members_and_former_carry_refs(self) -> None:
+        m1 = _fake(id=27457, name="Trent Reznor", active=True)
+        m2 = _fake(id=None, name="Robin Finck", active=True)
+        m3 = _fake(id=4237, name="Chris Vrenna", active=False)
         artist = _fake(
             id=3857,
             name="Nine Inch Nails",
@@ -862,15 +862,31 @@ class TestFormatArtistEdgeCases:
             members=[m1, m2, m3],
         )
         output = format_artist(artist)
-        assert "Trent Reznor" in output
-        assert "Robin Finck" in output
-        assert "Chris Vrenna" not in output
+        assert "Members: Trent Reznor [@a27457], Robin Finck\n" in output
+        assert output.endswith("Former: Chris Vrenna [@a4237]")
 
     def test_artist_all_inactive_members(self) -> None:
-        m1 = _fake(name="Gone", active=False)
+        m1 = _fake(id=1, name="Gone", active=False)
         artist = _fake(id=1, name="Band", profile=None, urls=None, members=[m1])
         output = format_artist(artist)
         assert "Members:" not in output
+        assert "Former: Gone [@a1]" in output
+
+
+class TestFormatLabelRefs:
+    def test_parent_and_sub_labels_carry_refs(self) -> None:
+        label = _fake(
+            id=647,
+            name="Nothing Records",
+            profile=None,
+            urls=None,
+            # The SDK leaves parent_label as a raw dict; sub_labels are models.
+            parent_label={"id": 2311, "name": "Interscope Records"},
+            sub_labels=[_fake(id=561260, name="NIN"), _fake(id=None, name="Loose")],
+        )
+        output = format_label(label)
+        assert "Parent: Interscope Records [@l2311]" in output
+        assert "Sub-labels: NIN [@l561260], Loose" in output
 
 
 class TestFormatTracklistEdgeCases:
