@@ -54,8 +54,9 @@ Check status: `agent-discogs status`
 - **get identifiers** (alias `ids`) — barcodes, matrix/runout etchings, label codes, rights societies. This is what distinguishes pressings that share a catalog number.
 - **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
 - **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats.
-- **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`.
-- **get releases** — artist discography: ref, `[type]`, title, year, label, format, role.
+- **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`. `--sort released` puts the earliest pressing first; `--year` narrows.
+- **get releases @a...** — artist discography: ref, `[type]`, title, year, label, format, role. `--sort year|title|format`, `--desc`.
+- **get releases @l...** — label catalogue: ref, title, artist, year, catalog number, format. No server-side filters or sorting (API limit): `--year` is a client-side scan that continues via `--after`, otherwise page with `--page`.
 - **get artist** — profile, `Members:` and `Former:` each with `[@a...]` refs. **get label** — profile, `Parent:` and `Sub-labels:` with `[@l...]` refs.
 
 ## Common Patterns
@@ -66,11 +67,13 @@ Check status: `agent-discogs status`
 | Compare pressings | `search master "<title>"` → `get versions @m...` |
 | Pick among look-alike rows | Compare catalog number and `have N` in the row itself; `have` is popularity, not identification. Same catno on several rows means variants: see `get release @r...` |
 | Release → all its pressings | Copy `→ @m...` from any release row → `get versions @m...` |
-| Explore discography | `search artist "<name>"` → `get releases @a...` |
+| Explore discography | `search artist "<name>"` → `get releases @a... --sort year` |
+| Label catalogue | `get releases @l...` — copy `@l...` from a release's `Label:` line |
+| Band → member → solo work | `get artist @a...` → copy a `[@a...]` from `Members:` → `get releases @a...` |
 | Check price | `search release "<title>"` → `price @r...` |
 | Identify by catalog number | `search release --catno "INT-92346"` → `get release @r...` |
 | Find by barcode | `search release --barcode "606949235024"` |
-| Get original pressing | `search master "<title>"` → `get versions @m...` → `get release @r...` |
+| Get original pressing | `search master "<title>"` → `get versions @m... --sort released` → `get release @r...` |
 | Narrow release search | `search release "<title>" --artist "<name>"` |
 | Get release notes / credits / identifiers together | `get release @r... --verbose` |
 | Compare several pressings cheaply | `get release @r... @r... @r... -c` in one command; `tracks @r...` only when the tracklist matters |
@@ -98,7 +101,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 - **Don't search without a type filter** when you know the entity type.
 - **Don't fetch full release details just to check price.** Use `price @r...` directly.
 - **Don't paginate through all results.** Narrow with filters first.
-- **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list. Filtered lists (the default search, `--role`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
+- **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list. Filtered lists (the default search, `releases --role`, `releases @l... --year`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
 - **Don't guess IDs.** Always search first to find the right entity.
 - **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref (smart resolution costs an extra API call).
 

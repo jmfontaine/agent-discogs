@@ -82,7 +82,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `master` | `@m` or numeric ID | Master release details |
 | `price` | `@r` or numeric ID | Marketplace pricing (requires auth *and* seller settings on the token's account) |
 | `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, tracklist |
-| `releases` | `@a` or numeric ID | Artist discography (paginated) |
+| `releases` | `@a` or `@l` (numeric ID = artist) | Artist discography, or a label's catalogue (paginated) |
 | `tracklist` | `@r` or numeric ID | Tracklist only (from a release) |
 | `versions` | `@m` or numeric ID | Master release versions (paginated) |
 
@@ -93,8 +93,8 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
 | `--full` | With `--json`: the raw SDK record instead of the projection |
 | `--limit` | Results per page (default: 5) |
-| `--page` | Page number (server-side pages: `versions`, `releases` without `--role`) |
-| `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` only) |
+| `--page` | Page number (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
+| `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`) |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 | `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
 
@@ -102,7 +102,10 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 
 | Flag | Description |
 |------|-------------|
-| `--role` | Filter by credit role (e.g., "Main", "Remix", "Producer"). Case-insensitive substring match. |
+| `--role` | Filter by credit role (e.g., "Main", "Remix", "Producer"). Case-insensitive substring match, client-side. |
+| `--sort` | `year`, `title`, or `format` (server-side) |
+| `--desc` | With `--sort`: descending |
+| `--year` | Label catalogues only: keep releases from this year. Client-side scan (the API has no filters or sorting for `/labels/{id}/releases`), continues via `--after`. Artist discographies: use `--sort year` instead. |
 
 **Additional flags for `versions`:**
 
@@ -111,6 +114,9 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--country` | Filter versions by country |
 | `--format` | Filter versions by format |
 | `--label` | Filter versions by label |
+| `--year` | Filter versions by release year |
+| `--sort` | `released`, `title`, `format`, `label`, `catno`, or `country` (server-side) |
+| `--desc` | With `--sort`: descending |
 
 **Smart resolution:** `get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. Errors with a hint if the release has no master.
 
@@ -131,8 +137,12 @@ agent-discogs get releases @a3857
 agent-discogs get releases @a3857 --page 2 --limit 10
 agent-discogs get releases @a3857 --role Remix
 agent-discogs get releases @a3857 --role Remix --after 2:6.0   # cursor copied from the previous footer
+agent-discogs get releases @a3857 --sort year --desc
+agent-discogs get releases @l647                       # label catalogue
+agent-discogs get releases @l647 --year 1999           # client-side scan; continue with the printed --after
 agent-discogs get versions @m3719
 agent-discogs get versions @m3719 --country US --format "Vinyl"
+agent-discogs get versions @m3719 --year 1994 --sort released
 agent-discogs get release @r847868 --verbose
 ```
 

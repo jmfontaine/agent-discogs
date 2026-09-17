@@ -1189,6 +1189,217 @@ class TestGetCommand:
         )
         assert result.exit_code == 0
 
+    def _capture_fetch(self) -> dict[str, object]:
+        """Record the path/params the command sends; return an empty page."""
+        seen: dict[str, object] = {}
+
+        def _fetch(
+            _client: object, path: str, params: dict[str, object], *_a: object
+        ) -> PageResult:
+            seen["path"] = path
+            seen["params"] = dict(params)
+            return PageResult(items=[], page=1, total_items=0, total_pages=1)
+
+        self._monkeypatch.setattr("agent_discogs.commands.get.fetch_page", _fetch)
+        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _fetch)
+        return seen
+
+    def test_get_releases_for_a_label(self) -> None:
+        label = _fake(id=647, name="Nothing Records")
+        self._set_client(_fake_client(labels_get=lambda _id: label))
+        rel = _fake_model(
+            id=4401,
+            title="Pretty Hate Machine",
+            artist="Nine Inch Nails",
+            year=0,
+            catalog_number="0694903742",
+            format="CD, Album",
+        )
+        seen: dict[str, object] = {}
+
+        def _fetch(
+            _client: object, path: str, params: dict[str, object], *_a: object
+        ) -> PageResult:
+            seen["path"] = path
+            return PageResult(items=[rel], page=1, total_items=2718, total_pages=544)
+
+        self._monkeypatch.setattr("agent_discogs.commands.get.fetch_page", _fetch)
+        result = CliRunner().invoke(cli, ["get", "releases", "@l647"])
+        assert result.exit_code == 0
+        assert seen["path"] == "/labels/647/releases"
+        assert 'Releases on @l647 "Nothing Records" (page 1, 1 of 2,718 results)' in (
+            result.output
+        )
+        assert (
+            '@r4401 "Pretty Hate Machine" by Nine Inch Nails · 0694903742 · CD, Album'
+            in result.output
+        )
+        assert "Next page: agent-discogs get releases @l647 --page 2" in result.output
+
+        data = json.loads(
+            CliRunner().invoke(cli, ["get", "--json", "releases", "@l647"]).output
+        )
+        assert data["results"] == [
+            {
+                "ref": "@r4401",
+                "title": "Pretty Hate Machine",
+                "artist": "Nine Inch Nails",
+                "catno": "0694903742",
+                "format": "CD, Album",
+            }
+        ]  # year 0 is "unknown" on Discogs and is dropped
+
+    def test_get_releases_sort_reaches_api_and_footer(self) -> None:
+        artist = _fake(id=3857, name="NIN")
+        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        seen = self._capture_fetch()
+        result = CliRunner().invoke(
+            cli, ["get", "releases", "@a3857", "--sort", "year", "--desc"]
+        )
+        assert result.exit_code == 0
+        assert seen["params"] == {
+            "sort": "year",
+            "sort_order": "desc",
+            "page": 1,
+            "per_page": 5,
+        }
+
+        def _fetch(*_a: object, **_kw: object) -> PageResult:
+            return PageResult(items=[], page=1, total_items=50, total_pages=10)
+
+        self._monkeypatch.setattr("agent_discogs.commands.get.fetch_page", _fetch)
+        result = CliRunner().invoke(
+            cli, ["get", "releases", "@a3857", "--sort", "year", "--desc"]
+        )
+        assert (
+            "Next page: agent-discogs get releases @a3857 --sort year --desc --page 2"
+            in result.output
+        )
+
+    def test_get_releases_role_with_sort_passes_sort_to_scan(self) -> None:
+        artist = _fake(id=3857, name="NIN")
+        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        seen = self._capture_fetch()
+        result = CliRunner().invoke(
+            cli, ["get", "releases", "@a3857", "--role", "Main", "--sort", "title"]
+        )
+        assert result.exit_code == 0
+        params = seen["params"]
+        assert isinstance(params, dict)
+        assert params["sort"] == "title"
+        assert params["sort_order"] == "asc"
+        assert params["per_page"] == 15  # client-side scan overfetches
+
+    def test_get_versions_year_and_sort_reach_api(self) -> None:
+        master = _fake(id=3719, title="TDS")
+        self._set_client(_fake_client(masters_get=lambda _id: master))
+        seen = self._capture_fetch()
+        result = CliRunner().invoke(
+            cli,
+            ["get", "versions", "@m3719", "--year", "1994", "--sort", "released"],
+        )
+        assert result.exit_code == 0
+        assert seen["path"] == "/masters/3719/versions"
+        assert seen["params"] == {
+            "page": 1,
+            "per_page": 5,
+            "released": "1994",
+            "sort": "released",
+            "sort_order": "asc",
+        }
+
+    @pytest.mark.parametrize(
+        ("argv", "message"),
+        [
+            (
+                ["get", "releases", "@l647", "--role", "Main"],
+                "Label catalogues cannot be role-filtered or sorted",
+            ),
+            (
+                ["get", "releases", "@l647", "--sort", "year"],
+                "Label catalogues cannot be role-filtered or sorted",
+            ),
+            (
+                ["get", "versions", "@m3719", "--sort", "year"],
+                "--sort 'year' is not valid for 'get versions'. Keys: released,",
+            ),
+            (
+                ["get", "release", "@r847868", "--sort", "title"],
+                "--sort/--desc apply to 'get releases' and 'get versions' only.",
+            ),
+            (["get", "releases", "@a3857", "--desc"], "--desc needs --sort <key>."),
+            (
+                ["get", "releases", "@a3857", "--year", "1994"],
+                "--year filters versions and label catalogues",
+            ),
+            (
+                ["get", "release", "@r847868", "--year", "1994"],
+                "--year applies to 'get versions' and 'get releases @l...' only.",
+            ),
+            (
+                ["get", "releases", "@l647", "--year", "1999", "--page", "2"],
+                "--page is not available while results are filtered client-side",
+            ),
+            (
+                ["get", "releases", "@l647", "--after", "2:1.0"],
+                "--after only continues a client-side filtered listing",
+            ),
+        ],
+    )
+    def test_sort_flag_errors_before_io(self, argv: list[str], message: str) -> None:
+        self._set_exploding_client()
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 1
+        assert message in result.output
+
+    def test_get_releases_label_year_scans_client_side_with_cursor(self) -> None:
+        label = _fake(id=647, name="Nothing Records")
+        self._set_client(_fake_client(labels_get=lambda _id: label))
+        seen: list[dict[str, object]] = []
+
+        def _fetch(
+            _client: object, path: str, params: dict[str, object], *_a: object
+        ) -> PageResult:
+            seen.append({"path": path, **params})
+            api_page = int(str(params["page"]))
+            rows = [
+                _fake_model(
+                    id=api_page * 100 + i,
+                    title=f"T{api_page}-{i}",
+                    artist="A",
+                    year=1999 if i % 3 == 0 else 2001,
+                    catalog_number="",
+                    format="CD",
+                )
+                for i in range(6)
+            ]
+            return PageResult(items=rows, page=api_page, total_items=60, total_pages=10)
+
+        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _fetch)
+        result = CliRunner().invoke(
+            cli, ["get", "releases", "@l647", "--year", "1999", "--limit", "2"]
+        )
+        assert result.exit_code == 0
+        assert seen == [{"path": "/labels/647/releases", "page": 1, "per_page": 6}]
+        assert 'Releases on @l647 "Nothing Records" (page 1, 2 of ≤60 results)' in (
+            result.output
+        )
+        assert '@r100 "T1-0" by A 1999 · CD' in result.output
+        assert '@r103 "T1-3" by A 1999 · CD' in result.output
+        assert "2001" not in result.output
+        assert (
+            "Next page: agent-discogs get releases @l647 --year 1999 --limit 2 "
+            "--after 2:1.4"
+        ) in result.output
+
+        data = json.loads(
+            CliRunner()
+            .invoke(cli, ["get", "--json", "releases", "@l647", "--year", "1999"])
+            .output
+        )
+        assert data["pagination"]["filtered"] is True
+        assert all(r["year"] == 1999 for r in data["results"])
+
 
 class TestShortcutCommands:
     def test_tracks_shortcut(self, monkeypatch: pytest.MonkeyPatch) -> None:

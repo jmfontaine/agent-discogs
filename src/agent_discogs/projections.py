@@ -237,6 +237,19 @@ def project_label(label: Any) -> dict[str, Any]:
     )
 
 
+def project_label_release(rel: Any) -> dict[str, Any]:
+    return drop_empty(
+        {
+            "ref": make_ref("release", rel.id),
+            "title": rel.title,
+            "artist": getattr(rel, "artist", None),
+            "year": getattr(rel, "year", None) or None,  # Discogs uses 0 for unknown
+            "catno": getattr(rel, "catalog_number", None),
+            "format": getattr(rel, "format", None),
+        }
+    )
+
+
 def project_master(master: Any) -> dict[str, Any]:
     main = getattr(master, "main_release", None)
     return drop_empty(
@@ -279,7 +292,7 @@ def project_artist_release(rel: Any) -> dict[str, Any]:
             "ref": make_ref(entity_type, rel.id),
             "type": entity_type,
             "title": rel.title,
-            "year": getattr(rel, "year", None),
+            "year": getattr(rel, "year", None) or None,  # Discogs uses 0 for unknown
             "role": getattr(rel, "role", None),
             "label": getattr(rel, "label", None),
             "format": getattr(rel, "format", None),

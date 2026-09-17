@@ -65,15 +65,17 @@ def parse_cursor(cursor: str | None) -> tuple[int, int, int]:
 def next_page_cmd(argv: list[str], **flags: object) -> str:
     """Build a shell-safe continuation command from argv and CLI flags.
 
-    Flags whose value is None/""/False are omitted; underscores become dashes.
-    Every token is quoted by `shlex.join`, so titles with quotes and labels
-    like `R & S Records` paste back unchanged.
+    Flags whose value is None/""/False are omitted; `True` renders as a bare
+    switch; underscores become dashes. Every token is quoted by `shlex.join`,
+    so titles with quotes and labels like `R & S Records` paste back unchanged.
     """
     parts = ["agent-discogs", *argv]
     for flag, value in flags.items():
         if value in (None, "", False):
             continue
-        parts += [f"--{flag.replace('_', '-')}", str(value)]
+        parts.append(f"--{flag.replace('_', '-')}")
+        if value is not True:
+            parts.append(str(value))
     return shlex.join(parts)
 
 

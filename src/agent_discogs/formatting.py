@@ -201,6 +201,7 @@ def _release_row(
     ref: str,
     type_: str | None = None,
     title: str | None = None,
+    artist: str | None = None,
     year: object = None,
     country: str | None = None,
     label: str | None = None,
@@ -220,6 +221,8 @@ def _release_row(
         parts.append(f"[{type_}]")
     if title:
         parts.append(f'"{title}"')
+    if artist:
+        parts.append(f"by {artist}")
     meta = " ".join(str(p) for p in (year, country) if p)
     if meta:
         parts.append(meta)
@@ -303,6 +306,37 @@ def named_refs(items: list[Any], entity_type: str) -> str:
         item_id = field(item, "id")
         parts.append(f"{name} [{make_ref(entity_type, item_id)}]" if item_id else name)
     return ", ".join(parts)
+
+
+def format_label_releases(
+    releases: list[Any],
+    label_ref: str,
+    label_name: str,
+    page: int,
+    total_results: int,
+    next_page_cmd: str | None,
+    *,
+    filtered: bool = False,
+    capped: bool = False,
+) -> str:
+    """Format a label's catalogue (client-side `--year` scans are `filtered`)."""
+    counts = _page_counts(
+        page, len(releases), total_results, "results", filtered=filtered, capped=capped
+    )
+    lines = [f'Releases on {label_ref} "{label_name}" {counts}', ""]
+    lines.extend(
+        _release_row(
+            ref=make_ref("release", rel.id),
+            title=rel.title,
+            artist=getattr(rel, "artist", None),
+            year=getattr(rel, "year", None),
+            catno=getattr(rel, "catalog_number", None),
+            fmt=getattr(rel, "format", None),
+        )
+        for rel in releases
+    )
+    lines.extend(_footer(next_page_cmd, capped=capped))
+    return "\n".join(lines)
 
 
 def format_artist_releases(

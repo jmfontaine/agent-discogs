@@ -6,7 +6,7 @@ import sys
 from typing import Any
 
 import click
-from discogs_sdk import ArtistRelease, Discogs, MasterVersion
+from discogs_sdk import ArtistRelease, Discogs, LabelRelease, MasterVersion
 
 from agent_discogs.client import get_client
 from agent_discogs.errors import error_document, fail, format_error
@@ -16,6 +16,7 @@ from agent_discogs.formatting import (
     format_credits,
     format_identifiers,
     format_label,
+    format_label_releases,
     format_master,
     format_master_versions,
     format_price_guide,
@@ -37,6 +38,7 @@ from agent_discogs.projections import (
     project_credits,
     project_identifiers,
     project_label,
+    project_label_release,
     project_master,
     project_master_version,
     project_price,
@@ -85,6 +87,9 @@ def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
     if entity_type != expected:
         # Smart resolution: versions with a release ref
         if noun == "versions" and entity_type == "release":
+            return entity_type, entity_id
+        # A label has a catalogue too: `get releases @l647`.
+        if noun == "releases" and entity_type == "label":
             return entity_type, entity_id
 
         def _a(word: str) -> str:
@@ -166,24 +171,106 @@ def _get_release(
     return format_release(release, verbose=verbose, compact=compact)
 
 
-def _get_releases(
+def _sort_params(sort: str | None, desc: bool) -> dict[str, str]:
+    """Server-side ordering; `--desc` only means something with `--sort`."""
+    if not sort:
+        return {}
+    return {"sort": sort, "sort_order": "desc" if desc else "asc"}
+
+
+def _get_label_releases(
     client: Discogs,
     entity_id: int,
     *,
     page: int | None,
     limit: int,
     after: str | None,
-    role: str | None,
+    year: str | None,
     mode: Mode,
 ) -> Any:
+    """A label's catalogue. The API has no filters or sorting here, so `--year`
+    is a client-side scan with cursor continuation (like `--role`)."""
+    label = client.labels.get(entity_id)
+    label_ref = make_ref("label", entity_id)
+    path = f"/labels/{entity_id}/releases"
+
+    if year:
+        result = fetch_filtered_page(
+            client,
+            path,
+            {},
+            LabelRelease,
+            "releases",
+            limit=limit,
+            keep=lambda item: str(getattr(item, "year", None) or "") == year,
+            cursor=after,
+        )
+    else:
+        result = fetch_page(
+            client,
+            path,
+            {"page": page or 1, "per_page": limit},
+            LabelRelease,
+            "releases",
+        )
+
+    if mode.json:
+        return mode.page(result, project_label_release)
+
+    footer_cmd = None
+    if result.has_next:
+        footer_cmd = next_page_cmd(
+            ["get", "releases", label_ref],
+            year=year,
+            limit=limit if limit != DEFAULT_LIMIT else None,
+            after=result.next_cursor,
+            page=None if result.filtered else result.page + 1,
+        )
+    return format_label_releases(
+        result.items,
+        label_ref,
+        label.name,
+        result.page,
+        result.total_items,
+        footer_cmd,
+        filtered=result.filtered,
+        capped=result.capped,
+    )
+
+
+def _get_releases(
+    client: Discogs,
+    entity_type: str,
+    entity_id: int,
+    *,
+    page: int | None,
+    limit: int,
+    after: str | None,
+    role: str | None,
+    year: str | None,
+    sort: str | None,
+    desc: bool,
+    mode: Mode,
+) -> Any:
+    if entity_type == "label":
+        return _get_label_releases(
+            client,
+            entity_id,
+            page=page,
+            limit=limit,
+            after=after,
+            year=year,
+            mode=mode,
+        )
+
     artist = client.artists.get(entity_id)
     artist_name = artist.name
     artist_ref = make_ref("artist", entity_id)
 
     path = f"/artists/{entity_id}/releases"
-    params: dict[str, Any] = {}
+    params: dict[str, Any] = _sort_params(sort, desc)
 
-    # --page/--after validity is checked in _dispatch before any API call.
+    # Flag validity is checked in _dispatch before any API call.
     if role:
         role_lower = role.lower()
         result = fetch_filtered_page(
@@ -209,6 +296,8 @@ def _get_releases(
         footer_cmd = next_page_cmd(
             ["get", "releases", artist_ref],
             role=role,
+            sort=sort,
+            desc=desc,
             limit=limit if limit != DEFAULT_LIMIT else None,
             after=result.next_cursor,
             page=None if result.filtered else result.page + 1,
@@ -246,6 +335,9 @@ def _get_versions(
     country: str | None,
     format: str | None,  # noqa: A002  # click option name for --format
     label: str | None,
+    year: str | None,
+    sort: str | None,
+    desc: bool,
     mode: Mode,
 ) -> Any:
     master_id = entity_id
@@ -276,6 +368,9 @@ def _get_versions(
         params["format"] = format
     if label:
         params["label"] = label
+    if year:
+        params["released"] = year  # the API calls the year filter `released`
+    params.update(_sort_params(sort, desc))
 
     result = fetch_page(
         client,
@@ -295,6 +390,9 @@ def _get_versions(
             country=country,
             format=format,
             label=label,
+            year=year,
+            sort=sort,
+            desc=desc,
             limit=limit if limit != DEFAULT_LIMIT else None,
             page=result.page + 1,
         )
@@ -309,31 +407,71 @@ def _get_versions(
     )
 
 
-def _pagination_flag_error(
-    noun: str, *, page: int | None, after: str | None, role: str | None
+SORT_KEYS: dict[str, tuple[str, ...]] = {
+    "releases": ("year", "title", "format"),
+    "versions": ("released", "title", "format", "label", "catno", "country"),
+}
+
+
+def _flag_error(
+    noun: str,
+    refs: tuple[str, ...],
+    *,
+    page: int | None,
+    after: str | None,
+    role: str | None,
+    year: str | None,
+    sort: str | None,
+    desc: bool,
 ) -> str | None:
-    """Reject --page/--after combinations that make no sense for this noun.
+    """Reject flag combinations that make no sense for this noun.
 
     Checked before any API call so a bad flag never costs a request or gets
-    masked by an auth/network failure.
+    masked by an auth/network failure. Client-side filtered listings (which
+    page by cursor, not by number) are `releases --role` on an artist and
+    `releases --year` on a label.
     """
-    filtered = noun == "releases" and bool(role)
+    label_refs = noun == "releases" and any(r.startswith("@l") for r in refs)
+    artist_refs = noun == "releases" and not all(r.startswith("@l") for r in refs)
+    filtered = noun == "releases" and (bool(role) or (label_refs and bool(year)))
     if after is not None and not filtered:
         return (
             "--after only continues a client-side filtered listing "
-            "(get releases --role). This command pages server-side or is not "
-            "paginated; use --page where applicable."
+            "(get releases --role, or get releases @l... --year). This command "
+            "pages server-side or is not paginated; use --page where applicable."
         )
     if filtered and page is not None:
         return (
             "--page is not available while results are filtered client-side "
-            "(--role). Use the Next page command from the previous output."
+            "(--role, or --year on a label catalogue). Use the Next page "
+            "command from the previous output."
         )
     if after is not None:
         try:
             parse_cursor(after)
         except ValueError as exc:
             return str(exc)
+    if year and noun not in ("versions", "releases"):
+        return "--year applies to 'get versions' and 'get releases @l...' only."
+    if year and artist_refs:
+        return (
+            "--year filters versions and label catalogues; for an artist "
+            "discography use --sort year (optionally --desc) and page."
+        )
+    if (sort or desc) and noun not in SORT_KEYS:
+        return "--sort/--desc apply to 'get releases' and 'get versions' only."
+    if desc and not sort:
+        return "--desc needs --sort <key>."
+    if sort and sort not in SORT_KEYS.get(noun, ()):
+        keys = ", ".join(SORT_KEYS[noun])
+        return f"--sort {sort!r} is not valid for 'get {noun}'. Keys: {keys}."
+    if label_refs and (role or sort):
+        return (
+            "Label catalogues cannot be role-filtered or sorted: the Discogs API "
+            "offers no --role or --sort for /labels/{id}/releases. Use --year "
+            "(client-side), page with --page, or search: "
+            "agent-discogs search release --label <name>."
+        )
     return None
 
 
@@ -358,6 +496,9 @@ def _run_one(
     country: str | None,
     format: str | None,  # noqa: A002  # click option name for --format
     label: str | None,
+    year: str | None,
+    sort: str | None,
+    desc: bool,
     role: str | None,
     verbose: bool,
     compact: bool,
@@ -385,11 +526,15 @@ def _run_one(
     if noun == "releases":
         return _get_releases(
             client,
+            entity_type,
             entity_id,
             page=page,
             after=after,
             limit=limit,
             role=role,
+            year=year,
+            sort=sort,
+            desc=desc,
             mode=mode,
         )
     if noun == "tracklist":
@@ -404,6 +549,9 @@ def _run_one(
         country=country,
         format=format,
         label=label,
+        year=year,
+        sort=sort,
+        desc=desc,
         mode=mode,
     )
 
@@ -418,6 +566,9 @@ def _dispatch(
     country: str | None,
     format: str | None,  # noqa: A002  # click option name for --format
     label: str | None,
+    year: str | None,
+    sort: str | None,
+    desc: bool,
     role: str | None,
     verbose: bool,
     compact: bool,
@@ -433,7 +584,16 @@ def _dispatch(
     unchanged, including the single-error path (`fail()`: stderr text or a
     JSON envelope).
     """
-    flag_error = _pagination_flag_error(noun, page=page, after=after, role=role)
+    flag_error = _flag_error(
+        noun,
+        refs,
+        page=page,
+        after=after,
+        role=role,
+        year=year,
+        sort=sort,
+        desc=desc,
+    )
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
     if len(refs) > MAX_REFS:
@@ -466,6 +626,9 @@ def _dispatch(
                     country=country,
                     format=format,
                     label=label,
+                    year=year,
+                    sort=sort,
+                    desc=desc,
                     role=role,
                     verbose=verbose,
                     compact=compact,
@@ -527,6 +690,9 @@ def _json_options(command: Any) -> Any:
     help="release: replace the tracklist with a one-line Tracks: summary",
 )
 @click.option("--country", help="Filter versions by country")
+@click.option(
+    "--desc", is_flag=True, default=False, help="With --sort: descending order"
+)
 @click.option("--format", "format_", help="Filter versions by format")
 @_json_options
 @click.option("--label", help="Filter versions by label")
@@ -534,12 +700,20 @@ def _json_options(command: Any) -> Any:
 @click.option("--page", type=int, help="Page number (server-side pages only)")
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
 @click.option(
+    "--sort",
+    help=(
+        "Server-side order. releases: year|title|format; "
+        "versions: released|title|format|label|catno|country"
+    ),
+)
+@click.option(
     "-v",
     "--verbose",
     is_flag=True,
     default=False,
     help="release: also print notes, credits, and identifiers",
 )
+@click.option("--year", help="Filter versions by release year")
 def get(
     noun: str,
     refs: tuple[str, ...],
@@ -548,12 +722,15 @@ def get(
     after: str | None,
     compact: bool,
     country: str | None,
+    desc: bool,
     format_: str | None,
     label: str | None,
     limit: int,
     page: int | None,
     role: str | None,
+    sort: str | None,
     verbose: bool,
+    year: str | None,
 ) -> None:
     """Get entity details for one or more refs.
 
@@ -571,6 +748,9 @@ def get(
         country=country,
         format=format_,
         label=label,
+        year=year,
+        sort=sort,
+        desc=desc,
         role=role,
         verbose=verbose,
         compact=compact,
@@ -588,6 +768,9 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         country=None,
         format=None,
         label=None,
+        year=None,
+        sort=None,
+        desc=False,
         role=None,
         verbose=False,
         compact=False,

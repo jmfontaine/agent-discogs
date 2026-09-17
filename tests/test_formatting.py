@@ -11,6 +11,7 @@ from agent_discogs.formatting import (
     format_credits,
     format_identifiers,
     format_label,
+    format_label_releases,
     format_master,
     format_master_versions,
     format_price_guide,
@@ -887,6 +888,48 @@ class TestFormatLabelRefs:
         output = format_label(label)
         assert "Parent: Interscope Records [@l2311]" in output
         assert "Sub-labels: NIN [@l561260], Loose" in output
+
+
+class TestFormatLabelReleases:
+    def test_rows_show_artist_catno_format(self) -> None:
+        releases = [
+            _fake(
+                id=4401,
+                title="Pretty Hate Machine",
+                artist="Nine Inch Nails",
+                year=0,
+                catalog_number="0694903742",
+                format="CD, Album, RE, RP",
+            ),
+            _fake(
+                id=144167,
+                title="Rest Proof Clockwork",
+                artist="Plaid",
+                year=1999,
+                catalog_number="INTD-90998",
+                format="CD, Album",
+            ),
+        ]
+        output = format_label_releases(
+            releases,
+            "@l647",
+            "Nothing Records",
+            1,
+            2718,
+            "agent-discogs get releases @l647 --page 2",
+        )
+        assert output.startswith(
+            'Releases on @l647 "Nothing Records" (page 1, 2 of 2,718 results)\n\n'
+        )
+        assert (
+            '@r4401 "Pretty Hate Machine" by Nine Inch Nails '
+            "· 0694903742 · CD, Album, RE, RP"
+        ) in output
+        assert (
+            '@r144167 "Rest Proof Clockwork" by Plaid 1999 · INTD-90998 · CD, Album'
+            in output
+        )
+        assert output.endswith("Next page: agent-discogs get releases @l647 --page 2")
 
 
 class TestFormatTracklistEdgeCases:

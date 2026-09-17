@@ -50,10 +50,15 @@ Options:
   --page N         Page number for server-side pages (search, get)
   --after CURSOR   Continue a client-side filtered list; copy from Next page /
                    Continue scan (search with --release-type official|unofficial,
-                   get releases --role)
+                   get releases --role, get releases @l --year)
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (total omitted if any track lacks a duration)
+  --sort KEY       Server-side order. get releases @a: year|title|format;
+                   get versions: released|title|format|label|catno|country
+  --desc           With --sort: descending
+  --year YEAR      get versions: filter by year (server-side); get releases @l:
+                   filter by year (client-side scan, continues via --after)
   --version        Show version and exit
   --help           Show this message and exit
 
