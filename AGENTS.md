@@ -51,7 +51,7 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 - `refs.py` — Typed ref system (`@a3857`, `@r847868`, `@m3719`, `@l647`). `make_ref()` creates refs, `parse_ref()` parses them. Raw numeric IDs return type `"unknown"`.
 - `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`). `_send()` is the SDK's HTTP-error boundary — it raises the mapped `DiscogsAPIError` subclass before returning, so callers never re-check the status.
 - `formatting.py` — All output formatting. Returns plain strings, callers `print()` them.
-- `errors.py` — Maps SDK exceptions to recovery-oriented error messages.
+- `errors.py` — `classify()` maps SDK exceptions to an `ErrorInfo` (stable `code`, message, hint, `retry_after`, `status`); `format_error()` renders text, `format_error_json()` the `{"error": {...}}` envelope; `fail()` prints one or the other and exits 1.
 - `json_output.py` — JSON serialization helpers for `--json` flag. `dump_entity()` for single objects, `dump_page()` for paginated results.
 
 ### Client-Side Filtering

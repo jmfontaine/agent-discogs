@@ -130,6 +130,14 @@ agent-discogs skills get core --full   # plus references: command reference, sea
 agent-discogs skills path [core]       # directory holding the bundled skill files
 ```
 
+Under `--json`, errors are a JSON document on stdout with exit code 1:
+
+```json
+{"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}
+```
+
+Codes: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when provided), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
+
 ## Ref system
 
 Output includes typed refs that encode the entity type and Discogs ID. Copy them into subsequent commands.

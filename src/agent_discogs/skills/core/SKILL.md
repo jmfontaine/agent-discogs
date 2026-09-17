@@ -86,6 +86,8 @@ agent-discogs search release "Blue Monday" --artist "New Order" --json
 agent-discogs get release @r20755 --json
 ```
 
+With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}`. Branch on `error.code`: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when Discogs sends it), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
+
 ## Anti-Patterns
 
 - **Don't search without a type filter** when you know the entity type.

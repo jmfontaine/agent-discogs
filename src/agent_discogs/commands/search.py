@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import sys
 from typing import Any
 
 import click
 from discogs_sdk import SearchResult
 
 from agent_discogs.client import get_client
-from agent_discogs.errors import format_error
+from agent_discogs.errors import fail
 from agent_discogs.formatting import format_search_results
 from agent_discogs.json_output import dump_page
 from agent_discogs.pagination import (
@@ -142,10 +141,11 @@ def search(
         for v in (artist, barcode, catno, country, format_, genre, label, style, year)
     )
     if not query and not has_filters:
-        print("✗ No search query or filters provided.", file=sys.stderr)
-        sys.exit(1)
+        fail(
+            ValueError("No search query or filters provided."),
+            json_output=json_output,
+        )
 
-    client = get_client()
     params = _build_search_params(
         query=query,
         type_filter=type_filter,
@@ -170,28 +170,31 @@ def search(
     )
 
     if needs_release_filter and page is not None:
-        print(
-            "✗ --page is not available while results are filtered client-side "
-            f"(--release-type {release_type}). Use the Next page command from the "
-            "previous output, or pass --release-type all for server-side pages.",
-            file=sys.stderr,
+        fail(
+            ValueError(
+                "--page is not available while results are filtered client-side "
+                f"(--release-type {release_type}). Use the Next page command from "
+                "the previous output, or pass --release-type all for server-side "
+                "pages."
+            ),
+            json_output=json_output,
         )
-        sys.exit(1)
     if not needs_release_filter and after is not None:
-        print(
-            "✗ --after only continues a client-side filtered search; this search "
-            "pages server-side. Use --page instead.",
-            file=sys.stderr,
+        fail(
+            ValueError(
+                "--after only continues a client-side filtered search; this search "
+                "pages server-side. Use --page instead."
+            ),
+            json_output=json_output,
         )
-        sys.exit(1)
     if after is not None:
         try:
             parse_cursor(after)
         except ValueError as exc:
-            print(f"✗ {exc}", file=sys.stderr)
-            sys.exit(1)
+            fail(exc, json_output=json_output)
 
     try:
+        client = get_client()
         if needs_release_filter:
             keep = _is_unofficial if release_type == "unofficial" else _is_official
             result = fetch_filtered_page(
@@ -212,11 +215,10 @@ def search(
                 SearchResult,
                 "results",
             )
-    # format_error() maps every exception to recovery-oriented text, so catching
-    # broadly is the point.
+    # classify() maps every exception to a coded, recovery-oriented error, so
+    # catching broadly is the point.
     except Exception as e:  # noqa: BLE001
-        print(format_error(e, "Search"), file=sys.stderr)
-        sys.exit(1)
+        fail(e, "Search", json_output=json_output)
 
     if json_output:
         dump_page(result)

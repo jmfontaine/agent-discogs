@@ -1,6 +1,23 @@
-"""SDK exceptions → recovery-oriented error text."""
+"""SDK exceptions → recovery-oriented errors, as text or a JSON envelope."""
 
 from __future__ import annotations
+
+import json
+import sys
+from dataclasses import asdict, dataclass
+from typing import NoReturn
+
+
+@dataclass(frozen=True)
+class ErrorInfo:
+    """A classified failure: a stable `code` for agents to branch on, a
+    human message, and the recovery hint that the text output prints."""
+
+    code: str
+    message: str
+    hint: str | None = None
+    retry_after: int | None = None
+    status: int | None = None
 
 
 def _api_message(exc: Exception) -> str:
@@ -18,11 +35,9 @@ def _api_message(exc: Exception) -> str:
     return message if isinstance(message, str) else ""
 
 
-def format_error(exc: Exception, context: str | None = None) -> str:
-    """Map an exception to a recovery-oriented error message.
-
-    Returns a ✗-prefixed string ready for stderr output.
-    """
+def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
+    """Map an exception to an ErrorInfo. `context` names the thing that
+    failed, e.g. "Release @r847868", and is used in not-found messages."""
     from discogs_sdk import (
         AuthenticationError,
         DiscogsAPIError,
@@ -40,34 +55,93 @@ def format_error(exc: Exception, context: str | None = None) -> str:
         # just looked up successfully.
         message = _api_message(exc)
         if "seller settings" in message.lower():
-            return (
-                f"✗ Price data requires seller settings. Discogs said: {message}\n"
-                "  Fill them out at discogs.com/settings/seller, then retry.\n"
-                "  Other commands work without them."
+            return ErrorInfo(
+                "seller_settings_required",
+                f"Price data requires seller settings. Discogs said: {message}",
+                "Fill them out at discogs.com/settings/seller, then retry. "
+                "Other commands work without them; `get release` shows "
+                "num_for_sale/lowest_price.",
+                status=404,
             )
-        entity = context or "Resource"
-        return f'✗ {entity} not found. Try: agent-discogs search "<title>"'
+        return ErrorInfo(
+            "not_found",
+            f"{context or 'Resource'} not found.",
+            'Try: agent-discogs search "<title>"',
+            status=404,
+        )
 
     if isinstance(exc, AuthenticationError):
-        return (
-            "✗ Authentication failed. Check your DISCOGS_TOKEN.\n"
-            "  Set token: export DISCOGS_TOKEN=<token> "
-            "(discogs.com/settings/developers)"
+        return ErrorInfo(
+            "auth_required",
+            "Authentication failed. Check your DISCOGS_TOKEN.",
+            "Set token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers)",
+            status=401,
         )
 
     if isinstance(exc, ForbiddenError):
-        return "✗ Access forbidden. This endpoint may require different permissions."
+        return ErrorInfo(
+            "forbidden",
+            "Access forbidden. This endpoint may require different permissions.",
+            status=403,
+        )
 
     if isinstance(exc, RateLimitError):
-        return "✗ Rate limit exceeded. Wait a moment and retry."
+        raw = getattr(exc, "retry_after", None)
+        retry_after = int(raw) if isinstance(raw, str) and raw.isdigit() else None
+        wait = (
+            f"Retry in {retry_after}s." if retry_after else "Wait a moment and retry."
+        )
+        return ErrorInfo(
+            "rate_limited",
+            "Rate limit exceeded.",
+            f"{wait} 60 req/min with DISCOGS_TOKEN, 25 without.",
+            retry_after=retry_after,
+            status=429,
+        )
 
     if isinstance(exc, DiscogsAPIError):
-        return f"✗ API error ({exc.status_code}): {exc}"
+        return ErrorInfo(
+            "api_error", f"API error ({exc.status_code}): {exc}", status=exc.status_code
+        )
 
     if isinstance(exc, DiscogsConnectionError):
-        return "✗ Connection error. Check your network and retry."
+        return ErrorInfo(
+            "connection_error", "Connection error.", "Check your network and retry."
+        )
 
     if isinstance(exc, ValueError):
-        return f"✗ {exc}"
+        return ErrorInfo("invalid_argument", str(exc))
 
-    return f"✗ Unexpected error: {exc}"
+    return ErrorInfo("unexpected", f"Unexpected error: {exc}")
+
+
+def format_error(exc: Exception, context: str | None = None) -> str:
+    """Text rendering: `✗ message`, hint indented on the next line."""
+    info = classify(exc, context)
+    text = f"✗ {info.message}"
+    if info.hint:
+        text += f"\n  {info.hint}"
+    return text
+
+
+def format_error_json(exc: Exception, context: str | None = None) -> str:
+    """JSON rendering: `{"error": {"code": ..., "message": ..., "hint": ...}}`.
+
+    Keys with no value are omitted so agents can test `error.code` and read
+    `error.retry_after` without null checks on every field.
+    """
+    info = {k: v for k, v in asdict(classify(exc, context)).items() if v is not None}
+    return json.dumps({"error": info}, separators=(",", ":"))
+
+
+def fail(exc: Exception, context: str | None = None, *, json_output: bool) -> NoReturn:
+    """Report the error the way the caller asked for and exit 1.
+
+    Text goes to stderr; the JSON envelope goes to stdout so a `--json` caller
+    always gets one JSON document on stdout, success or failure.
+    """
+    if json_output:
+        print(format_error_json(exc, context))
+    else:
+        print(format_error(exc, context), file=sys.stderr)
+    sys.exit(1)

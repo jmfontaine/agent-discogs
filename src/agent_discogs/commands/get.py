@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import sys
 from typing import Any
 
 import click
 from discogs_sdk import ArtistRelease, Discogs, MasterVersion
 
 from agent_discogs.client import get_client
-from agent_discogs.errors import format_error
+from agent_discogs.errors import fail
 from agent_discogs.formatting import (
     format_artist,
     format_artist_releases,
@@ -342,12 +341,10 @@ def _dispatch(
     """Shared dispatch logic for get, tracks, and price commands."""
     flag_error = _pagination_flag_error(noun, page=page, after=after, role=role)
     if flag_error:
-        print(f"✗ {flag_error}", file=sys.stderr)
-        sys.exit(1)
-
-    client = get_client()
+        fail(ValueError(flag_error), json_output=json_output)
 
     try:
+        client = get_client()
         entity_type, entity_id = _resolve_ref(ref, noun)
 
         if noun == "artist":
@@ -389,11 +386,10 @@ def _dispatch(
                 label=label,
                 json_output=json_output,
             )
-    # format_error() maps every exception to recovery-oriented text, so catching
-    # broadly is the point.
+    # classify() maps every exception to a coded, recovery-oriented error, so
+    # catching broadly is the point.
     except Exception as e:  # noqa: BLE001
-        print(format_error(e, f"{noun.title()} {ref}"), file=sys.stderr)
-        sys.exit(1)
+        fail(e, f"{noun.title()} {ref}", json_output=json_output)
 
 
 @click.command()

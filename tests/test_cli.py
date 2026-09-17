@@ -1254,18 +1254,37 @@ class TestExceptionHandling:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Exception bubbling through AliasGroup.invoke -> format_error."""
+        """Exception escaping a command with no boundary of its own -> text error.
 
-        def _raise() -> None:
+        `get`/`search` catch everything (incl. client creation) so `--json`
+        callers get an envelope; this last resort only sees the rest.
+        """
+
+        def _raise() -> bool:
             raise RuntimeError("kaboom")
 
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            _raise,
-        )
-        result = CliRunner().invoke(cli, ["get", "artist", "@a1"])
+        monkeypatch.setattr("agent_discogs.commands.status.has_token", _raise)
+        result = CliRunner().invoke(cli, ["status"])
         assert result.exit_code == 1
-        assert "error" in result.output.lower()
+        assert "✗ Unexpected error: kaboom" in result.output
+
+    def test_client_failure_is_inside_the_json_boundary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _raise() -> None:
+            raise RuntimeError("cache dir unwritable")
+
+        monkeypatch.setattr("agent_discogs.commands.get.get_client", _raise)
+        result = CliRunner().invoke(cli, ["get", "--json", "artist", "@a1"])
+        assert result.exit_code == 1
+        assert json.loads(result.output)["error"] == {
+            "code": "unexpected",
+            "message": "Unexpected error: cache dir unwritable",
+        }
+
+        monkeypatch.setattr("agent_discogs.commands.search.get_client", _raise)
+        result = CliRunner().invoke(cli, ["search", "--json", "x"])
+        assert json.loads(result.output)["error"]["code"] == "unexpected"
 
 
 def _fake_model(**kwargs: object) -> SimpleNamespace:
