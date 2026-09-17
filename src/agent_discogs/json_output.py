@@ -17,11 +17,13 @@ class Mode(NamedTuple):
     json: bool = False
     full: bool = False
 
-    def emit_entity(self, obj: Any, project: Projector) -> None:
-        dump_entity(obj, project, full=self.full)
+    def entity(self, obj: Any, project: Projector) -> Any:
+        """The JSON document for one entity under this mode."""
+        return raw(obj) if self.full else project(obj)
 
-    def emit_page(self, result: PageResult, project: Projector) -> None:
-        dump_page(result, project, full=self.full)
+    def page(self, result: PageResult, project: Projector) -> dict[str, Any]:
+        """The JSON envelope for one page under this mode."""
+        return page_document(result, project, full=self.full)
 
 
 def _emit(data: Any) -> None:
@@ -38,13 +40,10 @@ def dump(data: Any) -> None:
     _emit(data)
 
 
-def dump_entity(obj: Any, project: Projector, *, full: bool) -> None:
-    """Print one entity: its projection, or the raw SDK model when `full`."""
-    _emit(raw(obj) if full else project(obj))
-
-
-def dump_page(result: PageResult, project: Projector, *, full: bool) -> None:
-    """Print paginated results as JSON with envelope.
+def page_document(
+    result: PageResult, project: Projector, *, full: bool
+) -> dict[str, Any]:
+    """Paginated results as a JSON envelope.
 
     Client-side filtered pages add `filtered` (total is an upper bound),
     `capped`, and `next_cursor` (pass back via `--after`).
@@ -59,4 +58,9 @@ def dump_page(result: PageResult, project: Projector, *, full: bool) -> None:
         pagination["capped"] = result.capped
         pagination["next_cursor"] = result.next_cursor
     rows = [raw(item) if full else project(item) for item in result.items]
-    _emit({"pagination": pagination, "results": rows})
+    return {"pagination": pagination, "results": rows}
+
+
+def dump_page(result: PageResult, project: Projector, *, full: bool) -> None:
+    """Print one page as JSON."""
+    _emit(page_document(result, project, full=full))

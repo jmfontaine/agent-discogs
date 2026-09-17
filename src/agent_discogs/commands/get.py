@@ -97,86 +97,72 @@ def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
     return entity_type, entity_id
 
 
-def _get_artist(client: Discogs, entity_id: int, mode: Mode) -> None:
+def _get_artist(client: Discogs, entity_id: int, mode: Mode) -> Any:
     artist = client.artists.get(entity_id)
     if mode.json:
-        mode.emit_entity(artist, project_artist)
-    else:
-        print(format_artist(artist))
+        return mode.entity(artist, project_artist)
+    return format_artist(artist)
 
 
-def _get_credits(client: Discogs, entity_id: int, mode: Mode) -> None:
+def _get_credits(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
-        dump({"credits": [c.model_dump() for c in release.extra_artists or []]})
-    elif mode.json:
-        dump(
-            drop_empty(
-                {
-                    "ref": make_ref("release", entity_id),
-                    "credits": project_credits(release),
-                }
-            )
+        return {"credits": [c.model_dump() for c in release.extra_artists or []]}
+    if mode.json:
+        return drop_empty(
+            {"ref": make_ref("release", entity_id), "credits": project_credits(release)}
         )
-    else:
-        print(format_credits(release))
+    return format_credits(release)
 
 
-def _get_identifiers(client: Discogs, entity_id: int, mode: Mode) -> None:
+def _get_identifiers(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
-        dump({"identifiers": [i.model_dump() for i in release.identifiers or []]})
-    elif mode.json:
-        dump(
-            drop_empty(
-                {
-                    "ref": make_ref("release", entity_id),
-                    "identifiers": project_identifiers(release),
-                }
-            )
+        return {"identifiers": [i.model_dump() for i in release.identifiers or []]}
+    if mode.json:
+        return drop_empty(
+            {
+                "ref": make_ref("release", entity_id),
+                "identifiers": project_identifiers(release),
+            }
         )
-    else:
-        print(format_identifiers(release))
+    return format_identifiers(release)
 
 
-def _get_label(client: Discogs, entity_id: int, mode: Mode) -> None:
+def _get_label(client: Discogs, entity_id: int, mode: Mode) -> Any:
     label = client.labels.get(entity_id)
     if mode.json:
-        mode.emit_entity(label, project_label)
-    else:
-        print(format_label(label))
+        return mode.entity(label, project_label)
+    return format_label(label)
 
 
-def _get_master(client: Discogs, entity_id: int, mode: Mode) -> None:
+def _get_master(client: Discogs, entity_id: int, mode: Mode) -> Any:
     master = client.masters.get(entity_id)
     if mode.json:
-        mode.emit_entity(master, project_master)
-    else:
-        print(format_master(master))
+        return mode.entity(master, project_master)
+    return format_master(master)
 
 
-def _get_price(client: Discogs, entity_id: int, mode: Mode) -> None:
+def _get_price(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     price_suggestions = release.price_suggestions.get()
     marketplace_stats = release.marketplace_stats.get()
     if mode.full:
-        dump({**raw(price_suggestions), "marketplace_stats": raw(marketplace_stats)})
-    elif mode.json:
-        dump(project_price(release, price_suggestions, marketplace_stats))
-    else:
-        print(format_price_guide(release, price_suggestions, marketplace_stats))
+        return {**raw(price_suggestions), "marketplace_stats": raw(marketplace_stats)}
+    if mode.json:
+        return project_price(release, price_suggestions, marketplace_stats)
+    return format_price_guide(release, price_suggestions, marketplace_stats)
 
 
 def _get_release(
     client: Discogs, entity_id: int, *, verbose: bool, compact: bool, mode: Mode
-) -> None:
+) -> Any:
     release = client.releases.get(entity_id)
     if mode.json:
-        mode.emit_entity(
+        return mode.entity(
             release, lambda r: project_release(r, verbose=verbose, compact=compact)
         )
-    else:
-        print(format_release(release, verbose=verbose, compact=compact))
+    return format_release(release, verbose=verbose, compact=compact)
 
 
 def _get_releases(
@@ -188,7 +174,7 @@ def _get_releases(
     after: str | None,
     role: str | None,
     mode: Mode,
-) -> None:
+) -> Any:
     artist = client.artists.get(entity_id)
     artist_name = artist.name
     artist_ref = make_ref("artist", entity_id)
@@ -215,8 +201,7 @@ def _get_releases(
         result = fetch_page(client, path, params, ArtistRelease, "releases")
 
     if mode.json:
-        mode.emit_page(result, project_artist_release)
-        return
+        return mode.page(result, project_artist_release)
 
     footer_cmd = None
     if result.has_next:
@@ -228,28 +213,25 @@ def _get_releases(
             page=None if result.filtered else result.page + 1,
         )
 
-    print(
-        format_artist_releases(
-            result.items,
-            artist_ref,
-            artist_name,
-            result.page,
-            result.total_items,
-            footer_cmd,
-            filtered=result.filtered,
-            capped=result.capped,
-        )
+    return format_artist_releases(
+        result.items,
+        artist_ref,
+        artist_name,
+        result.page,
+        result.total_items,
+        footer_cmd,
+        filtered=result.filtered,
+        capped=result.capped,
     )
 
 
-def _get_tracklist(client: Discogs, entity_id: int, mode: Mode) -> None:
+def _get_tracklist(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
-        dump({"tracklist": [t.model_dump() for t in release.tracklist or []]})
-    elif mode.json:
-        dump(project_tracklist(release))
-    else:
-        print(format_tracklist(release))
+        return {"tracklist": [t.model_dump() for t in release.tracklist or []]}
+    if mode.json:
+        return project_tracklist(release)
+    return format_tracklist(release)
 
 
 def _get_versions(
@@ -264,7 +246,7 @@ def _get_versions(
     format: str | None,  # noqa: A002  # click option name for --format
     label: str | None,
     mode: Mode,
-) -> None:
+) -> Any:
     master_id = entity_id
     master_title = ""
 
@@ -303,8 +285,7 @@ def _get_versions(
     )
 
     if mode.json:
-        mode.emit_page(result, project_master_version)
-        return
+        return mode.page(result, project_master_version)
 
     footer_cmd = None
     if result.has_next:
@@ -317,15 +298,13 @@ def _get_versions(
             page=result.page + 1,
         )
 
-    print(
-        format_master_versions(
-            result.items,
-            master_ref,
-            master_title,
-            result.page,
-            result.total_items,
-            footer_cmd,
-        )
+    return format_master_versions(
+        result.items,
+        master_ref,
+        master_title,
+        result.page,
+        result.total_items,
+        footer_cmd,
     )
 
 
@@ -364,6 +343,67 @@ def _mode(json_output: bool, full: bool) -> Mode:
     return Mode(json=json_output, full=full)
 
 
+def _run_one(
+    client: Discogs,
+    noun: str,
+    ref: str,
+    *,
+    page: int | None,
+    after: str | None,
+    limit: int,
+    country: str | None,
+    format: str | None,  # noqa: A002  # click option name for --format
+    label: str | None,
+    role: str | None,
+    verbose: bool,
+    compact: bool,
+    mode: Mode,
+) -> Any:
+    """One noun for one ref: text, or the JSON document."""
+    entity_type, entity_id = _resolve_ref(ref, noun)
+
+    if noun == "artist":
+        return _get_artist(client, entity_id, mode)
+    if noun == "credits":
+        return _get_credits(client, entity_id, mode)
+    if noun == "identifiers":
+        return _get_identifiers(client, entity_id, mode)
+    if noun == "master":
+        return _get_master(client, entity_id, mode)
+    if noun == "label":
+        return _get_label(client, entity_id, mode)
+    if noun == "price":
+        return _get_price(client, entity_id, mode)
+    if noun == "release":
+        return _get_release(
+            client, entity_id, verbose=verbose, compact=compact, mode=mode
+        )
+    if noun == "releases":
+        return _get_releases(
+            client,
+            entity_id,
+            page=page,
+            after=after,
+            limit=limit,
+            role=role,
+            mode=mode,
+        )
+    if noun == "tracklist":
+        return _get_tracklist(client, entity_id, mode)
+    return _get_versions(
+        client,
+        entity_type,
+        entity_id,
+        ref,
+        page=page,
+        limit=limit,
+        country=country,
+        format=format,
+        label=label,
+        mode=mode,
+    )
+
+
 def _dispatch(
     noun: str,
     ref: str,
@@ -379,58 +419,41 @@ def _dispatch(
     compact: bool,
     mode: Mode,
 ) -> None:
-    """Shared dispatch logic for get, tracks, and price commands."""
+    """Shared dispatch logic for get, tracks, and price commands.
+
+    Handlers return their output rather than printing it, so this is the one
+    place that decides how a result reaches stdout.
+    """
     flag_error = _pagination_flag_error(noun, page=page, after=after, role=role)
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
 
     try:
         client = get_client()
-        entity_type, entity_id = _resolve_ref(ref, noun)
-
-        if noun == "artist":
-            _get_artist(client, entity_id, mode)
-        elif noun == "credits":
-            _get_credits(client, entity_id, mode)
-        elif noun == "identifiers":
-            _get_identifiers(client, entity_id, mode)
-        elif noun == "master":
-            _get_master(client, entity_id, mode)
-        elif noun == "label":
-            _get_label(client, entity_id, mode)
-        elif noun == "price":
-            _get_price(client, entity_id, mode)
-        elif noun == "release":
-            _get_release(client, entity_id, verbose=verbose, compact=compact, mode=mode)
-        elif noun == "releases":
-            _get_releases(
-                client,
-                entity_id,
-                page=page,
-                after=after,
-                limit=limit,
-                role=role,
-                mode=mode,
-            )
-        elif noun == "tracklist":
-            _get_tracklist(client, entity_id, mode)
-        elif noun == "versions":
-            _get_versions(
-                client,
-                entity_type,
-                entity_id,
-                ref,
-                page=page,
-                limit=limit,
-                country=country,
-                format=format,
-                label=label,
-                mode=mode,
-            )
+        block = _run_one(
+            client,
+            noun,
+            ref,
+            page=page,
+            after=after,
+            limit=limit,
+            country=country,
+            format=format,
+            label=label,
+            role=role,
+            verbose=verbose,
+            compact=compact,
+            mode=mode,
+        )
     # classify() maps every exception to a coded, recovery-oriented error, so
     # catching broadly is the point.
     except Exception as e:  # noqa: BLE001
         fail(e, f"{noun.title()} {ref}", json_output=mode.json)
+
+    if mode.json:
+        dump(block)
+    else:
+        print(block)
 
 
 _JSON_OPTIONS = [

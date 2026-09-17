@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import asdict, dataclass
-from typing import NoReturn
+from typing import Any, NoReturn
 
 
 @dataclass(frozen=True)
@@ -124,14 +124,16 @@ def format_error(exc: Exception, context: str | None = None) -> str:
     return text
 
 
-def format_error_json(exc: Exception, context: str | None = None) -> str:
-    """JSON rendering: `{"error": {"code": ..., "message": ..., "hint": ...}}`.
+def error_document(exc: Exception, context: str | None = None) -> dict[str, Any]:
+    """`{"code": ..., "message": ..., "hint": ...}` with empty fields omitted, so
+    agents can test `error.code` and read `error.retry_after` without null
+    checks on every field."""
+    return {k: v for k, v in asdict(classify(exc, context)).items() if v is not None}
 
-    Keys with no value are omitted so agents can test `error.code` and read
-    `error.retry_after` without null checks on every field.
-    """
-    info = {k: v for k, v in asdict(classify(exc, context)).items() if v is not None}
-    return json.dumps({"error": info}, separators=(",", ":"))
+
+def format_error_json(exc: Exception, context: str | None = None) -> str:
+    """JSON rendering: `{"error": {"code": ..., "message": ..., "hint": ...}}`."""
+    return json.dumps({"error": error_document(exc, context)}, separators=(",", ":"))
 
 
 def fail(exc: Exception, context: str | None = None, *, json_output: bool) -> NoReturn:
