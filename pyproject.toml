@@ -9,6 +9,7 @@ description = "Token-efficient Discogs CLI for AI agents"
 readme = "README.md"
 keywords = [ "ai-agent", "cli", "discogs", "discogs-api", "music-database" ]
 license = "Apache-2.0"
+license-files = [ "LICENSE.txt" ]
 authors = [ { name = "Jean-Marc Fontaine", email = "jm@jmfontaine.net" } ]
 requires-python = ">=3.10"
 classifiers = [
