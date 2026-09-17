@@ -34,7 +34,7 @@ Requires Python 3.10+.
 Install the skill so your AI coding agent can use agent-discogs automatically:
 
 ```bash
-npx skills upgrade jmfontaine/agent-discogs
+npx skills add jmfontaine/agent-discogs
 ```
 
 The installed skill is a thin pointer; the usage guide itself ships inside the package and is served by `agent-discogs skills get core`, so agents always read instructions that match the version they run (see [skills](#skills)).
