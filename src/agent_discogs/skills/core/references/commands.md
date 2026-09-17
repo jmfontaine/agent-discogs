@@ -33,7 +33,8 @@ agent-discogs search [type] <query> [--flags]
 | `--country` | Filter by country |
 | `--format` | Filter by format (e.g., "Vinyl", "CD") |
 | `--genre` | Filter by genre |
-| `--json` | Output raw JSON. Errors become `{"error":{"code",...}}` on stdout |
+| `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
+| `--full` | With `--json`: the raw SDK record instead of the projection |
 | `--label` | Filter by label name |
 | `--limit` | Results per page (default: 5) |
 | `--page` | Page number. Only for server-side pages: `--release-type all`, or artist/label searches. Rejected on the default filtered path. |
@@ -87,7 +88,8 @@ agent-discogs get <noun> <ref-or-id> [--flags]
 
 | Flag | Description |
 |------|-------------|
-| `--json` | Output raw JSON. Errors become `{"error":{"code",...}}` on stdout |
+| `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
+| `--full` | With `--json`: the raw SDK record instead of the projection |
 | `--limit` | Results per page (default: 5) |
 | `--page` | Page number (server-side pages: `versions`, `releases` without `--role`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` only) |

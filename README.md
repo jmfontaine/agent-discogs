@@ -71,7 +71,7 @@ agent-discogs search release "When The Whip Comes Down" --release-type unofficia
 
 Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (default: 5) for page size. To continue, paste the `Next page:` command printed under the results: the default `--release-type official` filter is applied client-side, so continuation is a cursor (`--after`), not a page number. `--page` works only with `--release-type all` (server-side pages) or artist/label searches.
 
-Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for raw JSON output.
+Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for JSON output (see [JSON output](#json-output)).
 
 ### get
 
@@ -92,7 +92,7 @@ Nouns: `artist`, `credits`, `identifiers` (alias `ids`), `label`, `master`, `pri
 
 `release` output carries inline refs for its artists and label (`[@a...]`, `[@l...]`), plus country and release date. `credits` lists who did what on a release, grouped by role, each person with an artist ref. `identifiers` lists barcodes, matrix/runout etchings, and other codes: the data that tells two pressings with the same catalog number apart. `-v, --verbose` on `release` appends notes, credits, and identifiers in one call.
 
-Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`; `releases --role` filters client-side and continues via the printed `--after` cursor instead. Versions also accept `--country`, `--format`, and `--label` filters. Use `--json` for raw JSON output.
+Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`; `releases --role` filters client-side and continues via the printed `--after` cursor instead. Versions also accept `--country`, `--format`, and `--label` filters. Use `--json` for JSON output.
 
 ### tracks / price
 
@@ -130,7 +130,17 @@ agent-discogs skills get core --full   # plus references: command reference, sea
 agent-discogs skills path [core]       # directory holding the bundled skill files
 ```
 
-Under `--json`, errors are a JSON document on stdout with exit code 1:
+## JSON output
+
+`search`, `get`, `tracks`, and `price` accept `--json`. The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping. Empty fields are omitted, so test for a key rather than for null (the `pagination` envelope is the exception: its keys are always present, and `next_cursor` is `null` when nothing remains). `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Lists are wrapped as `{"pagination":{...},"results":[...]}`.
+
+```bash
+agent-discogs get release @r352665 --json            # projection
+agent-discogs get release @r352665 --json -v         # plus notes, credits, and identifiers
+agent-discogs get release @r352665 --json --full     # raw SDK model, when you need a field the projection drops
+```
+
+Errors under `--json` are a JSON document on stdout with exit code 1:
 
 ```json
 {"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}

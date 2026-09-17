@@ -44,7 +44,8 @@ Refs:
   @m3719 (master), @l647 (label). Use refs with get commands.
 
 Options:
-  --json           Output raw JSON (search, get)
+  --json           JSON output: a compact projection of the text view (search, get)
+  --full           With --json: the raw SDK record instead of the projection
   --limit N        Results per page (search, get)
   --page N         Page number for server-side pages (search, get)
   --after CURSOR   Continue a client-side filtered list; copy from Next page /

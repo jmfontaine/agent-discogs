@@ -18,6 +18,7 @@ from agent_discogs.pagination import (
     next_page_cmd,
     parse_cursor,
 )
+from agent_discogs.projections import project_search_result
 
 KNOWN_TYPES = {"artist", "label", "master", "release"}
 
@@ -96,7 +97,17 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
 @click.option("--format", "format_", help="Filter by format")
 @click.option("--genre", help="Filter by genre")
 @click.option(
-    "--json", "json_output", is_flag=True, default=False, help="Output raw JSON"
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Output JSON (a compact projection of what the text view shows)",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="With --json: the raw SDK model instead of the projection",
 )
 @click.option("--label", help="Filter by label")
 @click.option("--limit", type=int, default=DEFAULT_LIMIT, help="Results per page")
@@ -116,6 +127,7 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
 def search(
     args: tuple[str, ...],
     json_output: bool,
+    full: bool,
     after: str | None,
     artist: str | None,
     barcode: str | None,
@@ -169,6 +181,8 @@ def search(
         "master",
     )
 
+    if full and not json_output:
+        fail(ValueError("--full requires --json."), json_output=False)
     if needs_release_filter and page is not None:
         fail(
             ValueError(
@@ -221,7 +235,7 @@ def search(
         fail(e, "Search", json_output=json_output)
 
     if json_output:
-        dump_page(result)
+        dump_page(result, project_search_result, full=full)
         return
 
     footer_cmd = None

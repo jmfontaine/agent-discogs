@@ -79,11 +79,13 @@ Check status: `agent-discogs status`
 
 ## Machine-Readable Output
 
-`search`, `get`, `tracks`, and `price` support `--json` for raw JSON output, useful for piping into other tools or extracting structured data (`status`, `cache`, and `skills` are text-only):
+`search`, `get`, `tracks`, and `price` support `--json` (`status`, `cache`, and `skills` are text-only). The JSON is a compact projection of what the text view shows, with refs as strings you can pass straight back: `{"ref":"@r847868","artists":[{"ref":"@a3857","name":"Nine Inch Nails"}],"labels":[{"ref":"@l647","name":"Nothing Records","catno":"92346-2"}],"master":"@m3719",...}`. Empty fields are omitted: test for the key, not for null. `get credits --json` is grouped by role, `{"Producer":[{"ref":"@a...","name":"...","tracks":"1, 2"}],...}`, the same grouping as the text. Lists come wrapped in `{"pagination":{...},"results":[...]}`; the `pagination` keys are always present, and filtered lists carry `pagination.next_cursor` for `--after` (`null` when nothing remains).
 
 ```bash
-agent-discogs search release "Blue Monday" --artist "New Order" --json
-agent-discogs get release @r20755 --json
+agent-discogs search release "The Downward Spiral" --year 1994 --country US --json
+agent-discogs get release @r847868 --json
+agent-discogs get release @r847868 --json -v          # adds notes, credits, and identifiers
+agent-discogs get release @r847868 --json --full      # raw Discogs record (images, URLs, ~20x larger); only when the projection lacks a field you need
 ```
 
 With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}`. Branch on `error.code`: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when Discogs sends it), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.

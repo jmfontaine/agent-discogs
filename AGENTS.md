@@ -52,7 +52,8 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 - `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`). `_send()` is the SDK's HTTP-error boundary — it raises the mapped `DiscogsAPIError` subclass before returning, so callers never re-check the status.
 - `formatting.py` — All output formatting. Returns plain strings, callers `print()` them.
 - `errors.py` — `classify()` maps SDK exceptions to an `ErrorInfo` (stable `code`, message, hint, `retry_after`, `status`); `format_error()` renders text, `format_error_json()` the `{"error": {...}}` envelope; `fail()` prints one or the other and exits 1.
-- `json_output.py` — JSON serialization helpers for `--json` flag. `dump_entity()` for single objects, `dump_page()` for paginated results.
+- `json_output.py` — `--json` emission. `Mode(json, full)` tells a handler how to emit; `dump_entity()`/`dump_page()` take a projector and bypass it under `--full`.
+- `projections.py` — One projector per text view (`project_release`, `project_search_result`, ...) returning exactly the fields the text shows, plus refs. Empty values are dropped. This is what `--json` prints; the raw `model_dump()` is `--json --full` only.
 
 ### Client-Side Filtering
 

@@ -84,13 +84,23 @@ def _label_string(labels: list[Any] | None) -> str:
 _ROLE_SPLIT = re.compile(r",\s*(?![^\[]*\])")  # commas outside [bracketed] notes
 
 
-def format_credits(release: Any) -> str:
-    """Release credits grouped by role, each person with an artist ref.
+def credits_by_role(release: Any) -> dict[str, list[Any]]:
+    """Invert Discogs credits from per-person to per-role.
 
     Discogs stores one entry per person with a comma-joined role string such
-    as `Producer [Production], Written-By`; we invert that so an agent asking
-    "who produced this?" reads one line.
+    as `Producer [Production], Written-By`; both the text and JSON views group
+    by role so "who produced this?" is one line or one key. Roles sort
+    alphabetically; people keep Discogs order within a role.
     """
+    by_role: dict[str, list[Any]] = {}
+    for credit in getattr(release, "extra_artists", None) or []:
+        for role in _ROLE_SPLIT.split(getattr(credit, "role", None) or ""):
+            by_role.setdefault(role.strip() or "Other", []).append(credit)
+    return dict(sorted(by_role.items()))
+
+
+def format_credits(release: Any) -> str:
+    """Release credits grouped by role, each person with an artist ref."""
     ref = make_ref("release", release.id)
     entries = getattr(release, "extra_artists", None) or []
     lines = [f'Credits: {ref} "{release.title}" ({len(entries)})', ""]
@@ -98,20 +108,16 @@ def format_credits(release: Any) -> str:
         lines.append("  (no credits listed)")
         return "\n".join(lines)
 
-    by_role: dict[str, list[str]] = {}
-    for credit in entries:
-        name = getattr(credit, "name", None) or "Unknown"
-        artist_id = getattr(credit, "id", None)
-        tag = f" [{make_ref('artist', artist_id)}]" if artist_id else ""
-        tracks = getattr(credit, "tracks", None) or ""
-        scope = f" ({tracks})" if tracks else ""
-        for role in _ROLE_SPLIT.split(getattr(credit, "role", None) or ""):
-            by_role.setdefault(role.strip() or "Other", []).append(
-                f"{name}{tag}{scope}"
-            )
-    lines.extend(
-        f"{role}: {', '.join(names)}" for role, names in sorted(by_role.items())
-    )
+    for role, people_credits in credits_by_role(release).items():
+        people = []
+        for credit in people_credits:
+            name = getattr(credit, "name", None) or "Unknown"
+            artist_id = getattr(credit, "id", None)
+            tag = f" [{make_ref('artist', artist_id)}]" if artist_id else ""
+            tracks = getattr(credit, "tracks", None) or ""
+            scope = f" ({tracks})" if tracks else ""
+            people.append(f"{name}{tag}{scope}")
+        lines.append(f"{role}: {', '.join(people)}")
     return "\n".join(lines)
 
 

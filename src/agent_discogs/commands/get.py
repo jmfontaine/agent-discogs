@@ -21,13 +21,26 @@ from agent_discogs.formatting import (
     format_release,
     format_tracklist,
 )
-from agent_discogs.json_output import dump_entity, dump_list, dump_page
+from agent_discogs.json_output import Mode, dump, raw
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
     fetch_filtered_page,
     fetch_page,
     next_page_cmd,
     parse_cursor,
+)
+from agent_discogs.projections import (
+    drop_empty,
+    project_artist,
+    project_artist_release,
+    project_credits,
+    project_identifiers,
+    project_label,
+    project_master,
+    project_master_version,
+    project_price,
+    project_release,
+    project_tracklist,
 )
 from agent_discogs.refs import make_ref, parse_ref
 
@@ -84,65 +97,80 @@ def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
     return entity_type, entity_id
 
 
-def _get_artist(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+def _get_artist(client: Discogs, entity_id: int, mode: Mode) -> None:
     artist = client.artists.get(entity_id)
-    if json_output:
-        dump_entity(artist)
+    if mode.json:
+        mode.emit_entity(artist, project_artist)
     else:
         print(format_artist(artist))
 
 
-def _get_credits(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+def _get_credits(client: Discogs, entity_id: int, mode: Mode) -> None:
     release = client.releases.get(entity_id)
-    if json_output:
-        dump_list("credits", getattr(release, "extra_artists", None) or [])
+    if mode.full:
+        dump({"credits": [c.model_dump() for c in release.extra_artists or []]})
+    elif mode.json:
+        dump(
+            drop_empty(
+                {
+                    "ref": make_ref("release", entity_id),
+                    "credits": project_credits(release),
+                }
+            )
+        )
     else:
         print(format_credits(release))
 
 
-def _get_identifiers(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+def _get_identifiers(client: Discogs, entity_id: int, mode: Mode) -> None:
     release = client.releases.get(entity_id)
-    if json_output:
-        dump_list("identifiers", getattr(release, "identifiers", None) or [])
+    if mode.full:
+        dump({"identifiers": [i.model_dump() for i in release.identifiers or []]})
+    elif mode.json:
+        dump(
+            drop_empty(
+                {
+                    "ref": make_ref("release", entity_id),
+                    "identifiers": project_identifiers(release),
+                }
+            )
+        )
     else:
         print(format_identifiers(release))
 
 
-def _get_label(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+def _get_label(client: Discogs, entity_id: int, mode: Mode) -> None:
     label = client.labels.get(entity_id)
-    if json_output:
-        dump_entity(label)
+    if mode.json:
+        mode.emit_entity(label, project_label)
     else:
         print(format_label(label))
 
 
-def _get_master(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+def _get_master(client: Discogs, entity_id: int, mode: Mode) -> None:
     master = client.masters.get(entity_id)
-    if json_output:
-        dump_entity(master)
+    if mode.json:
+        mode.emit_entity(master, project_master)
     else:
         print(format_master(master))
 
 
-def _get_price(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+def _get_price(client: Discogs, entity_id: int, mode: Mode) -> None:
     release = client.releases.get(entity_id)
     price_suggestions = release.price_suggestions.get()
     marketplace_stats = release.marketplace_stats.get()
-    if json_output:
-        dump_entity(
-            price_suggestions,
-            marketplace_stats=marketplace_stats,
-        )
+    if mode.full:
+        dump({**raw(price_suggestions), "marketplace_stats": raw(marketplace_stats)})
+    elif mode.json:
+        dump(project_price(release, price_suggestions, marketplace_stats))
     else:
         print(format_price_guide(release, price_suggestions, marketplace_stats))
 
 
-def _get_release(
-    client: Discogs, entity_id: int, *, verbose: bool, json_output: bool
-) -> None:
+def _get_release(client: Discogs, entity_id: int, *, verbose: bool, mode: Mode) -> None:
     release = client.releases.get(entity_id)
-    if json_output:
-        dump_entity(release)
+    if mode.json:
+        mode.emit_entity(release, lambda r: project_release(r, verbose=verbose))
     else:
         print(format_release(release, verbose=verbose))
 
@@ -155,7 +183,7 @@ def _get_releases(
     limit: int,
     after: str | None,
     role: str | None,
-    json_output: bool,
+    mode: Mode,
 ) -> None:
     artist = client.artists.get(entity_id)
     artist_name = artist.name
@@ -182,8 +210,8 @@ def _get_releases(
         params["per_page"] = limit
         result = fetch_page(client, path, params, ArtistRelease, "releases")
 
-    if json_output:
-        dump_page(result)
+    if mode.json:
+        mode.emit_page(result, project_artist_release)
         return
 
     footer_cmd = None
@@ -210,11 +238,12 @@ def _get_releases(
     )
 
 
-def _get_tracklist(client: Discogs, entity_id: int, *, json_output: bool) -> None:
+def _get_tracklist(client: Discogs, entity_id: int, mode: Mode) -> None:
     release = client.releases.get(entity_id)
-    if json_output:
-        tracklist = getattr(release, "tracklist", None) or []
-        dump_list("tracklist", tracklist)
+    if mode.full:
+        dump({"tracklist": [t.model_dump() for t in release.tracklist or []]})
+    elif mode.json:
+        dump(project_tracklist(release))
     else:
         print(format_tracklist(release))
 
@@ -230,7 +259,7 @@ def _get_versions(
     country: str | None,
     format: str | None,  # noqa: A002  # click option name for --format
     label: str | None,
-    json_output: bool,
+    mode: Mode,
 ) -> None:
     master_id = entity_id
     master_title = ""
@@ -269,8 +298,8 @@ def _get_versions(
         "versions",
     )
 
-    if json_output:
-        dump_page(result)
+    if mode.json:
+        mode.emit_page(result, project_master_version)
         return
 
     footer_cmd = None
@@ -324,6 +353,13 @@ def _pagination_flag_error(
     return None
 
 
+def _mode(json_output: bool, full: bool) -> Mode:
+    """`--full` is a JSON shape switch, so it needs `--json`; say so up front."""
+    if full and not json_output:
+        fail(ValueError("--full requires --json."), json_output=False)
+    return Mode(json=json_output, full=full)
+
+
 def _dispatch(
     noun: str,
     ref: str,
@@ -336,31 +372,31 @@ def _dispatch(
     label: str | None,
     role: str | None,
     verbose: bool,
-    json_output: bool,
+    mode: Mode,
 ) -> None:
     """Shared dispatch logic for get, tracks, and price commands."""
     flag_error = _pagination_flag_error(noun, page=page, after=after, role=role)
     if flag_error:
-        fail(ValueError(flag_error), json_output=json_output)
+        fail(ValueError(flag_error), json_output=mode.json)
 
     try:
         client = get_client()
         entity_type, entity_id = _resolve_ref(ref, noun)
 
         if noun == "artist":
-            _get_artist(client, entity_id, json_output=json_output)
+            _get_artist(client, entity_id, mode)
         elif noun == "credits":
-            _get_credits(client, entity_id, json_output=json_output)
+            _get_credits(client, entity_id, mode)
         elif noun == "identifiers":
-            _get_identifiers(client, entity_id, json_output=json_output)
+            _get_identifiers(client, entity_id, mode)
         elif noun == "master":
-            _get_master(client, entity_id, json_output=json_output)
+            _get_master(client, entity_id, mode)
         elif noun == "label":
-            _get_label(client, entity_id, json_output=json_output)
+            _get_label(client, entity_id, mode)
         elif noun == "price":
-            _get_price(client, entity_id, json_output=json_output)
+            _get_price(client, entity_id, mode)
         elif noun == "release":
-            _get_release(client, entity_id, verbose=verbose, json_output=json_output)
+            _get_release(client, entity_id, verbose=verbose, mode=mode)
         elif noun == "releases":
             _get_releases(
                 client,
@@ -369,10 +405,10 @@ def _dispatch(
                 after=after,
                 limit=limit,
                 role=role,
-                json_output=json_output,
+                mode=mode,
             )
         elif noun == "tracklist":
-            _get_tracklist(client, entity_id, json_output=json_output)
+            _get_tracklist(client, entity_id, mode)
         elif noun == "versions":
             _get_versions(
                 client,
@@ -384,12 +420,35 @@ def _dispatch(
                 country=country,
                 format=format,
                 label=label,
-                json_output=json_output,
+                mode=mode,
             )
     # classify() maps every exception to a coded, recovery-oriented error, so
     # catching broadly is the point.
     except Exception as e:  # noqa: BLE001
-        fail(e, f"{noun.title()} {ref}", json_output=json_output)
+        fail(e, f"{noun.title()} {ref}", json_output=mode.json)
+
+
+_JSON_OPTIONS = [
+    click.option(
+        "--json",
+        "json_output",
+        is_flag=True,
+        default=False,
+        help="Output JSON (a compact projection of what the text view shows)",
+    ),
+    click.option(
+        "--full",
+        is_flag=True,
+        default=False,
+        help="With --json: the raw SDK model instead of the projection",
+    ),
+]
+
+
+def _json_options(command: Any) -> Any:
+    for option in reversed(_JSON_OPTIONS):
+        command = option(command)
+    return command
 
 
 @click.command()
@@ -401,9 +460,7 @@ def _dispatch(
 )
 @click.option("--country", help="Filter versions by country")
 @click.option("--format", "format_", help="Filter versions by format")
-@click.option(
-    "--json", "json_output", is_flag=True, default=False, help="Output raw JSON"
-)
+@_json_options
 @click.option("--label", help="Filter versions by label")
 @click.option("--limit", type=int, default=DEFAULT_LIMIT, help="Results per page")
 @click.option("--page", type=int, help="Page number (server-side pages only)")
@@ -413,12 +470,13 @@ def _dispatch(
     "--verbose",
     is_flag=True,
     default=False,
-    help="Show additional details (e.g., release notes, entity refs)",
+    help="release: also print notes, credits, and identifiers",
 )
 def get(
     noun: str,
     ref: str,
     json_output: bool,
+    full: bool,
     after: str | None,
     country: str | None,
     format_: str | None,
@@ -445,49 +503,37 @@ def get(
         label=label,
         role=role,
         verbose=verbose,
-        json_output=json_output,
+        mode=_mode(json_output, full),
+    )
+
+
+def _shortcut(noun: str, ref: str, json_output: bool, full: bool) -> None:
+    _dispatch(
+        noun,
+        ref,
+        page=None,
+        after=None,
+        limit=DEFAULT_LIMIT,
+        country=None,
+        format=None,
+        label=None,
+        role=None,
+        verbose=False,
+        mode=_mode(json_output, full),
     )
 
 
 @click.command()
 @click.argument("ref")
-@click.option(
-    "--json", "json_output", is_flag=True, default=False, help="Output raw JSON"
-)
-def tracks(ref: str, json_output: bool) -> None:
+@_json_options
+def tracks(ref: str, json_output: bool, full: bool) -> None:
     """Shortcut for: get tracklist <ref>."""
-    _dispatch(
-        "tracklist",
-        ref,
-        page=None,
-        after=None,
-        limit=DEFAULT_LIMIT,
-        country=None,
-        format=None,
-        label=None,
-        role=None,
-        verbose=False,
-        json_output=json_output,
-    )
+    _shortcut("tracklist", ref, json_output, full)
 
 
 @click.command()
 @click.argument("ref")
-@click.option(
-    "--json", "json_output", is_flag=True, default=False, help="Output raw JSON"
-)
-def price(ref: str, json_output: bool) -> None:
+@_json_options
+def price(ref: str, json_output: bool, full: bool) -> None:
     """Shortcut for: get price <ref>."""
-    _dispatch(
-        "price",
-        ref,
-        page=None,
-        after=None,
-        limit=DEFAULT_LIMIT,
-        country=None,
-        format=None,
-        label=None,
-        role=None,
-        verbose=False,
-        json_output=json_output,
-    )
+    _shortcut("price", ref, json_output, full)

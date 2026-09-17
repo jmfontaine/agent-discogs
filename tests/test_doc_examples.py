@@ -35,6 +35,7 @@ KNOWN_REFS: dict[str, tuple[str, str]] = {
     "@m3719": ("master", "The Downward Spiral"),
     "@a3857": ("artist", "Nine Inch Nails"),
     "@l647": ("label", "Nothing Records"),
+    "@a20661": ("artist", "Flood"),
 }
 
 # Entity names the docs mention, by kind. A ref whose ±CONTEXT-line window
