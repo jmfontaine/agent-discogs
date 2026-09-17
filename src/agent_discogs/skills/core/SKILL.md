@@ -72,9 +72,9 @@ Check status: `agent-discogs status`
 | Get original pressing | `search master "<title>"` → `get versions @m...` → `get release @r...` |
 | Narrow release search | `search release "<title>" --artist "<name>"` |
 | Get release notes / credits / identifiers together | `get release @r... --verbose` |
-| Compare several pressings cheaply | `get release @r... -c` per candidate; `tracks @r...` only when the tracklist matters |
+| Compare several pressings cheaply | `get release @r... @r... @r... -c` in one command; `tracks @r...` only when the tracklist matters |
 | Who produced / engineered / played on this? | `get credits @r...` → follow a `[@a...]` into `get releases @a...` |
-| Identify the disc in hand (same catno, several pressings) | `get identifiers @r...` for each candidate and compare Matrix / Runout |
+| Identify the disc in hand (same catno, several pressings) | `get identifiers @r... @r...` and compare Matrix / Runout |
 | Get artist/label refs from a release | `get release @r...` — `[@a...]` and `[@l...]` are always inline |
 | VA compilation tracks | `get release @r...` — per-track artists shown automatically |
 | Machine-readable output | Add `--json` to `search`, `get`, `tracks`, or `price` |

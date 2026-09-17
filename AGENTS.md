@@ -40,7 +40,7 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 ### Command Modules
 
 - `commands/search.py` — Search Discogs database. Positional args with optional type prefix (`release`, `master`, `artist`, `label`).
-- `commands/get.py` — Get entity details by noun (`artist`, `label`, `master`, `price`, `release`, `releases`, `tracklist`, `versions`). Also defines `tracks` and `price` shortcut commands.
+- `commands/get.py` — Get entity details by noun (`artist`, `credits`, `identifiers`, `label`, `master`, `price`, `release`, `releases`, `tracklist`, `versions`) for one or more refs (`MAX_REFS`). Handlers return text or a JSON document; `_dispatch` collects one block per ref in order and prints them once (text: blank-separated on stdout, a failing ref becomes its `✗` block; JSON: a list with `{"ref", "error"}` items), exiting 1 if any failed. A single ref keeps the single-document shape and the `fail()` error path. Also defines `tracks` and `price` shortcut commands.
 - `commands/status.py` — Show session/auth info.
 - `commands/cache.py` — Cache management (`clear`).
 - `commands/skills.py` — Serves the bundled agent guide (`skills`, `skills get core [--full]`, `skills path`). Content lives in `src/agent_discogs/skills/core/` (`SKILL.md` + `references/*.md`) and ships in the wheel. `skills/agent-discogs/SKILL.md` at the repo root is a thin discovery stub that points agents at `agent-discogs skills get core`; do not put feature content there.

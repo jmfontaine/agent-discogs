@@ -98,6 +98,8 @@ Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--p
 
 Shortcuts for `get tracklist` and `get price`. Both support `--json`.
 
+`get`, `tracks`, and `price` accept up to 10 refs and run them in sequence, so comparing pressings is one command: `agent-discogs get release @r352665 @r847868 -c`. Text blocks are separated by a blank line; a ref that fails reports inline and the rest still run (exit code 1 if any failed). With `--json` and several refs the output is a list, with `{"ref": ..., "error": {...}}` items for failures.
+
 ```bash
 agent-discogs tracks @r352665
 agent-discogs price @r352665

@@ -66,8 +66,10 @@ agent-discogs search release "When The Whip Comes Down" --release-type unofficia
 Get entity details or paginated lists.
 
 ```
-agent-discogs get <noun> <ref-or-id> [--flags]
+agent-discogs get <noun> <ref-or-id>... [--flags]
 ```
+
+One or more refs (at most 10), run in sequence. Text blocks are separated by a blank line; a failing ref reports inline and the others still run (exit 1 if any failed). `--json` with several refs returns a list, with `{"ref": ..., "error": {...}}` items for failures; with one ref the shape is the single document.
 
 **Nouns:**
 
@@ -158,5 +160,5 @@ agent-discogs cache clear
 | `agent-discogs query ...` | `agent-discogs search ...` |
 | `agent-discogs fetch ...` | `agent-discogs get ...` |
 | `agent-discogs show ...` | `agent-discogs get ...` |
-| `agent-discogs tracks @r847868` | `agent-discogs get tracklist @r847868` |
-| `agent-discogs price @r847868` | `agent-discogs get price @r847868` |
+| `agent-discogs tracks @r847868 ...` | `agent-discogs get tracklist @r847868 ...` |
+| `agent-discogs price @r847868 ...` | `agent-discogs get price @r847868 ...` |

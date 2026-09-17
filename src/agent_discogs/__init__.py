@@ -28,9 +28,9 @@ Usage: agent-discogs <command> [args] [options]
 
 Commands:
   search [type] <query>      Search database (aliases: find, query)
-  get <noun> <ref>            Get entity details (aliases: fetch, show)
-  tracks <ref>                Shortcut: get tracklist <ref>
-  price <ref>                 Shortcut: get price <ref>
+  get <noun> <ref>...         Get entity details, 1-10 refs (aliases: fetch, show)
+  tracks <ref>...             Shortcut: get tracklist <ref>...
+  price <ref>...              Shortcut: get price <ref>...
   cache clear                 Clear HTTP cache
   skills [get <name>]         Print the bundled agent guide (start: skills get core)
   status                      Show session and auth info

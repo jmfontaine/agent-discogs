@@ -1268,6 +1268,181 @@ class TestMainEntry:
         assert len(calls) >= 1
 
 
+class TestMultiRef:
+    """`get`, `tracks`, and `price` accept several refs: one command, N blocks."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from discogs_sdk import NotFoundError
+
+        releases = {
+            847868: _fake_model(
+                id=847868,
+                title="The Downward Spiral",
+                year=1994,
+                artists=None,
+                community=None,
+                labels=[
+                    _fake(id=647, name="Nothing Records", catalog_number="92346-2")
+                ],
+                formats=None,
+                genres=None,
+                styles=None,
+                num_for_sale=None,
+                lowest_price=None,
+                master_id=None,
+                tracklist=[_fake(position="1", title="A", duration="1:00", type_=None)],
+            ),
+            12453760: _fake_model(
+                id=12453760,
+                title="The Downward Spiral",
+                year=1994,
+                artists=None,
+                community=None,
+                labels=[
+                    _fake(id=647, name="Nothing Records", catalog_number="7 92346-2")
+                ],
+                formats=None,
+                genres=None,
+                styles=None,
+                num_for_sale=None,
+                lowest_price=None,
+                master_id=None,
+                tracklist=[_fake(position="1", title="A", duration="1:00", type_=None)],
+            ),
+        }
+        self.calls: list[int] = []
+
+        def _get(release_id: int) -> object:
+            self.calls.append(release_id)
+            if release_id not in releases:
+                raise NotFoundError("nope", status_code=404, response_body={})
+            return releases[release_id]
+
+        monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=_get),
+        )
+
+    def test_text_blocks_in_order_separated_by_blank_line(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["get", "release", "@r847868", "@r12453760", "-c"]
+        )
+        assert result.exit_code == 0
+        assert self.calls == [847868, 12453760]
+        first, second = result.output.strip().split("\n\n")
+        assert first.startswith("@r847868 [release]")
+        assert "Label: Nothing Records [@l647] (92346-2)" in first
+        assert second.startswith("@r12453760 [release]")
+        assert "Label: Nothing Records [@l647] (7 92346-2)" in second
+
+    def test_failed_ref_is_an_ordered_inline_block(self) -> None:
+        """Errors are stdout blocks in ref order, blank-separated like successes."""
+        result = CliRunner().invoke(
+            cli,
+            ["get", "release", "@r847868", "@r1", "@r12453760", "-c"],
+        )
+        assert result.exit_code == 1
+        assert self.calls == [847868, 1, 12453760]
+        blocks = result.stdout.strip().split("\n\n")
+        assert len(blocks) == 3
+        assert blocks[0].startswith("@r847868 [release]")
+        assert blocks[1] == (
+            '✗ Release @r1 not found.\n  Try: agent-discogs search "<title>"'
+        )
+        assert blocks[2].startswith("@r12453760 [release]")
+        assert result.stderr == ""
+
+    def test_json_list_with_error_items(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["get", "--json", "-c", "release", "@r847868", "@r1"]
+        )
+        assert result.exit_code == 1
+        data = json.loads(result.output)
+        assert isinstance(data, list)
+        assert data[0]["ref"] == "@r847868"
+        assert data[0]["tracks"] == "1 (1:00)"
+        assert data[1] == {
+            "ref": "@r1",
+            "error": {
+                "code": "not_found",
+                "message": "Release @r1 not found.",
+                "hint": 'Try: agent-discogs search "<title>"',
+                "status": 404,
+            },
+        }
+
+    def test_single_ref_json_shape_is_unchanged(self) -> None:
+        result = CliRunner().invoke(cli, ["get", "--json", "release", "@r847868"])
+        assert isinstance(json.loads(result.output), dict)
+
+        result = CliRunner().invoke(cli, ["get", "--json", "release", "@r1"])
+        assert result.exit_code == 1
+        assert set(json.loads(result.output)) == {"error"}
+
+    def test_shortcuts_take_several_refs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        result = CliRunner().invoke(cli, ["tracks", "@r847868", "@r12453760"])
+        assert result.exit_code == 0
+        assert result.output.count("Tracklist: ") == 2
+
+        from discogs_sdk import NotFoundError
+
+        def _release(release_id: int) -> object:
+            if release_id == 1:
+                raise NotFoundError("nope", status_code=404, response_body={})
+            return _fake(
+                id=release_id,
+                title=f"R{release_id}",
+                artists=None,
+                year=None,
+                price_suggestions=_fake(
+                    get=lambda: _fake(
+                        conditions={"Mint (M)": _fake(value=float(release_id))}
+                    )
+                ),
+                marketplace_stats=_fake(
+                    get=lambda: _fake(num_for_sale=1, lowest_price=None)
+                ),
+            )
+
+        monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=_release),
+        )
+        result = CliRunner().invoke(cli, ["price", "@r10", "@r1", "@r20"])
+        assert result.exit_code == 1
+        out = result.stdout
+        # Price guides contain their own blank lines, so assert order by
+        # position: guide 10, then the inline error, then guide 20.
+        markers = [
+            out.index('Price Guide: @r10 "R10" by Unknown Artist'),
+            out.index("$10.00"),
+            out.index("\n\n✗ Price @r1 not found.\n  Try: agent-discogs search"),
+            out.index('\n\nPrice Guide: @r20 "R20" by Unknown Artist'),
+            out.index("$20.00"),
+        ]
+        assert markers == sorted(markers)
+        assert result.stderr == ""
+
+        data = json.loads(
+            CliRunner().invoke(cli, ["price", "--json", "@r10", "@r1"]).output
+        )
+        assert data[0]["suggestions"] == {"Mint (M)": 10.0}
+        assert data[1]["error"]["code"] == "not_found"
+
+    def test_ref_cap(self) -> None:
+        refs = [f"@r{n}" for n in range(11)]
+        result = CliRunner().invoke(cli, ["get", "release", *refs])
+        assert result.exit_code == 1
+        assert "At most 10 refs per command (11 given)" in result.output
+        assert self.calls == []
+
+    def test_no_ref_is_a_usage_error(self) -> None:
+        result = CliRunner().invoke(cli, ["get", "release"])
+        assert result.exit_code == 2
+        assert "Missing argument" in result.output
+
+
 class TestExceptionHandling:
     def test_abort_propagates(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def _raise_abort(

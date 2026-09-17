@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import click
 from discogs_sdk import ArtistRelease, Discogs, MasterVersion
 
 from agent_discogs.client import get_client
-from agent_discogs.errors import fail
+from agent_discogs.errors import error_document, fail, format_error
 from agent_discogs.formatting import (
     format_artist,
     format_artist_releases,
@@ -343,6 +344,9 @@ def _mode(json_output: bool, full: bool) -> Mode:
     return Mode(json=json_output, full=full)
 
 
+MAX_REFS = 10
+
+
 def _run_one(
     client: Discogs,
     noun: str,
@@ -406,7 +410,7 @@ def _run_one(
 
 def _dispatch(
     noun: str,
-    ref: str,
+    refs: tuple[str, ...],
     *,
     page: int | None,
     after: str | None,
@@ -419,41 +423,70 @@ def _dispatch(
     compact: bool,
     mode: Mode,
 ) -> None:
-    """Shared dispatch logic for get, tracks, and price commands.
+    """Shared dispatch for get, tracks, and price: one or many refs.
 
-    Handlers return their output rather than printing it, so this is the one
-    place that decides how a result reaches stdout.
+    Several refs run in sequence, one API round trip each, so "compare these
+    pressings" is one command. Output is one block per ref in ref order,
+    blank-line separated, on stdout: a failing ref contributes its `✗` error
+    block and the rest still run; JSON becomes a list with `{"ref", "error"}`
+    items for failures. Exit 1 if any ref failed. With one ref the shape is
+    unchanged, including the single-error path (`fail()`: stderr text or a
+    JSON envelope).
     """
     flag_error = _pagination_flag_error(noun, page=page, after=after, role=role)
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
+    if len(refs) > MAX_REFS:
+        fail(
+            ValueError(f"At most {MAX_REFS} refs per command ({len(refs)} given)."),
+            json_output=mode.json,
+        )
 
     try:
         client = get_client()
-        block = _run_one(
-            client,
-            noun,
-            ref,
-            page=page,
-            after=after,
-            limit=limit,
-            country=country,
-            format=format,
-            label=label,
-            role=role,
-            verbose=verbose,
-            compact=compact,
-            mode=mode,
-        )
     # classify() maps every exception to a coded, recovery-oriented error, so
     # catching broadly is the point.
     except Exception as e:  # noqa: BLE001
-        fail(e, f"{noun.title()} {ref}", json_output=mode.json)
+        fail(e, json_output=mode.json)
+
+    single = len(refs) == 1
+    blocks: list[Any] = []  # one per ref, in order: text/document or error
+    failed = False
+    for ref in refs:
+        context = f"{noun.title()} {ref}"
+        try:
+            blocks.append(
+                _run_one(
+                    client,
+                    noun,
+                    ref,
+                    page=page,
+                    after=after,
+                    limit=limit,
+                    country=country,
+                    format=format,
+                    label=label,
+                    role=role,
+                    verbose=verbose,
+                    compact=compact,
+                    mode=mode,
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            if single:
+                fail(e, context, json_output=mode.json)
+            failed = True
+            if mode.json:
+                blocks.append({"ref": ref, "error": error_document(e, context)})
+            else:
+                blocks.append(format_error(e, context))
 
     if mode.json:
-        dump(block)
+        dump(blocks[0] if single else blocks)
     else:
-        print(block)
+        print("\n\n".join(blocks))
+    if failed:
+        sys.exit(1)
 
 
 _JSON_OPTIONS = [
@@ -481,7 +514,7 @@ def _json_options(command: Any) -> Any:
 
 @click.command()
 @click.argument("noun", type=click.Choice(GET_NOUNS))
-@click.argument("ref")
+@click.argument("refs", nargs=-1, required=True, metavar="REF...")
 @click.option(
     "--after",
     help="Continuation cursor copied from a previous Next page / Continue scan line",
@@ -509,7 +542,7 @@ def _json_options(command: Any) -> Any:
 )
 def get(
     noun: str,
-    ref: str,
+    refs: tuple[str, ...],
     json_output: bool,
     full: bool,
     after: str | None,
@@ -522,15 +555,16 @@ def get(
     role: str | None,
     verbose: bool,
 ) -> None:
-    """Get entity details.
+    """Get entity details for one or more refs.
 
     NOUN is the entity type: artist, credits, identifiers (alias: ids), label,
     master, price, release, releases, tracklist, versions.
-    REF is a typed ref (@r123, @a456) or raw Discogs ID.
+    REF is a typed ref (@r123, @a456) or raw Discogs ID. Several refs run in
+    sequence (at most 10).
     """
     _dispatch(
         NOUN_ALIASES.get(noun, noun),
-        ref,
+        refs,
         page=page,
         after=after,
         limit=limit,
@@ -544,10 +578,10 @@ def get(
     )
 
 
-def _shortcut(noun: str, ref: str, json_output: bool, full: bool) -> None:
+def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -> None:
     _dispatch(
         noun,
-        ref,
+        refs,
         page=None,
         after=None,
         limit=DEFAULT_LIMIT,
@@ -562,16 +596,16 @@ def _shortcut(noun: str, ref: str, json_output: bool, full: bool) -> None:
 
 
 @click.command()
-@click.argument("ref")
+@click.argument("refs", nargs=-1, required=True, metavar="REF...")
 @_json_options
-def tracks(ref: str, json_output: bool, full: bool) -> None:
-    """Shortcut for: get tracklist <ref>."""
-    _shortcut("tracklist", ref, json_output, full)
+def tracks(refs: tuple[str, ...], json_output: bool, full: bool) -> None:
+    """Shortcut for: get tracklist REF..."""
+    _shortcut("tracklist", refs, json_output, full)
 
 
 @click.command()
-@click.argument("ref")
+@click.argument("refs", nargs=-1, required=True, metavar="REF...")
 @_json_options
-def price(ref: str, json_output: bool, full: bool) -> None:
-    """Shortcut for: get price <ref>."""
-    _shortcut("price", ref, json_output, full)
+def price(refs: tuple[str, ...], json_output: bool, full: bool) -> None:
+    """Shortcut for: get price REF..."""
+    _shortcut("price", refs, json_output, full)
