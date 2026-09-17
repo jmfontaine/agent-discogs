@@ -73,7 +73,10 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 ## Dependencies
 
 - Runtime: `click`, `discogs-sdk`, `pydantic`
-- Dev: deptry, pyproject-fmt, pyright, pytest, pytest-cov, ruff, ty
+- Dev: deptry, pyproject-fmt, pyright, ruff, ty, plus the `test` group
+- Test group: pytest, pytest-cov. Kept separate because CI installs it on its
+  own (`uv export --only-group test`) into the clean environment where the
+  built wheel is tested; anything added here lands in that environment too.
 - KLUDGE: `deadcode` is deliberately *not* a dev dependency. It crashes on
   Python 3.14 (it calls `ast.Str`, which 3.14 removed) and upstream is
   dormant, so `just dead-code` runs it through `uvx` pinned to Python 3.13.
@@ -132,3 +135,19 @@ Publishing is fully automated via CI. The `publish.yml` workflow triggers on `v*
 1. Update `version` in `pyproject.toml`
 2. Commit the version bump
 3. Run `just release` — creates a signed tag, pushes, and monitors the workflow
+
+`publish.yml` calls the reusable `checks.yml`, which builds the distributions
+once, checks them with `scripts/check_distributions.py` (archive contents:
+`py.typed`, `LICENSE.txt`, the bundled skill, no project-only trees) and
+`twine check --strict` (metadata), then installs the built wheel into a clean
+environment on the oldest and newest supported Python, runs
+`scripts/check_installed_package.py` (import path, pydantic branch, console
+script offline) and the whole test suite against it, and installs the sdist on
+the newest. Every push and PR runs the same jobs. The publish job downloads
+those exact artifacts and never rebuilds, so what PyPI receives is what was
+tested. Publishing uses PyPI Trusted Publishers (OIDC); the `pypi` GitHub
+environment must exist on the repo.
+
+A release cannot be replaced once uploaded. If a broken version reaches PyPI,
+yank it there (project page or the upload API — there is no `pip yank`), then
+bump the patch version and release again.

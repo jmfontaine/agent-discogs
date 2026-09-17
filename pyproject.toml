@@ -32,10 +32,15 @@ dev = [
   "deptry>=0.24",
   "pyproject-fmt>=2.16.1",
   "pyright>=1.1.408",
-  "pytest>=8",
-  "pytest-cov",
   "ruff>=0.15.2",
   "ty>=0.0.18",
+  { include-group = "test" },
+]
+# Installed on its own into the clean environment that CI runs the suite in
+# against the built wheel; keep it to what pytest needs.
+test = [
+  "pytest>=8",
+  "pytest-cov",
 ]
 
 [tool.ruff]

@@ -18,14 +18,13 @@ jobs:
     needs: [checks]
     environment: pypi
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+      - name: Download distributions
+        # The exact artifacts the wheel and sdist jobs installed — never rebuilt
+        # here, so what PyPI receives is what was tested.
+        uses: actions/download-artifact@v8
         with:
-          python-version: "3.14"
-      - name: Build
-        run: uv build
+          name: dist
+          path: dist/
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 

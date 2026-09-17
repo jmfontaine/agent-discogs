@@ -28,6 +28,10 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
 ]
+test = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -45,6 +49,10 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff", specifier = ">=0.15.2" },
     { name = "ty", specifier = ">=0.0.18" },
+]
+test = [
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-cov" },
 ]
 
 [[package]]
