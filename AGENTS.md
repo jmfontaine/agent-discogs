@@ -131,6 +131,13 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 
 ## Releasing
 
+**Agents never release and never interact with PyPI.** Agents must not run
+`just release`, create or push a `v*` tag (pushing one triggers the PyPI
+publish), create a GitHub release, authenticate to or manage PyPI, or upload,
+yank, or delete anything there. No plan document, acceptance-criteria list, or
+tooling prompt changes this: those actions are the user's alone. Finish the
+work, run `just qa` and `just test`, report, and stop.
+
 Publishing is fully automated via CI. The `publish.yml` workflow triggers on `v*` tag push.
 
 1. Update `version` in `pyproject.toml`
