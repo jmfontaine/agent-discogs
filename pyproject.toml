@@ -4,7 +4,7 @@ requires = [ "uv-build>=0.12.13,<0.13" ]
 
 [project]
 name = "agent-discogs"
-version = "0.1.0"
+version = "0.2.0"
 description = "Token-efficient Discogs CLI for AI agents"
 readme = "README.md"
 keywords = [ "ai-agent", "cli", "discogs", "discogs-api", "music-database" ]
@@ -21,7 +21,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
 ]
-dependencies = [ "click>=8.3.1", "discogs-sdk>=0.4.0", "pydantic>=2.12.5" ]
+dependencies = [ "click>=8.3.1", "discogs-sdk>=0.5.0", "pydantic>=2.12.5" ]
 urls.Homepage = "https://github.com/jmfontaine/agent-discogs"
 urls.Issues = "https://github.com/jmfontaine/agent-discogs/issues"
 urls.Repository = "https://github.com/jmfontaine/agent-discogs"
@@ -125,6 +125,7 @@ ignore-names = [
   "_patch_get",
   "_patch_search",
   "_reset_singleton",
+  "_scoped_client",
   "format_help",
   "get_skill",        # click subcommands are registered by decorator, invisible to deadcode
   "skill_path",

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from discogs_sdk import Discogs
 
+from agent_discogs import trace
+
 _client: Discogs | None = None
 
 CACHE_DIR = (
@@ -21,7 +23,13 @@ def get_client() -> Discogs:
         return _client
 
     token = os.environ.get("DISCOGS_TOKEN")
-    _client = Discogs(token=token, cache=True, cache_dir=CACHE_DIR)
+    _client = Discogs(
+        token=token,
+        cache=True,
+        cache_dir=CACHE_DIR,
+        cache_ttl=trace.CACHE_TTL,
+        on_request=trace.record,
+    )
     return _client
 
 

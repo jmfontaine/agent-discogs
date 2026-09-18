@@ -10,6 +10,8 @@ from typing import Any
 from discogs_sdk import Discogs
 from pydantic import BaseModel
 
+from agent_discogs import trace
+
 MAX_API_CALLS = 5
 DEFAULT_LIMIT = 5
 
@@ -152,11 +154,14 @@ def fetch_filtered_page(
     collected: list[Any] = []
     next_cursor: str | None = None
     capped = False
+    api_calls = rows = 0
     result = PageResult(items=[], page=page, total_items=0, total_pages=1)
 
     for _ in range(MAX_API_CALLS):
         fetch_params = {**params, "page": api_page, "per_page": api_per_page}
         result = fetch_page(client, path, fetch_params, model_cls, items_key)
+        api_calls += 1
+        rows += len(result.items)
 
         for idx in range(offset, len(result.items)):
             item = result.items[idx]
@@ -179,6 +184,7 @@ def fetch_filtered_page(
         capped = True
         next_cursor = f"{page + 1}:{api_page}.0"
 
+    trace.note_scan(trace.ScanNote(api_calls, rows, len(collected), capped))
     return PageResult(
         items=collected,
         page=page,

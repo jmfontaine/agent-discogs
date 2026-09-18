@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agent-discogs"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -36,7 +36,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.3.1" },
-    { name = "discogs-sdk", specifier = ">=0.4.0" },
+    { name = "discogs-sdk", specifier = ">=0.5.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
 ]
 
@@ -261,7 +261,7 @@ wheels = [
 
 [[package]]
 name = "discogs-sdk"
-version = "0.4.0"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
@@ -269,9 +269,9 @@ dependencies = [
     { name = "pydantic", version = "2.14.0b2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.15.*'" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/74/f8/9135de721507cb09eb1070fe32c595032f5f19b834dbd190ce4a92bef7d6/discogs_sdk-0.4.0.tar.gz", hash = "sha256:3284f22c6d0309c88e63201a86fbbc2eac10d2aaa4ff419ab1ef6b42f5d52ee4", size = 56215, upload-time = "2026-09-14T01:44:35.605Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/7c/ed26104951f8d1c981ea52731e90b55ed02061599defeb6951758d9982bd/discogs_sdk-0.5.0.tar.gz", hash = "sha256:14da8bee0c2c1e62a72cea72a54ddb446430eb9d46d9d362ab296cdab0b70b59", size = 60564, upload-time = "2026-09-17T23:27:48.84Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/62/54380b485c31fda335867ce8fb945224dd7dc6d9381a7f855a120afcc426/discogs_sdk-0.4.0-py3-none-any.whl", hash = "sha256:6a07531d345628caaf0186bd567cf8f6d9820432a1b93bda1687a3b17089c9b7", size = 79250, upload-time = "2026-09-14T01:44:34.043Z" },
+    { url = "https://files.pythonhosted.org/packages/52/29/57e93ede1c4083f0f4eafcf85881e27d69986a5160a64bcca019fbaf3c9e/discogs_sdk-0.5.0-py3-none-any.whl", hash = "sha256:8a0473d102533257672ac25553f6e2d76fbeee8a60fdf646024942a642e8c9e2", size = 83326, upload-time = "2026-09-17T23:27:47.384Z" },
 ]
 
 [[package]]

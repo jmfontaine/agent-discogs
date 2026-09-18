@@ -94,7 +94,7 @@ agent-discogs get release @r847868 --json -v          # adds notes, credits, and
 agent-discogs get release @r847868 --json --full      # raw Discogs record (images, URLs, ~20x larger); only when the projection lacks a field you need
 ```
 
-With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}`. Branch on `error.code`: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when Discogs sends it), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
+With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}`. Branch on `error.code`: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when Discogs sends it, plus `limit`/`remaining` for the current minute), `cache_miss` (only under `--cached`), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
 
 ## Anti-Patterns
 
@@ -104,6 +104,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 - **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list. Filtered lists (the default search, `releases --role`, `releases @l... --year`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
 - **Don't guess IDs.** Always search first to find the right entity.
 - **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref (smart resolution costs an extra API call).
+- **Don't use `--fresh` by default.** Catalogue data an hour old is fine; reserve `--fresh` for `price` when you need current market numbers.
 
 ## Error Recovery
 
@@ -111,7 +112,8 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 - **Auth required** — price suggestions and search require `DISCOGS_TOKEN`. Run `agent-discogs status` to check.
 - **"Price data requires seller settings"** — not a bad ref. The release exists, but Discogs only serves price suggestions to accounts with seller settings filled out. Nothing to retry: use `get release @r...` for the `num_for_sale`/`lowest_price` summary instead.
 - **Invalid ref** — refs are Discogs IDs and never expire; there is no session. Check the prefix matches the noun (`@r` release, `@m` master, `@a` artist, `@l` label). A bare `@123` is invalid: either add the type letter or pass the raw number `123`.
-- **Rate limited** — wait briefly and retry. Authenticated requests get 60/min; unauthenticated get 25/min.
+- **Rate limited** — the error says what is left (`Rate limited: 0/60 requests left this minute.`, `remaining`/`limit` in JSON). Pause ~60s, or continue with `--cached` on refs you already fetched. Authenticated requests get 60/min; unauthenticated get 25/min.
+- **Unexpected cost or a stall?** Re-run once with `--debug` to see each request, retries and cache hits on stderr. Do not leave it on.
 - **"Continue scan:" instead of "Next page:"** — the filter was sparse and the scan stopped at 5 API calls before filling the page. The next window may also be short or empty; keep pasting the printed command until it disappears (no footer = nothing left to scan). Counts shown as `≤N` are the unfiltered upper bound.
 
 ## Refs
@@ -129,6 +131,35 @@ Refs encode entity type and Discogs ID: `@a3857` (artist), `@r847868` (release),
 ## Token Efficiency
 
 Prefer the most specific command: `tracks @r...` over `get release @r...` when you only need the tracklist, and `price @r...` over `get release @r...` when you only need pricing. This reduces output tokens and avoids unnecessary data.
+
+## Budget
+
+Discogs allows 60 requests per minute with a token (25 without), as a moving 60s window shared by every process on this machine. After any command that talks to the API, stderr ends with one line:
+
+```
+api: 3 requests · 43/60 left this minute
+api: 0 requests · cached
+api: 4 requests · 6/60 left this minute ⚠ pause ~60s before uncached calls
+```
+
+The count is what this command spent; `43/60` is what Discogs reported after its last request. It is never part of `--json` output. Commands that make no request print nothing.
+
+| Command | Requests |
+|---|---|
+| `get <noun>`, `tracks` | 1 per ref |
+| `price` | 3 per ref; `get versions @r...` 2 (resolve, then list) |
+| `search`, `get releases`, `get versions` (server-side pages) | 1 |
+| Client-side scans: `search` with `--release-type official\|unofficial` (the default), `get releases --role`, `get releases @l... --year` | up to 5 |
+| Anything repeated within 1 hour | 0 (cached) |
+
+At `⚠` (10 or fewer left): pause ~60s before uncached calls, or spend nothing with `--cached`. Unauthenticated runs get 25/min; setting `DISCOGS_TOKEN` is the fix there.
+
+**Try everything with `--cached` first, then spend only on the misses.** `agent-discogs --cached get release @r847868 @r...` serves what the cache has and reports each miss inline as `✗ Not cached: GET ...` (`error.code == "cache_miss"` under `--json`) without touching the API. It matters when several agents share one machine (one cache, one IP budget), and after a `⚠`. The flags precede the command:
+
+```bash
+agent-discogs --cached price @r847868     # zero spend; misses fail with cache_miss
+agent-discogs --fresh price @r847868      # bypass the cache; the response is not stored
+```
 
 ## Reference Docs
 

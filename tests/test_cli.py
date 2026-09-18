@@ -5,13 +5,17 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import json
+import logging
+import sys
+from collections.abc import Callable
 from types import SimpleNamespace
 
 import click
 import pytest
 from click.testing import CliRunner
+from discogs_sdk import RateLimit, RequestEvent
 
-from agent_discogs import cli
+from agent_discogs import cli, trace
 from agent_discogs.pagination import PageResult
 
 
@@ -123,7 +127,8 @@ class TestStatusCommand:
     def test_status(self) -> None:
         result = CliRunner().invoke(cli, ["status"])
         assert result.exit_code == 0
-        assert "agent-discogs v0.1.0" in result.output
+        version = importlib.metadata.version("agent-discogs")
+        assert f"agent-discogs v{version}" in result.output
         assert "Auth:" in result.output
         assert "Cache:" in result.output
 
@@ -2277,3 +2282,259 @@ class TestJsonShortcuts:
         result = CliRunner().invoke(cli, ["price", "--full", "@r123"])
         assert result.exit_code == 1
         assert "--full requires --json" in result.output
+
+
+def _network_event(remaining: int = 59, limit: int = 60) -> RequestEvent:
+    return RequestEvent(
+        method="GET",
+        url="https://api.discogs.com/releases/123",
+        status_code=200,
+        source="network",
+        elapsed_ms=10.0,
+        attempts=1,
+        stored=True,
+        ratelimit=RateLimit(limit, limit - remaining, remaining),
+    )
+
+
+def _tracks_client(
+    recorder: Callable[[], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`tracks @r123` served by a fake whose lookup also runs `recorder`, the
+    way the real client's `on_request` hook fires inside the SDK call."""
+    track = _fake_model(position="1", title="Song", duration="3:00", type_=None)
+    release = _fake(id=123, title="Album", year=2020, artists=None, tracklist=[track])
+
+    def _get(_id: int) -> object:
+        recorder()
+        return release
+
+    monkeypatch.setattr(
+        "agent_discogs.commands.get.get_client",
+        lambda: _fake_client(releases_get=_get),
+    )
+
+
+class TestBudgetFooter:
+    """The footer is stderr-only, printed after the command, in every mode."""
+
+    def test_footer_on_stderr_not_stdout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DISCOGS_TOKEN", "t")
+        _tracks_client(lambda: trace.record(_network_event(43)), monkeypatch)
+        footer = "api: 1 request · 43/60 left this minute\n"
+
+        result = CliRunner().invoke(cli, ["tracks", "@r123"])
+        assert result.exit_code == 0
+        assert "Song" in result.stdout
+        assert result.stderr == footer
+        assert "api:" not in result.stdout
+
+        result = CliRunner().invoke(cli, ["tracks", "--json", "@r123"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["tracklist"][0]["title"] == "Song"
+        assert result.stderr == footer
+
+    def test_footer_survives_a_failing_ref(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _boom() -> None:
+            trace.record(_network_event(5))
+            raise RuntimeError("after the request")
+
+        monkeypatch.setenv("DISCOGS_TOKEN", "t")
+        _tracks_client(_boom, monkeypatch)
+        result = CliRunner().invoke(cli, ["tracks", "--json", "@r123"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "unexpected"
+        assert result.stderr == (
+            "api: 1 request · 5/60 left this minute"
+            " ⚠ pause ~60s before uncached calls\n"
+        )
+
+    def test_unauthenticated_wording(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DISCOGS_TOKEN", raising=False)
+        _tracks_client(lambda: trace.record(_network_event(3, 25)), monkeypatch)
+        result = CliRunner().invoke(cli, ["tracks", "@r123"])
+        assert result.stderr.endswith(
+            "3/25 left this minute ⚠ set DISCOGS_TOKEN for 60/min, or pause ~60s\n"
+        )
+
+    def test_no_requests_no_footer(self) -> None:
+        for args in (["status"], ["skills"], ["--help"], ["get", "--help"]):
+            result = CliRunner().invoke(cli, args)
+            assert result.exit_code == 0, args
+            assert result.stderr == "", args
+
+
+class _CacheScope:
+    """Stand-in for `cache_only()` / `no_cache()`: records enter and exit."""
+
+    def __init__(self, log: list[str], name: str) -> None:
+        self.log, self.name = log, name
+
+    def __call__(self) -> _CacheScope:
+        return self
+
+    def __enter__(self) -> None:
+        self.log.append(f"enter {self.name}")
+
+    def __exit__(self, *_exc: object) -> None:
+        self.log.append(f"exit {self.name}")
+
+
+class TestCacheFlags:
+    @pytest.fixture(autouse=True)
+    def _scoped_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.log: list[str] = []
+        scoped = SimpleNamespace(
+            cache_only=_CacheScope(self.log, "cache_only"),
+            no_cache=_CacheScope(self.log, "no_cache"),
+        )
+        monkeypatch.setattr("agent_discogs.client.get_client", lambda: scoped)
+        _tracks_client(lambda: self.log.append("request"), monkeypatch)
+
+    def test_both_flags_is_a_usage_error(self) -> None:
+        result = CliRunner().invoke(cli, ["--cached", "--fresh", "status"])
+        assert result.exit_code == 2
+        assert "--cached and --fresh are mutually exclusive." in result.stderr
+        assert self.log == []
+
+    def test_cached_wraps_the_whole_command(self) -> None:
+        result = CliRunner().invoke(cli, ["--cached", "tracks", "@r123"])
+        assert result.exit_code == 0
+        assert self.log == ["enter cache_only", "request", "exit cache_only"]
+
+    def test_fresh_wraps_the_whole_command(self) -> None:
+        result = CliRunner().invoke(cli, ["--fresh", "tracks", "@r123"])
+        assert result.exit_code == 0
+        assert self.log == ["enter no_cache", "request", "exit no_cache"]
+
+    def test_cache_miss_is_a_per_ref_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from discogs_sdk import CacheMissError
+
+        price = _fake_model(conditions={"Mint (M)": _fake(value=50.0)})
+        stats = _fake_model(num_for_sale=10, lowest_price=None)
+
+        def _get(release_id: int) -> object:
+            if release_id == 1:
+                raise CacheMissError("GET", "https://api.discogs.com/releases/1")
+            trace.record(
+                RequestEvent(
+                    method="GET",
+                    url=f"https://api.discogs.com/releases/{release_id}",
+                    status_code=200,
+                    source="cache",
+                    elapsed_ms=0.2,
+                    attempts=0,
+                    stored=False,
+                    ratelimit=None,
+                )
+            )
+            return _fake(
+                id=release_id,
+                title=f"R{release_id}",
+                price_suggestions=_fake(get=lambda: price),
+                marketplace_stats=_fake(get=lambda: stats),
+            )
+
+        monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=_get),
+        )
+        result = CliRunner().invoke(cli, ["--cached", "price", "@r10", "@r1", "@r20"])
+        assert result.exit_code == 1
+        out = result.stdout
+        markers = [
+            'Price Guide: @r10 "R10"',
+            "✗ Not cached: GET /releases/1\n  Rerun without --cached",
+            'Price Guide: @r20 "R20"',
+        ]
+        positions = [out.index(m) for m in markers]
+        assert positions == sorted(positions)
+        assert result.stderr == "api: 0 requests · cached\n"
+
+        result = CliRunner().invoke(
+            cli, ["--cached", "price", "--json", "@r10", "@r1", "@r20"]
+        )
+        assert result.exit_code == 1
+        items = json.loads(result.stdout)
+        assert [i.get("ref") for i in items] == ["@r10", "@r1", "@r20"]
+        assert items[1]["error"]["code"] == "cache_miss"
+        assert items[1]["error"]["message"] == "Not cached: GET /releases/1"
+
+    def test_first_request_miss_still_reports_zero_spend(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The SDK emits no event for a `CacheMissError`, so a run whose very
+        first lookup misses has an empty trace; the footer must still say so."""
+        from discogs_sdk import CacheMissError
+
+        def _miss(release_id: int) -> object:
+            raise CacheMissError(
+                "GET", f"https://api.discogs.com/releases/{release_id}?curr_abbr=USD"
+            )
+
+        monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=_miss),
+        )
+        result = CliRunner().invoke(cli, ["--cached", "price", "@r847868"])
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert result.stderr == (
+            "✗ Not cached: GET /releases/847868?curr_abbr=USD\n"
+            "  Rerun without --cached to fetch it from the API.\n"
+            "api: 0 requests · cached\n"
+        )
+
+        result = CliRunner().invoke(cli, ["--cached", "price", "--json", "@r847868"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "cache_miss"
+        assert result.stderr == "api: 0 requests · cached\n"
+
+
+class TestDebug:
+    def test_panel_on_stderr_stdout_identical(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _tracks_client(lambda: trace.record(_network_event()), monkeypatch)
+        plain = CliRunner().invoke(cli, ["tracks", "@r123"])
+        debug = CliRunner().invoke(cli, ["--debug", "tracks", "@r123"])
+        assert debug.exit_code == 0
+        assert debug.stdout == plain.stdout
+        assert "── debug ──" not in debug.stdout
+        lines = debug.stderr.splitlines()
+        assert lines[0] == "api: 1 request · 59/60 left this minute"
+        assert lines[1].startswith("── debug ──")
+        assert lines[2].startswith("total     ")
+        assert lines[3].startswith("GET /releases/123   200   10ms")
+        chars = len(plain.stdout)
+        assert lines[-1] == (
+            f"output    {chars} chars, {plain.stdout.count(chr(10))} lines, "
+            f"≈{chars // 4} tokens"
+        )
+        assert not isinstance(sys.stdout, trace._CountingWriter)  # proxy removed
+
+    def test_env_var_enables_debug(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _tracks_client(lambda: None, monkeypatch)
+        result = CliRunner(env={"AGENT_DISCOGS_DEBUG": "1"}).invoke(
+            cli, ["tracks", "@r123"]
+        )
+        assert result.exit_code == 0
+        assert "── debug ──" in result.stderr
+        assert "── debug ──" not in result.stdout
+
+    def test_sdk_log_passthrough_only_with_debug(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sdk_logger = logging.getLogger("discogs_sdk")
+        _tracks_client(lambda: sdk_logger.debug("Cache hit: GET /x"), monkeypatch)
+
+        result = CliRunner().invoke(cli, ["--debug", "tracks", "@r123"])
+        assert "[sdk] Cache hit: GET /x\n" in result.stderr
+        assert sdk_logger.handlers == []
+
+        result = CliRunner().invoke(cli, ["tracks", "@r123"])
+        assert "[sdk]" not in result.stderr

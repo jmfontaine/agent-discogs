@@ -7,10 +7,12 @@ import json
 import pytest
 from discogs_sdk import (
     AuthenticationError,
+    CacheMissError,
     DiscogsAPIError,
     DiscogsConnectionError,
     ForbiddenError,
     NotFoundError,
+    RateLimit,
     RateLimitError,
 )
 
@@ -100,6 +102,39 @@ class TestFormatError:
         assert info.hint is not None
         assert info.hint.startswith("Wait a moment and retry.")
 
+    def test_rate_limit_error_reports_the_budget(self) -> None:
+        exc = RateLimitError(
+            "slow down",
+            status_code=429,
+            response_body={},
+            retry_after="30",
+            ratelimit=RateLimit(60, 60, 0),
+        )
+        assert format_error(exc) == (
+            "✗ Rate limited: 0/60 requests left this minute.\n"
+            "  Retry in 30s. 60 req/min with DISCOGS_TOKEN, 25 without."
+        )
+        assert json.loads(format_error_json(exc))["error"] == {
+            "code": "rate_limited",
+            "message": "Rate limited: 0/60 requests left this minute.",
+            "hint": "Retry in 30s. 60 req/min with DISCOGS_TOKEN, 25 without.",
+            "retry_after": 30,
+            "status": 429,
+            "limit": 60,
+            "remaining": 0,
+        }
+
+    def test_cache_miss(self) -> None:
+        exc = CacheMissError(
+            "GET", "https://api.discogs.com/releases/847868?curr_abbr=USD"
+        )
+        assert format_error(exc) == (
+            "✗ Not cached: GET /releases/847868?curr_abbr=USD\n"
+            "  Rerun without --cached to fetch it from the API."
+        )
+        assert classify(exc).code == "cache_miss"
+        assert classify(exc).status is None
+
     def test_value_error(self) -> None:
         exc = ValueError("bad input")
         result = format_error(exc)
@@ -130,6 +165,7 @@ class TestClassify:
             (RateLimitError("x", status_code=429, response_body={}), "rate_limited"),
             (DiscogsAPIError("x", status_code=502, response_body={}), "api_error"),
             (DiscogsConnectionError("x"), "connection_error"),
+            (CacheMissError("GET", "https://api.discogs.com/x"), "cache_miss"),
             (ValueError("x"), "invalid_argument"),
             (RuntimeError("x"), "unexpected"),
         ]

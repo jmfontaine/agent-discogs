@@ -6,6 +6,9 @@ import json
 import sys
 from dataclasses import asdict, dataclass
 from typing import Any, NoReturn
+from urllib.parse import urlsplit
+
+from agent_discogs import trace
 
 
 @dataclass(frozen=True)
@@ -18,6 +21,8 @@ class ErrorInfo:
     hint: str | None = None
     retry_after: int | None = None
     status: int | None = None
+    limit: int | None = None
+    remaining: int | None = None
 
 
 def _api_message(exc: Exception) -> str:
@@ -40,6 +45,7 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
     failed, e.g. "Release @r847868", and is used in not-found messages."""
     from discogs_sdk import (
         AuthenticationError,
+        CacheMissError,
         DiscogsAPIError,
         DiscogsConnectionError,
         ForbiddenError,
@@ -91,12 +97,20 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         wait = (
             f"Retry in {retry_after}s." if retry_after else "Wait a moment and retry."
         )
+        rl = exc.ratelimit
+        message = (
+            "Rate limit exceeded."
+            if rl is None
+            else f"Rate limited: {rl.remaining}/{rl.limit} requests left this minute."
+        )
         return ErrorInfo(
             "rate_limited",
-            "Rate limit exceeded.",
+            message,
             f"{wait} 60 req/min with DISCOGS_TOKEN, 25 without.",
             retry_after=retry_after,
             status=429,
+            limit=None if rl is None else rl.limit,
+            remaining=None if rl is None else rl.remaining,
         )
 
     if isinstance(exc, DiscogsAPIError):
@@ -107,6 +121,18 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
     if isinstance(exc, DiscogsConnectionError):
         return ErrorInfo(
             "connection_error", "Connection error.", "Check your network and retry."
+        )
+
+    if isinstance(exc, CacheMissError):
+        # The SDK emits no request event for a miss, so the footer learns
+        # about it here: every miss an agent sees passes through classify().
+        trace.note_cache_miss()
+        split = urlsplit(exc.url)
+        where = split.path + (f"?{split.query}" if split.query else "")
+        return ErrorInfo(
+            "cache_miss",
+            f"Not cached: {exc.method} {where}",
+            "Rerun without --cached to fetch it from the API.",
         )
 
     if isinstance(exc, ValueError):

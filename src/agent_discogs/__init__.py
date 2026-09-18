@@ -7,6 +7,7 @@ from typing import Any
 
 import click
 
+from agent_discogs import client, trace
 from agent_discogs.commands.cache import cache
 from agent_discogs.commands.get import get, price, tracks
 from agent_discogs.commands.search import search
@@ -44,6 +45,11 @@ Refs:
   @m3719 (master), @l647 (label). Use refs with get commands.
 
 Options:
+  --cached         Serve only from the cache; a miss fails (cache_miss), spends
+                   nothing. Precedes the command: agent-discogs --cached price @r...
+  --fresh          Bypass the cache for this command (response is not stored)
+  --debug          Request rows, timings, retries, scan stats, cache and output
+                   size on stderr, plus the SDK's own log lines
   --json           JSON output: a compact projection of the text view (search, get)
   --full           With --json: the raw SDK record instead of the projection
   --limit N        Results per page (search, get)
@@ -63,7 +69,14 @@ Options:
   --help           Show this message and exit
 
 Environment:
-  DISCOGS_TOKEN    Personal access token (higher rate limit, required for price data)
+  DISCOGS_TOKEN        Personal access token (60 req/min, required for price data)
+  AGENT_DISCOGS_DEBUG  Same as --debug
+
+Budget:
+  After any command that talks to the API, stderr ends with a budget line, e.g.
+  'api: 3 requests · 43/60 left this minute'. ⚠ means 10 or fewer requests
+  remain in the moving 60s window: pause ~60s or stick to cached refs. Cache
+  hits cost nothing ('api: 0 requests · cached'). Never inside --json output.
 
 Price data also needs seller settings filled out on the Discogs account the
 token belongs to (discogs.com/settings/seller). Without them the API answers
@@ -130,9 +143,25 @@ class AliasGroup(click.Group):
 
 @click.group(cls=AliasGroup, invoke_without_command=True)
 @click.version_option(package_name="agent-discogs", prog_name="agent-discogs")
+@click.option(
+    "--debug",
+    is_flag=True,
+    envvar="AGENT_DISCOGS_DEBUG",
+    help="Print request trace and timings to stderr.",
+)
+@click.option("--cached", is_flag=True, help="Serve only from cache; fail on a miss.")
+@click.option("--fresh", is_flag=True, help="Bypass the cache for this command.")
 @click.pass_context
-def cli(ctx: click.Context) -> None:
+def cli(ctx: click.Context, debug: bool, cached: bool, fresh: bool) -> None:
     """Token-efficient Discogs CLI for AI agents."""
+    if cached and fresh:
+        msg = "--cached and --fresh are mutually exclusive."
+        raise click.UsageError(msg)
+    trace.begin(ctx, debug=debug)
+    if cached:
+        ctx.with_resource(client.get_client().cache_only())
+    elif fresh:
+        ctx.with_resource(client.get_client().no_cache())
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 

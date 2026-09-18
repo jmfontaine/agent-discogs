@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from agent_discogs import trace
 from agent_discogs.pagination import (
     MAX_API_CALLS,
     PageResult,
@@ -251,6 +252,18 @@ class TestFetchFilteredPage:
         seen: list[int] = []
         _scan(_paged_client(1, seen.append), limit=4, keep=lambda _: True, cursor=None)
         assert seen == [12]
+
+    def test_records_a_scan_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        notes: list[trace.ScanNote] = []
+        monkeypatch.setattr(trace, "note_scan", notes.append)
+
+        _scan(_paged_client(30), limit=5, keep=lambda i: i.id >= 10, cursor=None)
+        assert notes == [trace.ScanNote(api_calls=1, rows=15, kept=5, capped=False)]
+
+        _scan(_paged_client(600), limit=5, keep=lambda i: i.id == 599, cursor=None)
+        assert notes[-1] == trace.ScanNote(
+            api_calls=MAX_API_CALLS, rows=75, kept=0, capped=True
+        )
 
 
 class TestFetchPage:

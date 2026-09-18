@@ -148,7 +148,7 @@ Errors under `--json` are a JSON document on stdout with exit code 1:
 {"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}
 ```
 
-Codes: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when provided), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
+Codes: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when provided, and `limit`/`remaining` for the current minute when Discogs reports them), `cache_miss` (only under `--cached`), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
 
 ## Ref system
 
@@ -169,6 +169,55 @@ Smart resolution: `get versions @r352665` auto-resolves the release to its maste
 
 HTTP responses are cached automatically with a 1-hour TTL. The cache is stored at `~/.cache/agent-discogs/` (or `$XDG_CACHE_HOME/agent-discogs/`). Clear it with `agent-discogs cache clear`.
 
+Two global flags control it for one command. They precede the subcommand and are mutually exclusive (exit code 2 otherwise):
+
+```bash
+agent-discogs --cached price @r352665      # serve only from the cache; never touches the API
+agent-discogs --fresh get release @r352665 # bypass the cache; go to the API
+```
+
+`--cached` fails with a `cache_miss` error (exit code 1) on any request the cache cannot serve, before any network I/O. With several refs, hits print normally and each miss reports inline, exactly like other per-ref failures; under `--json` the miss item carries `error.code == "cache_miss"`. The check is exact: it uses the real cache key at the real moment, so a command that issues several requests fails at the first one that is not cached. There is no separate "is it cached?" query because the answer depends on the whole request sequence a command issues.
+
+`--fresh` fetches every request from the API and does **not** store the response, so a later run without `--fresh` can still be served the older cached entry until its 1-hour TTL expires.
+
+## Budget
+
+Discogs throttles by source IP: 60 requests per minute with a token, 25 without, as a moving 60-second window. After any command that talks to the API, stderr ends with one budget line:
+
+```
+api: 3 requests · 43/60 left this minute
+api: 0 requests · cached
+api: 4 requests · 6/60 left this minute ⚠ pause ~60s before uncached calls
+```
+
+The count is what this command spent; `43/60` is what Discogs reported after the last request. `⚠` appears when 10 or fewer requests remain: pause about a minute, or keep to refs that are already cached (`--cached` guarantees zero spend). Without a token the warning suggests setting `DISCOGS_TOKEN` instead. The line is on stderr and never inside `--json` output; commands that make no request (`status`, `skills`, `cache clear`) print nothing.
+
+What commands cost:
+
+| Command | Requests |
+|---|---|
+| `get <noun>`, `tracks`, `price` | 1 per ref (`price`: up to 3; `versions @r...`: 2) |
+| `search`, `get releases`, `get versions` (server-side pages) | 1 |
+| Client-side scans: `search --release-type official\|unofficial`, `get releases --role`, `get releases @l... --year` | up to 5 |
+| Anything repeated within 1 hour | 0 (cached) |
+
+The CLI reports; it never sleeps or throttles on your behalf. When Discogs answers 429, the error says how much of the minute is left (`Rate limited: 0/60 requests left this minute.`), and under `--json` the envelope carries `retry_after`, `limit`, and `remaining`.
+
+## Debugging
+
+`--debug` (or `AGENT_DISCOGS_DEBUG=1`) prints a trace panel to stderr after the budget line: one row per request with status and timing (`cache` for cache hits, `×N attempts` when the SDK retried), scan statistics for client-side filters, cache size, and output size with a rough token estimate. The SDK's own log lines (`[sdk] HTTP request ...`, `[sdk] Retrying ... waiting 30s`) stream to stderr in real time, which is the only way to see a rate-limit retry while it is happening. stdout is byte-identical with and without the flag.
+
+```
+api: 2 requests · 58/60 left this minute
+── debug ───────────────────────────────────────────────
+total     1310ms
+GET /artists/3857                               200   338ms
+GET /artists/3857/releases?page=1&per_page=15   200   947ms
+scan      1 API calls, 15 rows fetched, 5 kept, not capped
+cache     ~/.cache/agent-discogs  540.0 KB  ttl 1h
+output    494 chars, 9 lines, ≈123 tokens
+```
+
 ## Error handling
 
 The CLI maps API errors to recovery-oriented messages with suggested next steps:
@@ -176,7 +225,8 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
 ```
 ✗ Release 999999999 not found. Try: agent-discogs search "<title>"
 ✗ Authentication failed. Check your DISCOGS_TOKEN.
-✗ Rate limit exceeded. Wait a moment and retry.
+✗ Rate limited: 0/60 requests left this minute. Retry in 30s.
+✗ Not cached: GET /marketplace/price_suggestions/352665 (only under --cached)
 ✗ Connection error. Check your network and retry.
 ```
 

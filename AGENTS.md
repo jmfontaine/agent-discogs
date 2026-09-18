@@ -35,7 +35,7 @@ Run a single test: `uv run pytest tests/test_cli.py -k test_version`
 
 ### CLI (click)
 
-Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `AliasGroup` for command aliases (`find`→`search`, `query`→`search`, `fetch`→`get`, `show`→`get`). Top-level shortcuts `tracks` and `price` delegate to `get` logic.
+Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `AliasGroup` for command aliases (`find`→`search`, `query`→`search`, `fetch`→`get`, `show`→`get`). Top-level shortcuts `tracks` and `price` delegate to `get` logic. The group callback owns the global flags: `--debug` (also `AGENT_DISCOGS_DEBUG`) starts the trace, `--cached` / `--fresh` wrap the whole subcommand in the SDK's `cache_only()` / `no_cache()` via `ctx.with_resource()`.
 
 ### Command Modules
 
@@ -51,7 +51,8 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 - `refs.py` — Typed ref system (`@a3857`, `@r847868`, `@m3719`, `@l647`). `make_ref()` creates refs, `parse_ref()` parses them. Raw numeric IDs return type `"unknown"`.
 - `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`). `_send()` is the SDK's HTTP-error boundary — it raises the mapped `DiscogsAPIError` subclass before returning, so callers never re-check the status.
 - `formatting.py` — All output formatting. Returns plain strings, callers `print()` them.
-- `errors.py` — `classify()` maps SDK exceptions to an `ErrorInfo` (stable `code`, message, hint, `retry_after`, `status`); `format_error()` renders text, `format_error_json()` the `{"error": {...}}` envelope; `fail()` prints one or the other and exits 1.
+- `errors.py` — `classify()` maps SDK exceptions to an `ErrorInfo` (stable `code`, message, hint, `retry_after`, `status`, and `limit`/`remaining` on 429); `format_error()` renders text, `format_error_json()` the `{"error": {...}}` envelope; `fail()` prints one or the other and exits 1. The `CacheMissError` branch also calls `trace.note_cache_miss()`, because the SDK emits no request event for a miss and the footer must still say nothing was spent.
+- `trace.py` — Per-invocation request trace. `record()` is the client's `on_request` hook; `begin()` (group callback) resets state and registers `finish()` via `ctx.call_on_close`, which runs on every exit including `sys.exit(1)`. `finish()` prints the budget footer (`api: N requests · R/L left this minute`) and, under `--debug`, the panel — both to stderr, never stdout. `fetch_filtered_page` reports a `ScanNote` per scan.
 - `json_output.py` — `--json` emission. `Mode(json, full)` tells a handler how to emit; `dump_entity()`/`dump_page()` take a projector and bypass it under `--full`.
 - `projections.py` — One projector per text view (`project_release`, `project_search_result`, ...) returning exactly the fields the text shows, plus refs. Empty values are dropped. This is what `--json` prints; the raw `model_dump()` is `--json --full` only.
 
@@ -66,7 +67,7 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 ## Testing
 
 - Tests use `click.testing.CliRunner` for in-process CLI testing (no subprocess).
-- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_doc_examples.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`.
+- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_doc_examples.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`, `tests/test_trace.py`.
 - No special fixtures or mocking framework beyond `unittest.mock`.
 - `tests/test_doc_examples.py` checks every `@ref` in the docs against `KNOWN_REFS`. Its `live`-marked half resolves each ref against the real API; `just test` excludes it, `just test-live` runs it (needs `DISCOGS_TOKEN`). Adding a new example ID to any doc means adding it to `KNOWN_REFS`.
 

@@ -2,10 +2,17 @@
 
 ## Global Flags
 
+Global flags precede the command (`agent-discogs --cached price @r847868`).
+
 | Flag | Description |
 |------|-------------|
+| `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. |
+| `--fresh` | Bypass the cache for this command. Every request goes to the API; the response is not stored, so a later run without `--fresh` may still see the older cached entry until its 1h TTL expires. Mutually exclusive with `--cached` (exit 2). |
+| `--debug` | Trace panel on stderr after the budget line: one row per request (path, status, timing or `cache`, `×N attempts` on retry), scan statistics, cache size, output size with a token estimate, plus the SDK's own log lines in real time. `AGENT_DISCOGS_DEBUG=1` does the same. stdout is unchanged. |
 | `--help` | Show help |
 | `--version` | Show version |
+
+After any command that talks to the API, stderr ends with a budget line such as `api: 3 requests · 43/60 left this minute` (`⚠` when 10 or fewer remain). See the Budget section of the core skill.
 
 
 ## search
