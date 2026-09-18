@@ -141,7 +141,7 @@ def fetch_filtered_page(
     """Fetch one page of client-side filtered results, resuming from `cursor`.
 
     The API has no server-side filter for these cases, so we scan raw API
-    pages (over-fetching 3x) and keep matching items. Scanning resumes exactly
+    pages (overfetching 3x) and keep matching items. Scanning resumes exactly
     where the previous call stopped, never rescanning from page 1. At most
     `MAX_API_CALLS` requests per call: a sparse filter can return a short (even
     empty) page with `capped=True` and a cursor to continue from.
