@@ -84,7 +84,7 @@ def _occurrences() -> list[tuple[str, str, str]]:
     for name, lines in _sources().items():
         for i, line in enumerate(lines):
             for ref in dict.fromkeys(_REF_RE.findall(line)):
-                if ref.lstrip("@arml") in _PLACEHOLDER_IDS:
+                if ref.lstrip("@arml") in _PLACEHOLDER_IDS:  # cspell:disable-line
                     continue
                 ctx = "\n".join(lines[max(0, i - CONTEXT) : i + CONTEXT + 1])
                 found.append((f"{name}:{i + 1}", ref, ctx))
