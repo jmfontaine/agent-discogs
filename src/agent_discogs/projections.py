@@ -1,7 +1,7 @@
 """SDK models → the JSON an agent actually needs.
 
 Each text view in `formatting.py` has a sibling projector here that returns
-exactly the fields that view shows, plus refs. `--json` serialises these;
+exactly the fields that view shows, plus refs. `--json` serializes these;
 `--json --full` bypasses them for the raw SDK `model_dump()`. A raw release is
 ~33 KB of image URLs and bookkeeping; its projection is ~1.5 KB.
 """

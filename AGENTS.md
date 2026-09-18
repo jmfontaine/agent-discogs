@@ -127,7 +127,7 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 - Python 3.10+ required
 - `py.typed` marker present (PEP 561)
 - Run `git` commands directly, never with `git -C`
-- When adding or changing user-facing behaviour (commands, flags, output shape, errors), update all of: `_HELP_TEXT` in `src/agent_discogs/__init__.py`, `README.md`, and `src/agent_discogs/skills/core/` (`SKILL.md` for workflow/overview, `references/*.md` for detail). Agents load the bundled skill from the installed binary, so stale content there is a live bug.
+- When adding or changing user-facing behavior (commands, flags, output shape, errors), update all of: `_HELP_TEXT` in `src/agent_discogs/__init__.py`, `README.md`, and `src/agent_discogs/skills/core/` (`SKILL.md` for workflow/overview, `references/*.md` for detail). Agents load the bundled skill from the installed binary, so stale content there is a live bug.
 
 ## Releasing
 
