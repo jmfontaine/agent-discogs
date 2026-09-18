@@ -145,12 +145,17 @@ def _request_path(url: str) -> str:
     return split.path + (f"?{split.query}" if split.query else "")
 
 
+_KB = 1024
+
+
 def _cache_size(cache_dir: Path) -> str:
     # SQLite may leave -wal/-shm beside the database file.
     size = sum(p.stat().st_size for p in cache_dir.glob("cache.db*"))
-    if size < 1024 * 1024:
-        return f"{size / 1024:.1f} KB"
-    return f"{size / (1024 * 1024):.1f} MB"
+    if size < _KB:
+        return f"{size} B"
+    if size < _KB * _KB:
+        return f"{size / _KB:.1f} KB"
+    return f"{size / (_KB * _KB):.1f} MB"
 
 
 def _tilde(path: Path) -> str:

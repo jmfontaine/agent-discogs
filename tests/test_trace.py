@@ -163,7 +163,7 @@ class TestRenderPanel:
         lines = panel.splitlines()
         assert lines[1] == "total     0ms"
         assert lines[-1].startswith("cache     ")
-        assert lines[-1].endswith("  0.0 KB  ttl 1h")
+        assert lines[-1].endswith("  0 B  ttl 1h")
         assert not any(line.startswith("output") for line in lines)
 
     def test_megabytes(self, tmp_path: Path) -> None:
