@@ -2,10 +2,6 @@ name: Checks
 
 on:
   workflow_call:
-    inputs:
-      ref:
-        type: string
-        default: ""
 
 jobs:
   quality:
@@ -14,8 +10,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - name: Setup uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -71,8 +65,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - name: Setup uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -89,8 +81,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - name: Setup uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -123,8 +113,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - name: Setup uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -165,8 +153,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
       - name: Setup uv
         uses: astral-sh/setup-uv@v7
         with:
