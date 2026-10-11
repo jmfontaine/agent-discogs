@@ -173,8 +173,6 @@ def project_tracklist(rel: Any) -> dict[str, Any]:
 
 def project_price(release: Any, suggestions: Any, stats: Any) -> dict[str, Any]:
     conditions: Any = getattr(suggestions, "conditions", None) or {}
-    if not isinstance(conditions, dict):
-        conditions = conditions()
     lowest = getattr(stats, "lowest_price", None)
     return drop_empty(
         {

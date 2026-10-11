@@ -2178,7 +2178,7 @@ class TestJsonGet:
 
     def test_get_price_json_projection_and_full(self) -> None:
         price_suggestions = _fake_model(
-            conditions=lambda: {
+            conditions={
                 "Mint (M)": _fake(value=100.0),
                 "Good (G)": _fake(value=None),
             }

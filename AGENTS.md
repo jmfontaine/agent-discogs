@@ -84,24 +84,20 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
   The justfile recipe, the CI step, and the pre-commit hook each carry
   `KLUDGE` comments with the details — grep for `KLUDGE` before changing the
   dead-code check, and do not "simplify" its exit-code handling.
-- Python 3.15 is supported, and it is the one interpreter that resolves a
-  **pre-release** pydantic. That split is deliberate, inherited from
-  discogs-sdk 0.4.0: stable Pythons get stable pydantic, 3.15 gets the beta.
-  The SDK declares `pydantic>=2.14.0b2,<2.15; python_version=='3.15'` because
-  pydantic 2.13 pins a pydantic-core with no cp315 wheels, and 2.14's
-  pydantic-core (2.49.0) is the first with them. So the committed lockfile
-  carries a 3.15-only pydantic branch, and every install path — `uv sync`,
-  `uv pip install`, plain `pip install` — picks 2.14.0b2 there with no
-  pre-release flag, because a specifier naming `2.14.0b2` enables pre-release
-  selection for that package on its own. Nothing builds from sdist.
-  Consequences to keep in mind:
-  - Do not prune the 3.15 lock branch with `[tool.uv] environments`. It is
-    marker-gated on `python_full_version == '3.15.*'`, so it is inert on
-    3.10–3.14, and pruning it makes the `3.15` CI leg unresolvable.
-  - Our own `pydantic>=2.12.5` floor stays as is. It neither needs nor grants
-    pre-release permission; the SDK's marker-scoped clause does that.
-  - A pydantic 2.14 beta regression surfaces as a red `3.15` test leg here.
-    Check `pydantic.VERSION` in that job before suspecting this project.
+- Python 3.15 is supported. discogs-sdk (0.7.0 and later) declares
+  `pydantic>=2.14; python_full_version == '3.15.*'`, because pydantic 2.13
+  pins a pydantic-core with no cp315 wheels and 2.14 is the first series with
+  them. Every resolved pydantic is a stable release, and
+  `scripts/check_installed_package.py` asserts the 2.14 minimum on 3.15 with
+  no upper bound. Consequences to keep in mind:
+  - The committed lockfile may carry a 3.15-only pydantic branch (2.14.x on
+    3.15, an older locked pydantic elsewhere). It exists only while the other
+    Pythons' resolution lags 2.14, and collapses on the next full upgrade
+    (`just deps-update`). Either shape is correct.
+  - Do not exclude 3.15 with `[tool.uv] environments`: that makes the `3.15`
+    CI leg unresolvable.
+  - Our own `pydantic>=2.12.5` floor stays as is; the SDK's marker-scoped
+    clause raises it on 3.15.
   - Exercise 3.15 locally with
     `UV_PROJECT_ENVIRONMENT=.venv315 uv sync --all-extras --all-groups \
     --python 3.15 --locked`, then `UV_PROJECT_ENVIRONMENT=.venv315 uv run \
@@ -114,9 +110,6 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
     `python_full_version >= '3.15'` in the published metadata, and under
     PEP 440 a release candidate sorts *below* 3.15.0, so the marker is false
     on exactly the interpreters that need it and pip fails to resolve at all.
-  When pydantic 2.14 goes final the split disappears on its own: the `>=2.12.5`
-  floor resolves a 3.15-capable stable pydantic everywhere, and no metadata
-  here changes.
 
 ## Discogs API Documentation
 

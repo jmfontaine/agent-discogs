@@ -492,10 +492,7 @@ def format_price_guide(
         "Poor (P)",
     ]
 
-    conditions: Any = getattr(price_suggestions, "conditions", {})
-    # Some SDK versions expose `conditions` as a zero-arg method, not a mapping.
-    if conditions is not None and not isinstance(conditions, dict):
-        conditions = conditions()
+    conditions: Any = getattr(price_suggestions, "conditions", None)
 
     if conditions:
         for cond in condition_order:

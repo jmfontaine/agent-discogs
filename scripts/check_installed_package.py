@@ -10,8 +10,9 @@ CLI serves from package data and which a checkout-based test run cannot prove
 made it into the wheel.
 
 The pydantic check mirrors AGENTS.md: on Python 3.15 the discogs-sdk marker
-must resolve a 2.14 series pydantic (the first with cp315 pydantic-core
-wheels); everywhere else this project's own ``>=2.12.5`` floor applies.
+must resolve pydantic 2.14 or later (the first series with cp315 pydantic-core
+wheels), with no upper bound; everywhere else this project's own ``>=2.12.5``
+floor applies.
 """
 
 from __future__ import annotations
@@ -27,11 +28,9 @@ import pydantic
 import agent_discogs
 
 MINIMUM_PYDANTIC = (2, 12)
-# KLUDGE: mirrors discogs-sdk's temporary Python 3.15 clause
-# (`pydantic>=2.14.0b2,<2.15; python_version=='3.15'`). When the SDK relaxes it
-# to `pydantic>=2.14`, drop only the upper bound here: the 3.15 branch must keep
-# asserting the 2.14 minimum.
-PYDANTIC_RANGE_315 = ((2, 14), (2, 15))
+# Mirrors discogs-sdk's Python 3.15 clause (`pydantic>=2.14;
+# python_full_version == '3.15.*'`).
+MINIMUM_PYDANTIC_315 = (2, 14)
 
 REFERENCES = (
     "commands.md",
@@ -58,18 +57,13 @@ def check_pydantic() -> None:
     major, minor = pydantic.VERSION.split(".")[:2]
     installed = int(major), int(minor)
     python = sys.version.split()[0]
-    if sys.version_info[:2] == (3, 15):
-        low, high = PYDANTIC_RANGE_315
-        if not low <= installed < high:
-            fail(
-                f"pydantic {pydantic.VERSION} is outside the "
-                f"{'.'.join(map(str, low))}-{'.'.join(map(str, high))} range "
-                f"required on Python {python}"
-            )
-    elif installed < MINIMUM_PYDANTIC:
+    floor = (
+        MINIMUM_PYDANTIC_315 if sys.version_info[:2] == (3, 15) else MINIMUM_PYDANTIC
+    )
+    if installed < floor:
         fail(
             f"pydantic {pydantic.VERSION} is below the "
-            f"{'.'.join(map(str, MINIMUM_PYDANTIC))} floor required on Python {python}"
+            f"{'.'.join(map(str, floor))} floor required on Python {python}"
         )
     print(f"pydantic ok: {pydantic.VERSION} on Python {python}")
 

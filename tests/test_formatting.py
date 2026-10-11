@@ -1115,16 +1115,6 @@ class TestFormatReleaseEdgeCases:
 
 
 class TestFormatPriceGuideEdgeCases:
-    def test_callable_conditions(self) -> None:
-        release = _fake(id=1, title="Album", year=None, artists=None)
-        price = _fake(value=25.00)
-        conditions_dict = {"Mint (M)": price}
-        price_suggestions = _fake(conditions=lambda: conditions_dict)
-        marketplace_stats = _fake(num_for_sale=None, lowest_price=None)
-
-        output = format_price_guide(release, price_suggestions, marketplace_stats)
-        assert "$25.00" in output
-
     def test_empty_conditions(self) -> None:
         release = _fake(id=1, title="Album", year=None, artists=None)
         price_suggestions = _fake(conditions={})
