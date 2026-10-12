@@ -134,6 +134,12 @@ Budget:
   A 429 names the wait Discogs asked for, rounded up: 'Retry in 2s.' (--json:
   retry_after; 0 = retry now; omitted without a usable Retry-After).
 
+Errors:
+  With --json an error is {"error":{"code",...}} on stdout, exit 1; a malformed
+  command line instead exits 2 with text on stderr.
+  bad_response means Discogs sent something unreadable (not JSON, or the wrong
+  shape). It is not your input: retry in a moment, with --fresh if it repeats.
+
 Price data also needs seller settings filled out on the Discogs account the
 token belongs to (discogs.com/settings/seller). Without them the API answers
 404 and only 'price' is affected.
