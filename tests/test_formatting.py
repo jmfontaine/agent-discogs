@@ -20,6 +20,7 @@ from agent_discogs.formatting import (
     _track_artist_prefix,
     _truncate,
     _urls_short,
+    artist_title,
     format_artist,
     format_artist_releases,
     format_credits,
@@ -40,6 +41,26 @@ from agent_discogs.formatting import (
 def _fake(**kwargs: object) -> SimpleNamespace:
     """Create a fake object with given attributes."""
     return SimpleNamespace(**kwargs)
+
+
+class TestArtistTitle:
+    """Rows built from looked-up releases are titled like search results."""
+
+    def test_joins(self) -> None:
+        release = _fake(
+            title="Coachella 2026",
+            artists=[
+                _fake(name="Nine Inch Nails", join=","),
+                _fake(name="Boys Noize", join="&"),
+                _fake(name="Guest", join=""),
+            ],
+        )
+        assert artist_title(release) == (
+            "Nine Inch Nails, Boys Noize & Guest - Coachella 2026"
+        )
+
+    def test_no_artists_is_the_title(self) -> None:
+        assert artist_title(_fake(title="Untitled", artists=None)) == "Untitled"
 
 
 class TestArtistString:

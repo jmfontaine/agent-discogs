@@ -16,7 +16,7 @@ import shlex
 import sqlite3
 import sys
 from collections.abc import Callable, Iterator
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -4238,6 +4238,259 @@ class TestUncappedScan:
         assert result.exit_code == 1
         assert "--max-requests does not apply to 'get artist'" in result.stderr
         assert sent == []
+
+
+_NEWEST_ADDED = datetime(2026, 10, 1, 12, tzinfo=timezone(timedelta(hours=-7)))
+
+
+class _AddedCatalogue:
+    """`rows` releases behind a date-sorted release search, five a page, and
+    a `/releases/<id>` record for each. Release `i` was added `i` days before
+    2026-10-01 (newest first), so `--added-since 2026-09-25` keeps ids 0-6;
+    the ids in `unofficial` carry the "Unofficial Release" description, and
+    with `shuffled` release 3 claims a later date than release 2."""
+
+    def __init__(
+        self,
+        rows: int = 12,
+        *,
+        unofficial: frozenset[int] = frozenset(),
+        shuffled: bool = False,
+        hour: int = 12,
+    ) -> None:
+        self.rows, self.unofficial, self.shuffled = rows, unofficial, shuffled
+        self.newest = _NEWEST_ADDED.replace(hour=hour)
+
+    def __call__(self, path: str, params: dict[str, str]) -> object:
+        if path == "/database/search":
+            page, per = int(params.get("page", "1")), 5
+            ids = range((page - 1) * per, min(page * per, self.rows))
+            pages = -(-self.rows // per)
+            urls = {"next": "https://api.discogs.com/next"} if page < pages else {}
+            pagination = {"page": page, "pages": pages, "items": self.rows}
+            results = [{"id": i, "type": "release", "title": f"T{i}"} for i in ids]
+            return {"pagination": {**pagination, "urls": urls}, "results": results}
+        release_id = int(path.rsplit("/", 1)[1])
+        days_back = 1 if self.shuffled and release_id == 3 else release_id
+        added = (self.newest - timedelta(days=days_back)).isoformat()
+        descriptions = ["Album"]
+        if release_id in self.unofficial:
+            descriptions.append("Unofficial Release")
+        return {
+            "id": release_id,
+            "title": f"T{release_id}",
+            "artists": [
+                {"id": 9, "name": "Band", "join": "&"},
+                {"id": 7, "name": "Guest", "join": ""},
+            ],
+            "year": 2026,
+            "master_id": 300 + release_id,
+            "country": "US",
+            "labels": [{"id": 8, "name": "Lab", "catno": f"C{release_id}"}],
+            "formats": [{"name": "CD", "qty": "1", "descriptions": descriptions}],
+            "date_added": added,
+            "uri": f"https://www.discogs.com/release/{release_id}",
+        }
+
+
+_ADDED = ["search", "release", "--artist", "Band", "--added-since", "2026-09-25"]
+
+
+class TestAddedSince:
+    """`search release ... --added-since` wraps the SDK's experimental
+    `releases_added_since()`: uncapped by default, `--max-requests` opt-in."""
+
+    def _api(self, monkeypatch: pytest.MonkeyPatch, **kwargs: Any) -> _FakeAPI:
+        self.api = _FakeAPI(monkeypatch, _AddedCatalogue(**kwargs))
+        return self.api
+
+    def _run(self, *args: str) -> tuple[Result, list[str]]:
+        start = len(self.api.sends)
+        result = CliRunner().invoke(cli, list(args))
+        return result, [path for path, _ in self.api.sends[start:]]
+
+    def test_window_comes_back_newest_first_with_added_dates(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch)
+        result, sent = self._run(*_ADDED, "--release-type", "all", "--json")
+        assert result.exit_code == 0, result.output
+        document = json.loads(result.stdout)
+        assert document["complete"] is True
+        assert document["total"] == 7
+        rows = document["results"]
+        assert [row["ref"] for row in rows] == [f"@r{i}" for i in range(7)]
+        assert rows[0]["added"] == "2026-10-01T12:00:00-07:00"
+        assert rows[0]["title"] == "Band & Guest - T0"
+        assert rows[0]["master"] == "@m300"
+        assert rows[6]["added"] == "2026-09-25T12:00:00-07:00"
+        # Two search pages, a lookup for each release in the window, and one
+        # for release 7, the first older than the cutoff.
+        assert sent.count("/database/search") == 2
+        assert len(sent) == 10
+        search = next(p for path, p in self.api.sends if path == "/database/search")
+        assert (search["type"], search["artist"]) == ("release", "Band")
+        assert (search["sort"], search["sort_order"]) == ("date_added", "desc")
+        assert search["per_page"] == "100"
+
+        text, sent = self._run(*_ADDED, "--release-type", "all")
+        assert sent == []  # all cached
+        lines = text.stdout.splitlines()
+        assert lines[0] == (
+            "Search: release artist=Band release-type=all added since 2026-09-25 "
+            "(7 results, newest first)"
+        )
+        assert lines[2] == (
+            '@r0 "Band & Guest - T0" 2026 US · Lab C0 · CD (Album) · added '
+            "2026-10-01 → @m300"
+        )
+        assert len(lines) == 2 + 7
+
+    def test_max_requests_stops_with_an_incomplete_result(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch)
+        argv = [*_ADDED, "--release-type", "all", "--max-requests", "3"]
+        result, sent = self._run(*argv, "--json")
+        assert result.exit_code == 0, result.output
+        assert sent == ["/database/search", "/releases/0", "/releases/1"]
+        document = json.loads(result.stdout)
+        assert document["complete"] is False
+        assert [row["ref"] for row in document["results"]] == ["@r0", "@r1"]
+
+        self._api(monkeypatch)  # a cold cache again
+        text, sent = self._run(*argv)
+        assert len(sent) == 3
+        assert text.stdout.splitlines()[-1].startswith(
+            "Stopped at --max-requests 3: the result may be incomplete."
+        )
+
+    def test_cached_window_is_complete_within_one_request(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch)
+        self._run(*_ADDED, "--release-type", "all")
+        result, sent = self._run(
+            *_ADDED, "--release-type", "all", "--max-requests", "1", "--json"
+        )
+        assert result.exit_code == 0, result.output
+        assert sent == []
+        document = json.loads(result.stdout)
+        assert document["complete"] is True
+        assert len(document["results"]) == 7
+
+    def test_release_type_filters_on_looked_up_formats(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch, unofficial=frozenset({2, 5}))
+        result, sent = self._run(*_ADDED, "--json")  # official, the default
+        assert result.exit_code == 0, result.output
+        refs = [row["ref"] for row in json.loads(result.stdout)["results"]]
+        assert refs == ["@r0", "@r1", "@r3", "@r4", "@r6"]
+        assert len(sent) == 10  # what --release-type all costs: no extra request
+
+        result, _ = self._run(*_ADDED, "--format", "CD", "--release-type", "unofficial")
+        assert result.exit_code == 0, result.output
+        assert [int(i) for i in re.findall(r"@r(\d+)", result.stdout)] == [2, 5]
+
+    def test_unofficial_is_filtered_by_discogs(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch)
+        result, _ = self._run(*_ADDED, "--release-type", "unofficial", "--json")
+        assert result.exit_code == 0, result.output
+        search = next(p for path, p in self.api.sends if path == "/database/search")
+        assert search["format"] == "Unofficial Release"
+        # Discogs did the filtering; the formats are not checked again.
+        assert len(json.loads(result.stdout)["results"]) == 7
+
+    def test_explicit_limit_caps_the_rows(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch)
+        argv = [*_ADDED, "--release-type", "all", "--limit", "3"]
+        result, _ = self._run(*argv, "--json")
+        document = json.loads(result.stdout)
+        assert (len(document["results"]), document["total"]) == (3, 7)
+        text, _ = self._run(*argv)
+        assert "(3 of 7 results, newest first)" in text.stdout.splitlines()[0]
+
+    def test_rendering_failure_is_inside_the_boundary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch)
+
+        def _boom(*_a: object, **_kw: object) -> None:
+            raise RuntimeError("bad row")
+
+        monkeypatch.setattr(
+            "agent_discogs.commands.search.project_added_release", _boom
+        )
+        result, _ = self._run(*_ADDED, "--json")
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "unexpected"
+
+        monkeypatch.setattr(
+            "agent_discogs.commands.search.format_added_releases", _boom
+        )
+        result, _ = self._run(*_ADDED)
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "bad row" in result.stderr
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            "search artist Band --added-since 2026-09-25",
+            "search Band --added-since 2026-09-25",
+            "search release Band --added-since 2026-09-25 --sort date_added",
+            "search release Band --added-since 2026-09-25 --desc",
+            "search release Band --added-since 2026-09-25 --page 2",
+            "search release Band --added-since 2026-09-25 --after 2:0",
+            "search release Band --added-since 2026-09-25 --max-requests 0",
+        ],
+    )
+    def test_rejected_before_any_request(
+        self, monkeypatch: pytest.MonkeyPatch, argv: str
+    ) -> None:
+        self._api(monkeypatch)
+        result, sent = self._run(*argv.split(), "--json")
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "invalid_argument"
+        assert sent == []
+
+    def test_cached_lookup_miss_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._api(monkeypatch)
+        self._run(*_ADDED, "--release-type", "all", "--max-requests", "2")
+        result, sent = self._run("--cached", *_ADDED, "--release-type", "all", "--json")
+        assert result.exit_code == 1
+        error = json.loads(result.stdout)["error"]
+        assert error["code"] == "cache_miss"
+        assert "/releases/1" in error["message"]  # the search page was cached
+        assert sent == []
+
+    def test_rows_show_the_utc_day_the_cutoff_compares(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Release 6, added 2026-09-25 20:00 Pacific, is 09-26 in UTC: inside
+        an --added-since 2026-09-26 window, and its row says so."""
+        self._api(monkeypatch, hour=20)
+        argv = ["search", "release", "--artist", "Band", "--release-type", "all"]
+        result, _ = self._run(*argv, "--added-since", "2026-09-26")
+        assert result.exit_code == 0, result.output
+        lines = result.stdout.splitlines()
+        assert "(7 results, newest first)" in lines[0]
+        assert lines[-1].endswith("· added 2026-09-26 → @m306")
+
+    def test_broken_date_order_is_reported(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch, shuffled=True)
+        result, _ = self._run(*_ADDED, "--release-type", "all", "--json")
+        assert result.exit_code == 1
+        error = json.loads(result.stdout)["error"]
+        assert error["code"] == "bad_response"
+        assert "not sorted by date_added" in error["message"]
 
 
 _ONE_PAGE = {"page": 1, "pages": 1, "items": 1}

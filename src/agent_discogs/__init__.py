@@ -85,12 +85,23 @@ Options:
                    unofficial with --format; get releases --role, get releases
                    @l --year)
   --max-requests N Cap the command's HTTP sends (header lookups included; cache
-                   hits are free) for a client-side scan: search with
-                   --release-type official, or unofficial with --format; get
+                   hits are free) for a client-side scan or --added-since: search
+                   with --release-type official, or unofficial with --format; get
                    releases --role / @l --year; one ref only. Default: no cap,
                    the scan runs until the page fills or the list ends. Pass it
                    if your tool calls have a time limit. Text get releases
                    under --fresh resends its header every run: 2 or more there
+  --added-since D  search release only (experimental): releases added to Discogs
+                   on or after D (YYYY-MM-DD, from midnight UTC), newest first,
+                   each with its added day in UTC (--json: added; complete:
+                   false when --max-requests stopped it). Walks Discogs'
+                   undocumented date_added sort and looks up every release the
+                   search matches: one request per release in the window, plus
+                   one per 100 results and one to end the scan; a repeat within
+                   1h is free. A 429 partway fails it (a rerun reuses the cached
+                   lookups). Whole window unless you pass --limit; not with
+                   --sort, --desc, --page, --after. --release-type filters on the
+                   looked-up formats (unofficial asks Discogs, unless --format)
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its
@@ -194,6 +205,7 @@ Examples:
   agent-discogs tracks @r847868
   agent-discogs price @r847868
   agent-discogs get releases @a3857 --role Main --limit 5
+  agent-discogs search release --artist Wire --added-since 2026-07-08
 """
 
 

@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import functools
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
-from discogs_sdk import SearchResult
+from click.core import ParameterSource
+from discogs_sdk import Release, SearchResult
+from discogs_sdk.experimental import releases_added_since
 
 from agent_discogs.client import get_client
 from agent_discogs.errors import fail
-from agent_discogs.formatting import format_search_results
-from agent_discogs.json_output import dump, page_document
+from agent_discogs.formatting import format_added_releases, format_search_results
+from agent_discogs.json_output import dump, full_dump, page_document
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
+    MAX_LIMIT,
     fetch_filtered_page,
     fetch_page,
     max_requests_error,
@@ -22,7 +25,10 @@ from agent_discogs.pagination import (
     parse_cursor,
     sort_params,
 )
-from agent_discogs.projections import project_search_result
+from agent_discogs.projections import project_added_release, project_search_result
+
+if TYPE_CHECKING:
+    from datetime import date, datetime
 
 KNOWN_TYPES = {"artist", "label", "master", "release"}
 
@@ -95,8 +101,119 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
     return None, " ".join(args_list).strip()
 
 
+def _added_since_error(
+    type_filter: str | None,
+    *,
+    sort: str | None,
+    desc: bool,
+    page: int | None,
+    after: str | None,
+) -> str | None:
+    """Why `--added-since` cannot run with these arguments, or None. Checked
+    before any request."""
+    if type_filter != "release":
+        return (
+            "--added-since works only on release searches: agent-discogs search "
+            "release ... --added-since YYYY-MM-DD."
+        )
+    given = (
+        ("--sort", sort is not None),
+        ("--desc", desc),
+        ("--page", page is not None),
+        ("--after", after is not None),
+    )
+    clashing = [flag for flag, present in given if present]
+    if clashing:
+        return (
+            f"--added-since cannot be combined with {', '.join(clashing)}: it "
+            "orders the results itself, newest first, and returns the whole "
+            "window at once."
+        )
+    return None
+
+
+def _release_is_unofficial(release: Release) -> bool:
+    """Whether a looked-up release is tagged "Unofficial Release": Discogs
+    files the tag among a format's descriptions, the ones a search result
+    flattens into its `format` list."""
+    return any(
+        UNOFFICIAL in (f.descriptions or []) or f.text == UNOFFICIAL
+        for f in release.formats or []
+    )
+
+
+def _search_added_since(
+    request: dict[str, Any],
+    *,
+    since: date,
+    keep: str | None,
+    limit: int | None,
+    max_requests: int | None,
+    json_output: bool,
+    full: bool,
+    query: str,
+    filters: dict[str, str],
+) -> None:
+    """`search release ... --added-since`: the SDK's experimental
+    `releases_added_since()` walks the date-sorted search and looks up each
+    release, so every row has its `date_added`. `keep` ("official" or
+    "unofficial") filters on the looked-up formats, at no extra request;
+    `limit` (an explicit `--limit`) cuts the rows shown, not the requests."""
+    try:
+        # Discogs' largest pages: the fewest search requests per window.
+        found = releases_added_since(
+            get_client(),
+            since,
+            max_requests=max_requests,
+            per_page=MAX_LIMIT,
+            **request,
+        )
+    # classify() maps every exception to a coded, recovery-oriented error, so
+    # catching broadly is the point.
+    except Exception as e:  # noqa: BLE001
+        fail(e, "Search", json_output=json_output)
+    releases = found.releases
+    if keep is not None:
+        unofficial = keep == "unofficial"
+        releases = [r for r in releases if _release_is_unofficial(r) == unofficial]
+    shown = releases if limit is None else releases[:limit]
+
+    if json_output:
+        try:
+            document = {
+                "complete": found.complete,
+                "total": len(releases),
+                "results": [
+                    full_dump(r) if full else project_added_release(r) for r in shown
+                ],
+            }
+        except Exception as e:  # noqa: BLE001
+            fail(e, "Search", json_output=True)
+        dump(document)
+        return
+    try:
+        output = format_added_releases(
+            shown,
+            query=query,
+            filters=filters,
+            since=since.isoformat(),
+            total=len(releases),
+            complete=found.complete,
+            max_requests=max_requests,
+        )
+    except Exception as e:  # noqa: BLE001
+        fail(e, "Search", json_output=False)
+    print(output)
+
+
 @click.command()
 @click.argument("args", nargs=-1)
+@click.option(
+    "--added-since",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="search release only: releases added on or after YYYY-MM-DD, newest "
+    "first (experimental)",
+)
 @click.option(
     "--after",
     help="Continuation cursor copied from a previous Next page / Continue scan line",
@@ -130,7 +247,7 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
 @click.option(
     "--max-requests",
     type=int,
-    help="Cap the HTTP sends of a client-side filtered scan (default: no cap)",
+    help="Cap the HTTP sends of a client-side scan or --added-since (default: no cap)",
 )
 @click.option(
     "--page",
@@ -153,6 +270,7 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
 @click.option("--year", help="Filter by year")
 def search(
     args: tuple[str, ...],
+    added_since: datetime | None,
     json_output: bool,
     full: bool,
     after: str | None,
@@ -199,6 +317,12 @@ def search(
     bad_paging = paging_error(limit, page)
     if bad_paging:
         fail(ValueError(bad_paging), json_output=json_output)
+    if added_since is not None:
+        clash = _added_since_error(
+            type_filter, sort=sort, desc=desc, page=page, after=after
+        )
+        if clash:
+            fail(ValueError(clash), json_output=json_output)
     if desc and not sort:
         fail(ValueError("--desc needs --sort date_added."), json_output=json_output)
     if sort and type_filter != "release":
@@ -259,11 +383,11 @@ def search(
             ),
             json_output=json_output,
         )
-    if not needs_release_filter and max_requests is not None:
+    if not (needs_release_filter or added_since) and max_requests is not None:
         fail(
             ValueError(
-                "--max-requests caps a client-side filtered scan; this search "
-                "pages server-side and sends one request."
+                "--max-requests caps a client-side filtered scan or --added-since; "
+                "this search pages server-side and sends one request."
             ),
             json_output=json_output,
         )
@@ -275,6 +399,29 @@ def search(
             parse_cursor(after)
         except ValueError as exc:
             fail(exc, json_output=json_output)
+
+    filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}
+    if added_since is not None:
+        if release_type != "official":
+            filters["release-type"] = release_type
+        ctx = click.get_current_context()
+        explicit_limit = ctx.get_parameter_source("limit") not in (
+            ParameterSource.DEFAULT,
+            ParameterSource.DEFAULT_MAP,
+        )
+        _search_added_since(
+            request,
+            since=added_since.date(),
+            # Discogs already filtered the unofficial ones by `format`.
+            keep=None if release_type == "all" or server_unofficial else release_type,
+            limit=limit if explicit_limit else None,
+            max_requests=max_requests,
+            json_output=json_output,
+            full=full,
+            query=query,
+            filters=filters,
+        )
+        return
 
     try:
         client = get_client()
@@ -305,7 +452,6 @@ def search(
         dump(document)
         return
 
-    filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}
     footer_cmd = next_page_cmd(
         ["search"],
         result,
