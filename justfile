@@ -62,8 +62,18 @@ lint-fix:
 pre-commit:
     uv run pre-commit run --all-files
 
-# Install pre-commit hooks
+# Install pre-commit hooks (main checkout only)
 pre-commit-install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Linked worktrees share the main checkout's .git/hooks: installing from one
+    # would replace the hook every worktree uses and point it at this worktree's
+    # .venv, which disappears with the worktree.
+    common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+    if [ "$(git rev-parse --path-format=absolute --git-dir)" != "$common_dir" ]; then
+        echo "Error: this is a linked worktree; it shares the hooks in $common_dir/hooks with every other checkout. Install hooks from the main checkout instead." >&2
+        exit 1
+    fi
     uv run pre-commit install
 
 # Update pre-commit hooks to latest versions
@@ -162,10 +172,19 @@ sdk-unlink:
     uv run pyproject-fmt pyproject.toml
     uv sync
 
-# Set local dev environment up
+# Set local dev environment up (hooks: main checkout only)
 setup:
-    uv sync --all-extras --all-groups  # Install dependencies
-    uv run pre-commit install  # Install pre-commit hooks
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv sync --all-extras --all-groups
+    # Same guard as pre-commit-install: a linked worktree must not replace the
+    # hook it shares with every other checkout.
+    common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+    if [ "$(git rev-parse --path-format=absolute --git-dir)" != "$common_dir" ]; then
+        echo "Skipped installing the pre-commit hook: this is a linked worktree, which shares the hooks in $common_dir/hooks with every other checkout. Dependencies are installed." >&2
+    else
+        uv run pre-commit install
+    fi
     echo "Run 'source .venv/bin/activate' to activate the Python virtual environment"
 
 # Run tests
