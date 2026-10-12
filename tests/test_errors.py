@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from pathlib import Path
 
 import pytest
 from discogs_sdk import (
     AuthenticationError,
+    CacheError,
     CacheMissError,
     DiscogsAPIError,
     DiscogsConnectionError,
@@ -154,13 +157,89 @@ class TestFormatError:
         exc = UnicodeEncodeError("ascii", "ヒ", 0, 1, "ordinal not in range(128)")
         info = classify(exc)
         assert info.code == "unexpected"
-        assert info.message.startswith("Unexpected error: 'ascii' codec")
+        assert "'ascii' codec" in info.message
 
-    def test_fallback_exception(self) -> None:
-        exc = RuntimeError("something broke")
-        result = format_error(exc)
-        assert "Unexpected error" in result
+    def test_unexpected_error_names_the_exception_class(self) -> None:
+        result = format_error(RuntimeError("something broke"))
+        assert "RuntimeError" in result
         assert "something broke" in result
+        # A class outside builtins keeps its module, which says where it came from.
+        info = classify(sqlite3.OperationalError("database is locked"))
+        assert info.code == "unexpected"
+        assert "sqlite3.OperationalError" in info.message
+        assert "database is locked" in info.message
+
+    def test_unexpected_error_without_a_message_still_names_its_class(self) -> None:
+        message = classify(RuntimeError()).message
+        assert "RuntimeError" in message
+        assert not message.rstrip().endswith(":")
+
+
+class TestCacheError:
+    """A cache the CLI cannot use names its path and says how to recover;
+    nothing in the CLI deletes it."""
+
+    PATH = Path("/home/u/.cache/agent-discogs/cache.db")
+
+    def _error(
+        self, cause: Exception | None, operation: str = "vet the database file"
+    ) -> CacheError:
+        exc = CacheError(
+            f"SQLite cache {self.PATH}: could not {operation}: {cause}",
+            operation=operation,
+            path=self.PATH,
+        )
+        exc.__cause__ = cause
+        return exc
+
+    def test_names_path_operation_and_cause(self) -> None:
+        info = classify(self._error(PermissionError("not a regular file")))
+        assert info.code == "cache_error"
+        assert info.path == str(self.PATH)
+        assert str(self.PATH) in info.message
+        assert "vet the database file" in info.message
+        assert "PermissionError" in info.message
+        assert "not a regular file" in info.message
+        assert info.hint is not None
+        assert f"delete {self.PATH}" in info.hint
+        assert f"{self.PATH.name}-wal" in info.hint  # vetting covers sidecars
+        assert "--fresh" in info.hint
+        assert info.status is None
+
+    def test_uncreatable_directory_points_at_the_path_not_a_file(self) -> None:
+        """No database exists yet, so the hint must not say to delete one."""
+        exc = self._error(
+            NotADirectoryError(20, "Not a directory"), "create the cache directory"
+        )
+        info = classify(exc)
+        assert info.code == "cache_error"
+        assert "create the cache directory" in info.message
+        assert info.hint is not None
+        assert str(self.PATH.parent) in info.hint
+        assert "XDG_CACHE_HOME" in info.hint
+        assert "delete" not in info.hint
+
+    def test_text_and_json_carry_the_same_error(self) -> None:
+        exc = self._error(sqlite3.OperationalError("unable to open database file"))
+        info = classify(exc)
+        assert format_error(exc) == f"✗ {info.message}\n  {info.hint}"
+        assert json.loads(format_error_json(exc)) == {
+            "error": {
+                "code": "cache_error",
+                "message": info.message,
+                "hint": info.hint,
+                "path": str(self.PATH),
+            }
+        }
+
+    def test_without_a_cause_or_path(self) -> None:
+        """A custom backend may raise it with neither; it still classifies."""
+        info = classify(CacheError("backend unavailable"))
+        assert info.code == "cache_error"
+        assert "backend unavailable" in info.message
+        assert info.path is None
+        assert info.hint is not None
+        assert "--fresh" in info.hint
 
 
 class TestClassify:
@@ -182,6 +261,7 @@ class TestClassify:
             (DiscogsAPIError("x", status_code=502, response_body={}), "api_error"),
             (DiscogsConnectionError("x"), "connection_error"),
             (CacheMissError("GET", "https://api.discogs.com/x"), "cache_miss"),
+            (CacheError("x"), "cache_error"),
             (ValueError("x"), "invalid_argument"),
             (RuntimeError("x"), "unexpected"),
         ]

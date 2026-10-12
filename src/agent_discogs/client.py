@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 import click
-from discogs_sdk import AuthMode, CacheError, Discogs, SQLiteCache
+from discogs_sdk import AuthMode, Discogs
 
 from agent_discogs import trace
 from agent_discogs.config import CACHE_TTL, cache_dir
@@ -53,25 +53,22 @@ def auth_mode() -> AuthMode:
 def get_client() -> Discogs:
     """Get or create the Discogs SDK client, entering any pending cache scope.
 
-    The cache is opened when the client is built, so a cache that cannot be
-    opened fails the command before any request, raising the underlying error.
-    discogs-sdk 0.8.0 would open it at the first request and wrap the error in
-    `CacheError`; 0.7.0 did neither, and this keeps its behavior.
+    Neither step touches the disk: the SDK opens its SQLite cache at the first
+    request that needs it, so a cache it cannot open raises `CacheError` inside
+    the command's error boundary, and a `--fresh` command never opens it.
     """
     global _client  # noqa: PLW0603  # module-level singleton is the point
     if _client is None:
-        cache = SQLiteCache(ttl=CACHE_TTL, cache_dir=cache_dir())
         # The CLI never retries or sleeps on the caller's behalf: a 429, a
         # 5xx or a transport failure is reported at once, so one request is
         # one send and the footer counts what was spent. Credentials come
         # from the environment, resolved by the SDK as in auth_mode().
-        client = Discogs(cache=cache, max_retries=0, on_request=trace.record)
-        try:
-            cache.open()
-        except CacheError as exc:
-            client.close()
-            # The SDK chains every open failure to the error that caused it.
-            raise (exc.__cause__ or exc) from None
-        _client = client
+        _client = Discogs(
+            cache=True,
+            cache_dir=cache_dir(),
+            cache_ttl=CACHE_TTL,
+            max_retries=0,
+            on_request=trace.record,
+        )
     _enter_pending_scope(_client)
     return _client

@@ -19,6 +19,9 @@ def cache(action: str) -> None:
         try:
             client.clear_cache()
         except CacheError as exc:
+            # A cache that cannot be opened is a command error like any other.
+            if exc.operation != "clear the cache":
+                raise
             # discogs-sdk 0.8.0 raises when the purge fails; 0.7.0 logged this
             # same message as a warning and returned, which is what this keeps.
             logging.getLogger("discogs_sdk").warning("%s", exc)

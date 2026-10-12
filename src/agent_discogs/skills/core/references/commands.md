@@ -6,8 +6,8 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 
 | Flag | Description |
 |------|-------------|
-| `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. |
-| `--fresh` | Bypass the cache for this command. Every request goes to the API; the response is not stored, so a later run without `--fresh` may still see the older cached entry until its 1h TTL expires. Mutually exclusive with `--cached` (exit 2). |
+| `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. A cache that cannot be opened fails with `cache_error` instead. |
+| `--fresh` | Bypass the cache for this command. Every request goes to the API; the response is not stored, so a later run without `--fresh` may still see the older cached entry until its 1h TTL expires. It never opens the cache, so it works even when other commands fail with `cache_error`. Mutually exclusive with `--cached` (exit 2). |
 | `--debug` | Trace panel on stderr after the budget line: one row per response (path, status, timing or `cache`; a `--cached` miss or a failed connection has no row), scan statistics, cache size (`unknown (no home directory)` when the cache location cannot be resolved), output size with a token estimate, plus the SDK's own log lines in real time. `AGENT_DISCOGS_DEBUG=1` does the same. stdout and the exit code are unchanged. |
 | `--help` | Show help |
 | `--version` | Show version |
@@ -187,6 +187,8 @@ Manage the HTTP response cache. It lives at `$XDG_CACHE_HOME/agent-discogs` when
 ```bash
 agent-discogs cache clear
 ```
+
+A cache that cannot be opened makes `cache clear` fail with `cache_error` (exit 1); nothing is deleted.
 
 ## Aliases
 

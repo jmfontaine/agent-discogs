@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from discogs_sdk import (
     AuthenticationError,
+    CacheError,
     CacheMissError,
     DiscogsAPIError,
     DiscogsConnectionError,
@@ -33,6 +34,7 @@ class ErrorInfo:
     status: int | None = None
     limit: int | None = None
     remaining: int | None = None
+    path: str | None = None  # the cache database, for `cache_error`
 
 
 def _api_message(exc: Exception) -> str:
@@ -48,6 +50,55 @@ def _api_message(exc: Exception) -> str:
         return body
     message = body.get("message") if isinstance(body, dict) else None
     return message if isinstance(message, str) else ""
+
+
+def _describe(exc: BaseException) -> str:
+    """`Class: message`, with the module for a class outside builtins
+    (`sqlite3.OperationalError: ...`), so the kind of failure survives."""
+    cls = type(exc)
+    name = (
+        cls.__qualname__
+        if cls.__module__ == "builtins"
+        else f"{cls.__module__}.{cls.__qualname__}"
+    )
+    text = str(exc)
+    return f"{name}: {text}" if text else name
+
+
+def _cache_error(exc: CacheError) -> ErrorInfo:
+    """A cache the SDK could not create, vet or open. The CLI deletes nothing:
+    the hint tells the user what to fix, or which file to remove by hand."""
+    cause = exc.__cause__
+    reason = _describe(cause) if cause is not None else str(exc)
+    action = f"could not {exc.operation}: " if exc.operation else ""
+    if exc.path is None:
+        return ErrorInfo(
+            "cache_error",
+            f"Cache error: {action}{reason}",
+            "Check the cache's permissions and ownership. --fresh skips the cache.",
+        )
+    path = exc.path
+    if exc.operation == "create the cache directory":
+        # Nothing exists yet to delete: the path leading to it is the problem.
+        hint = (
+            f"Make {path.parent} a directory you own and can write to: fix the "
+            "permissions or ownership on the way to it, or point XDG_CACHE_HOME "
+            "elsewhere."
+        )
+    else:
+        # Vetting covers cache.db and its -wal/-shm files; any of them can be
+        # the one refused, and the cause names which.
+        hint = (
+            f"Fix the permissions or ownership of {path.parent} and the files in "
+            f"it, or delete {path} and any {path.name}-wal or {path.name}-shm "
+            "beside it by hand."
+        )
+    return ErrorInfo(
+        "cache_error",
+        f"Cache error at {path}: {action}{reason}",
+        f"{hint} --fresh skips the cache.",
+        path=str(path),
+    )
 
 
 def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
@@ -139,12 +190,15 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
             "Rerun without --cached to fetch it from the API.",
         )
 
+    if isinstance(exc, CacheError):
+        return _cache_error(exc)
+
     # UnicodeError is a ValueError too, but an encoding failure says nothing
     # about the caller's arguments.
     if isinstance(exc, ValueError) and not isinstance(exc, UnicodeError):
         return ErrorInfo("invalid_argument", str(exc))
 
-    return ErrorInfo("unexpected", f"Unexpected error: {exc}")
+    return ErrorInfo("unexpected", f"Unexpected error: {_describe(exc)}")
 
 
 def format_error(exc: Exception, context: str | None = None) -> str:

@@ -9,6 +9,7 @@ import importlib.metadata
 import io
 import json
 import logging
+import os
 import re
 import shlex
 import sys
@@ -1948,7 +1949,10 @@ class TestExceptionHandling:
         monkeypatch.setattr("agent_discogs.commands.status.auth_mode", _raise)
         result = CliRunner().invoke(cli, ["status"])
         assert result.exit_code == 1
-        assert "✗ Unexpected error: kaboom" in result.output
+        first = result.stderr.splitlines()[0]
+        assert first.startswith("✗ ")
+        assert "RuntimeError" in first
+        assert "kaboom" in first
 
     def test_broken_stdout_pipe_exits_quietly(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1972,15 +1976,15 @@ class TestExceptionHandling:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         def _raise() -> None:
-            raise RuntimeError("cache dir unwritable")
+            raise RuntimeError("client setup failed")
 
         monkeypatch.setattr("agent_discogs.commands.get.get_client", _raise)
         result = CliRunner().invoke(cli, ["get", "--json", "artist", "@a1"])
         assert result.exit_code == 1
-        assert json.loads(result.output)["error"] == {
-            "code": "unexpected",
-            "message": "Unexpected error: cache dir unwritable",
-        }
+        error = json.loads(result.output)["error"]
+        assert error["code"] == "unexpected"
+        assert "RuntimeError" in error["message"]
+        assert "client setup failed" in error["message"]
 
         monkeypatch.setattr("agent_discogs.commands.search.get_client", _raise)
         result = CliRunner().invoke(cli, ["search", "--json", "x"])
@@ -2240,9 +2244,9 @@ class TestUnknownSearchTypes:
         )
         result = CliRunner().invoke(cli, ["search", "--json", "nin"])
         assert result.exit_code == 1
-        assert json.loads(result.stdout) == {
-            "error": {"code": "unexpected", "message": "Unexpected error: bad row"}
-        }
+        error = json.loads(result.stdout)["error"]
+        assert error["code"] == "unexpected"
+        assert "bad row" in error["message"]
 
         self._monkeypatch.setattr(
             "agent_discogs.commands.search.format_search_results", _boom
@@ -2250,7 +2254,8 @@ class TestUnknownSearchTypes:
         result = CliRunner().invoke(cli, ["search", "nin"])
         assert result.exit_code == 1
         assert result.stdout == ""
-        assert "✗ Unexpected error: bad row" in result.stderr
+        assert result.stderr.startswith("✗ ")
+        assert "bad row" in result.stderr
 
 
 class TestNonUtf8Stdout:
@@ -3972,11 +3977,8 @@ class TestRealSdk:
             client_module, "Discogs", functools.partial(Discogs, http_client=http)
         )
         yield
-        client = client_module._client
-        if client is not None:
-            client.close()
-            if client._cache is not None:  # injected, so close() left it open
-                client._cache.close()
+        if client_module._client is not None:
+            client_module._client.close()
         http.close()
         assert self.sleeps == []  # the CLI never sleeps on the caller's behalf
 
@@ -4144,16 +4146,89 @@ class TestRealSdk:
         assert result.stdout == "Cache cleared.\n"
         assert "could not clear the cache" in caplog.text  # a logged warning
 
-    def test_unusable_cache_dir_fails_before_any_command(
+    def _break_cache(self, kind: str, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Make the cache unusable one way; return the database path it names."""
+        if kind == "uncreatable dir":
+            not_a_dir = self.cache_home / "file"
+            not_a_dir.write_text("")
+            monkeypatch.setenv("XDG_CACHE_HOME", str(not_a_dir))
+            return not_a_dir / "agent-discogs" / "cache.db"
+        directory = self.cache_home / "agent-discogs"
+        directory.mkdir(mode=0o700)
+        database = directory / "cache.db"
+        if kind == "symlinked database":
+            target = self.cache_home / "elsewhere.db"
+            target.write_bytes(b"")
+            database.symlink_to(target)
+        else:  # unopenable database: neither readable nor writable
+            database.write_bytes(b"")
+            database.chmod(0)
+        return database
+
+    _BROKEN_CACHES = (
+        "uncreatable dir",
+        "symlinked database",
+        pytest.param(
+            "unopenable database",
+            marks=pytest.mark.skipif(
+                os.geteuid() == 0, reason="root opens a mode-0 file"
+            ),
+        ),
+    )
+
+    @pytest.mark.parametrize("kind", _BROKEN_CACHES)
+    @pytest.mark.parametrize("flags", [[], ["--cached"]], ids=["no flag", "cached"])
+    def test_unusable_cache_is_a_cache_error(
+        self, kind: str, flags: list[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        database = self._break_cache(kind, monkeypatch)
+        result = CliRunner().invoke(cli, [*flags, "tracks", "--json", "@r1"])
+        assert result.exit_code == 1
+        assert result.stderr == ""
+        error = json.loads(result.stdout)["error"]
+        assert error["code"] == "cache_error"
+        assert error["path"] == str(database)
+        assert error["message"].startswith(f"Cache error at {database}: could not ")
+        assert str(database.parent) in error["hint"]
+        # Delete-by-hand advice only where there is a file to delete.
+        assert (f"delete {database}" in error["hint"]) == (kind != "uncreatable dir")
+
+        result = CliRunner().invoke(cli, [*flags, "tracks", "@r1"])
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert result.stderr == f"✗ {error['message']}\n  {error['hint']}\n"
+        assert self.sends == []
+        # Nothing deleted the database the error names.
+        assert os.path.lexists(database) == (kind != "uncreatable dir")
+
+    @pytest.mark.parametrize("kind", _BROKEN_CACHES)
+    def test_fresh_skips_an_unusable_cache(
+        self, kind: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._break_cache(kind, monkeypatch)
+        result = CliRunner().invoke(cli, ["--fresh", "tracks", "@r1"])
+        assert result.exit_code == 0, result.output
+        assert "A1. Opener (3:00)" in result.stdout
+        assert self.sends == ["/releases/1"]
+
+    def test_multi_ref_json_reports_a_cache_error_per_ref(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        not_a_dir = self.cache_home / "file"
-        not_a_dir.write_text("")
-        monkeypatch.setenv("XDG_CACHE_HOME", str(not_a_dir))
-        result = CliRunner().invoke(cli, ["--fresh", "tracks", "@r1"])
-        assert result.exit_code == 1
-        assert result.stderr.startswith("✗ Unexpected error: [Errno ")
+        self._break_cache("uncreatable dir", monkeypatch)
         result = CliRunner().invoke(cli, ["get", "release", "--json", "@r1", "@r2"])
         assert result.exit_code == 1
-        assert json.loads(result.stdout)["error"]["code"] == "unexpected"
+        items = json.loads(result.stdout)
+        assert [i["ref"] for i in items] == ["@r1", "@r2"]
+        assert {i["error"]["code"] for i in items} == {"cache_error"}
         assert self.sends == []
+
+    @pytest.mark.parametrize("kind", _BROKEN_CACHES)
+    def test_cache_clear_on_an_unusable_cache_fails(
+        self, kind: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        database = self._break_cache(kind, monkeypatch)
+        result = CliRunner().invoke(cli, ["cache", "clear"])
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert result.stderr.startswith(f"✗ Cache error at {database}: could not ")
+        assert str(database.parent) in result.stderr

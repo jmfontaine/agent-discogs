@@ -172,7 +172,7 @@ Errors under `--json` are a JSON document on stdout with exit code 1:
 {"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}
 ```
 
-Codes: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when provided, and `limit`/`remaining` for the current minute when Discogs reports them), `cache_miss` (only under `--cached`), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
+Codes: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when provided, and `limit`/`remaining` for the current minute when Discogs reports them), `cache_miss` (only under `--cached`), `cache_error` (with `path`, the cache database; see [Caching](#caching)), `api_error`, `connection_error`, `invalid_argument`, `unexpected` (the message names the exception class).
 
 ## Ref system
 
@@ -203,6 +203,8 @@ agent-discogs --fresh get release @r352665 # bypass the cache; go to the API
 `--cached` fails with a `cache_miss` error (exit code 1) on any request the cache cannot serve, before any network I/O. With several refs, hits print normally and each miss reports inline, exactly like other per-ref failures; under `--json` the miss item carries `error.code == "cache_miss"`. The check is exact: it uses the real cache key at the real moment, so a command that issues several requests fails at the first one that is not cached. There is no separate "is it cached?" query because the answer depends on the whole request sequence a command issues.
 
 `--fresh` fetches every request from the API and does **not** store the response, so a later run without `--fresh` can still be served the older cached entry until its 1-hour TTL expires.
+
+A cache the CLI cannot use (its directory cannot be created, `cache.db` is a symlink, not a regular file, or owned by someone else, or SQLite cannot open it) fails the first request that needs it with a `cache_error` (exit code 1): the message names the database path and what failed, and the hint says what to fix. Nothing deletes the database for you; fix its permissions or ownership, or delete it by hand. `--fresh` never opens the cache, so it still works meanwhile.
 
 The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh`, so the next page is read under the same cache policy as the first.
 
@@ -260,9 +262,10 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
 ✗ Rate limited: 0/60 requests left this minute. Retry in 30s.
 ✗ Not cached: GET /marketplace/price_suggestions/352665 (only under --cached)
 ✗ Connection error. Check your network and retry.
+✗ Cache error at /home/me/.cache/agent-discogs/cache.db: could not vet the database file: PermissionError: … is not a regular file owned by the current user
 ```
 
-An API error the CLI has no specific message for reads `API error (503): <summary>`: the status once, then what Discogs said, collapsed to one line and cut at 200 characters.
+An API error the CLI has no specific message for reads `API error (503): <summary>`: the status once, then what Discogs said, collapsed to one line and cut at 200 characters. Any other unexpected failure reads `Unexpected error: <exception class>: <message>`.
 
 If the reader closes stdout early (`agent-discogs ... | head -1`), the CLI exits 1 without an error message. Under `set -o pipefail` that exit 1 is expected, not a failed lookup.
 

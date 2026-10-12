@@ -65,7 +65,9 @@ Text output:
 Options:
   --cached         Serve only from the cache; a miss fails (cache_miss), spends
                    nothing. Precedes the command: agent-discogs --cached price @r...
-  --fresh          Bypass the cache for this command (response is not stored)
+  --fresh          Bypass the cache for this command (response is not stored).
+                   Never opens the cache, so it works while other commands fail
+                   with cache_error (an unusable cache; the hint says what to fix)
   --debug          Request rows, timings, scan stats, cache and output size on
                    stderr, plus the SDK's own log lines. Never changes stdout
                    or the exit code; an unresolvable cache location shows as
