@@ -68,14 +68,14 @@ Run `just --list` to see all available commands.
 ## Testing
 
 ```bash
-just test                                        # All unit tests
-just test tests/test_cli.py                      # Single file
-just test tests/test_cli.py -k test_version      # Single test
+just test                                                      # All unit tests, 100% coverage enforced
+just test tests/test_cli.py --cov-fail-under=0                 # Single file
+just test tests/test_cli.py -k test_version --cov-fail-under=0 # Single test
 ```
 
 Tests use `click.testing.CliRunner` for in-process CLI testing with `unittest.mock` and `SimpleNamespace` for mocking SDK responses. They never hit the network.
 
-100% test coverage is required. `just test` runs pytest with `--cov` and `--cov-report=term-missing` so you can see any uncovered lines.
+100% test coverage of `src/agent_discogs` is required and enforced: `[tool.coverage]` in `pyproject.toml` measures only the package and sets `fail_under = 100`, so `just test` and CI fail below it. `just test` reports uncovered lines with `--cov-report=term-missing`. A partial run (a single file or `-k`) cannot reach 100%, so pass `--cov-fail-under=0` to keep the report without the threshold.
 
 ## Code style
 

@@ -120,10 +120,13 @@ ini_options.markers = [
   "live: hits the real Discogs API; run with `just test-live` (needs DISCOGS_TOKEN)",
 ]
 
+# Line coverage only. Branch coverage would fail fail_under today on partial
+# branches in cache.py (#18), formatting.py and projections.py.
 [tool.coverage]
-# Only the project's own files: pytester writes generated test modules under
-# the basetemp, and its in-process runs would otherwise add them to the report.
-run.source = [ "src", "tests" ]
+# Only the package: this also keeps out the test modules pytester writes under
+# the basetemp, which its in-process runs would otherwise add to the report.
+run.source = [ "agent_discogs" ]
+report.fail_under = 100
 
 [tool.deadcode]
 ignore-names = [

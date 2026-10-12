@@ -11,22 +11,22 @@ A token-efficient Discogs CLI designed for AI agents. Built on click and the `di
 Task runner is `just`. All commands use `uv run` under the hood.
 
 ```bash
-just setup              # Install deps + pre-commit hooks
-just test               # Run pytest with coverage
-just test <path>        # Run specific test file or directory
-just qa                 # All checks: dead-code, deps-unused, format-check, lint, type-check, verify-types
-just lint               # ruff check
-just lint-fix           # ruff check --fix
-just format             # ruff format + pyproject-fmt
-just type-check         # ty check
-just dead-code          # deadcode src tests (via uvx, Python 3.13)
-just deps-unused        # deptry src
-just deps-update        # Update deps to latest versions
-just verify-types       # Audit public API type annotation coverage
-just release            # Tag, push, and monitor the publish workflow
-just pre-commit         # Run pre-commit hooks on all files
-just pre-commit-install # Install pre-commit hooks
-just pre-commit-update  # Update pre-commit hooks to latest versions
+just setup                             # Install deps + pre-commit hooks
+just test                              # Run pytest; fails below 100% coverage of src/agent_discogs
+just test <path> --cov-fail-under=0    # Run specific test file or directory (a partial run can't reach 100%)
+just qa                                # All checks: dead-code, deps-unused, format-check, lint, type-check, verify-types
+just lint                              # ruff check
+just lint-fix                          # ruff check --fix
+just format                            # ruff format + pyproject-fmt
+just type-check                        # ty check
+just dead-code                         # deadcode src tests (via uvx, Python 3.13)
+just deps-unused                       # deptry src
+just deps-update                       # Update deps to latest versions
+just verify-types                      # Audit public API type annotation coverage
+just release                           # Tag, push, and monitor the publish workflow
+just pre-commit                        # Run pre-commit hooks on all files
+just pre-commit-install                # Install pre-commit hooks
+just pre-commit-update                 # Update pre-commit hooks to latest versions
 ```
 
 Run a single test: `uv run pytest tests/test_cli.py -k test_version`
