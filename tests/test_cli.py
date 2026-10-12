@@ -472,35 +472,6 @@ class TestSearchCommand:
         assert "Official" in result.output
         assert "Bootleg" not in result.output
 
-    def test_release_type_unofficial_shows_only_unofficial(self) -> None:
-        official = _fake(
-            id=1,
-            type="release",
-            title="Official",
-            year=None,
-            label=None,
-            format=["Vinyl"],
-        )
-        unofficial = _fake(
-            id=2,
-            type="release",
-            title="Bootleg",
-            year=None,
-            label=None,
-            format=["Vinyl", "Unofficial Release"],
-        )
-        self._set_fetch_result(
-            PageResult(
-                items=[official, unofficial], page=1, total_items=2, total_pages=1
-            )
-        )
-        result = CliRunner().invoke(
-            cli, ["search", "test", "--release-type", "unofficial"]
-        )
-        assert result.exit_code == 0
-        assert "Bootleg" in result.output
-        assert "Official" not in result.output
-
     def test_release_type_all_shows_everything(self) -> None:
         official = _fake(
             id=1,
@@ -785,6 +756,72 @@ class TestSearchSort:
         header = result.stdout.splitlines()[0]
         assert "sort=date_added" in header
         assert "desc" in header
+
+
+class TestUnofficialServerSide:
+    """`--release-type unofficial` asks Discogs for `format=Unofficial Release`
+    and pages server-side. `official`, and `unofficial` combined with
+    `--format`, stay client-side scans."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.api = _FakeAPI(monkeypatch, _Catalogue(613))
+
+    @pytest.mark.parametrize("kind", [["release"], ["master"], []])
+    def test_unofficial_is_one_exact_server_side_page(self, kind: list[str]) -> None:
+        result = CliRunner().invoke(
+            cli, ["search", *kind, "Downward", "--release-type", "unofficial"]
+        )
+        assert result.exit_code == 0, result.output
+        assert len(self.api.sends) == 1
+        params = self.api.sends[0][1]
+        assert params["format"] == "Unofficial Release"
+        assert params["per_page"] == "5"  # no overfetch
+        assert "(page 1, 5 of 613 results)" in result.stdout  # exact, not ≤
+
+    def test_unofficial_accepts_page(self) -> None:
+        result = CliRunner().invoke(
+            cli,
+            [
+                "search",
+                "release",
+                "Downward",
+                "--release-type",
+                "unofficial",
+                "--page",
+                "2",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert self.api.sends[0][1]["page"] == "2"
+        assert "(page 2, 5 of 613 results)" in result.stdout
+
+    def test_official_still_scans_client_side(self) -> None:
+        result = CliRunner().invoke(cli, ["search", "release", "Downward"])
+        assert result.exit_code == 0, result.output
+        params = self.api.sends[0][1]
+        assert "format" not in params
+        assert params["per_page"] == "15"
+        assert "of ≤613 results" in result.stdout
+
+    def test_unofficial_with_format_stays_client_side(self) -> None:
+        args = ["search", "release", "Downward", "--release-type", "unofficial"]
+        result = CliRunner().invoke(cli, [*args, "--format", "Vinyl"])
+        assert result.exit_code == 0, result.output
+        params = self.api.sends[0][1]
+        assert params["format"] == "Vinyl"
+        assert params["per_page"] == "15"
+        assert "of ≤613 results" in result.stdout
+        # Rows 4 and 5 are official in the catalogue; the scan skips them.
+        assert [i for i, _ in _ROW.findall(result.stdout)] == ["0", "1", "2", "3", "6"]
+
+        sent = len(self.api.sends)
+        result = CliRunner().invoke(
+            cli, [*args, "--format", "Vinyl", "--page", "2", "--json"]
+        )
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "invalid_argument"
+        assert len(self.api.sends) == sent
 
 
 class TestGetCommand:
@@ -3728,6 +3765,11 @@ _LISTINGS: dict[str, tuple[str, int, list[list[int]]]] = {
         "search --sort date_added --desc --limit 2 -- release -x",
         1,
         _FILTERED_PAGES,
+    ),
+    "search, unofficial": (
+        "search --release-type unofficial --limit 2 -- release -x",
+        1,
+        _SERVER_PAGES,
     ),
     "search, a query that reads like a type": (
         "search --release-type all --catno ABC --limit 2 -- ' release'",

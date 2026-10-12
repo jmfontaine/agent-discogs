@@ -70,9 +70,12 @@ def _build_search_params(
     return params
 
 
+UNOFFICIAL = "Unofficial Release"
+
+
 def _is_unofficial(item: SearchResult) -> bool:
     """Check if a search result is an unofficial release."""
-    return "Unofficial Release" in (item.format or [])
+    return UNOFFICIAL in (item.format or [])
 
 
 def _is_official(item: SearchResult) -> bool:
@@ -125,7 +128,8 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
 @click.option(
     "--page",
     type=int,
-    help="Page number, from 1 (server-side pages only; see --release-type all)",
+    help="Page number, from 1 (server-side pages only: --release-type all or "
+    "unofficial, artist/label searches)",
 )
 @click.option(
     "--release-type",
@@ -205,20 +209,36 @@ def search(
     # Release-type filtering only applies to release/master searches.
     # Artist and label results never have format metadata, so filtering
     # is a no-op that wastes bandwidth by overfetching 3x.
-    needs_release_filter = release_type != "all" and type_filter in (
-        None,
-        "release",
-        "master",
+    release_typed = type_filter in (None, "release", "master")
+    # Discogs filters unofficial releases itself via `format`, so they page
+    # server-side with an exact total. Not alongside `--format`: a repeated
+    # `format` is ignored and a combined value matches loosely, so that
+    # combination keeps the client-side scan. "Official" has no server
+    # filter at all.
+    server_unofficial = (
+        release_typed and release_type == "unofficial" and "format" not in params
+    )
+    if server_unofficial:
+        request["format"] = UNOFFICIAL
+    needs_release_filter = (
+        release_typed and release_type != "all" and not server_unofficial
     )
 
     if full and not json_output:
         fail(ValueError("--full requires --json."), json_output=False)
     if needs_release_filter and page is not None:
+        # Unofficial without --format pages server-side, so dropping it keeps
+        # the filter; for official only `all` pages server-side.
+        because, escape = (
+            (" with --format", "drop --format")
+            if release_type == "unofficial"
+            else ("", "pass --release-type all")
+        )
         fail(
             ValueError(
                 "--page is not available while results are filtered client-side "
-                f"(--release-type {release_type}). Use the Next page command from "
-                "the previous output, or pass --release-type all for server-side "
+                f"(--release-type {release_type}{because}). Use the Next page "
+                f"command from the previous output, or {escape} for server-side "
                 "pages."
             ),
             json_output=json_output,

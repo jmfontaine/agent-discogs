@@ -47,6 +47,7 @@ Check status: `agent-discogs status`
 ## Output Format
 
 - **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied, and the sort when there is one. The `[type]` tag appears only on untyped searches. A result whose type is not artist/label/master/release has no ref: its row reads `id 9001 [playlist] "..."` (`[no type]` when Discogs sends none), with `id` instead of `ref` under `--json`. Don't guess a prefix for it. `search release ... --sort date_added [--desc]` orders by when releases were added to Discogs; the parameter is undocumented and only seen working on release searches (any other search is rejected before a request), and if Discogs drops it, results most likely come back in relevance order with no error.
+- **search --release-type** — `official` (the default) is a client-side scan: the total is an upper bound (`≤N`) and a sparse page ends in `Continue scan:`. `unofficial` is filtered by Discogs itself, so the total is exact and `--page` works; combined with `--format` it falls back to the client-side scan. `all` applies no filter.
 - **get release** — title, artists `[@a...]`, label `[@l...]` + catalog number, format (one entry per physical format: `2×Vinyl (LP, Album, 180g); CD (Album)`), country, release date, `Added: YYYY-MM-DD` (the day it was added to Discogs; JSON `added` is the full RFC 3339 timestamp), community stats, market summary, master ref, full tracklist. Refs are always inline.
 - **get release --verbose** — the above plus notes, credits, and identifiers.
 - **get release --compact** — the above with the tracklist collapsed to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). A suite or medley split into parts counts as its parts, timed by their sum, or by the suite's own duration when a part is untimed. Combine with `-v` to compare pressings without paying for tracklists.
@@ -111,7 +112,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 - **Don't search without a type filter** when you know the entity type.
 - **Don't fetch full release details just to check price.** Use `price @r...` directly.
 - **Don't paginate through all results.** Narrow with filters first.
-- **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list, unchanged: it repeats `--cached`/`--fresh` and puts a search's type and query after `--`. Filtered lists (the default search, `releases --role`, `releases @l... --year`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
+- **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list, unchanged: it repeats `--cached`/`--fresh` and puts a search's type and query after `--`. Filtered lists (the default search, `--release-type unofficial --format ...`, `releases --role`, `releases @l... --year`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
 - **Don't guess IDs.** Always search first to find the right entity.
 - **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref. Smart resolution fetches the release first, so `@r...` costs 2 requests; `@m...` costs 1 with `--json` (2 as text, for the header title).
 - **Don't use `--fresh` by default.** Catalogue data an hour old is fine; reserve `--fresh` for `price` when you need current market numbers.
@@ -164,8 +165,8 @@ The count is what this command spent; `43/60` is what Discogs reported after its
 | `get releases @a...\|@l...`, `get versions @m...` | `--json`: 1 per ref; text: 2 (the header name costs one) |
 | `get versions @r...` | 2 per ref (resolve the master, then list) |
 | Client-side scans: `get releases @a... --role`, `get releases @l... --year` | `--json`: 1 to 5; text: 2 to 6 |
-| `search artist\|label`, `search --release-type all` | 1 |
-| Other searches (`--release-type official\|unofficial`, default official): client-side scan | 1 to 5 |
+| `search artist\|label`, `search --release-type all`, `search --release-type unofficial` (filtered by Discogs, without `--format`) | 1 |
+| Other searches (`--release-type official`, the default, or `unofficial` with `--format`): client-side scan | 1 to 5 |
 | Anything repeated within 1 hour | 0 (cached) |
 
 At `⚠` (10 or fewer left): pause ~60s before uncached calls, or spend nothing with `--cached`. Unauthenticated runs get 25/min; setting `DISCOGS_TOKEN` is the fix there.

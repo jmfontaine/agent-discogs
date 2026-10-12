@@ -47,9 +47,9 @@ agent-discogs search [type] <query> [--flags]
 | `--full` | With `--json`: the raw SDK record instead of the projection |
 | `--label` | Filter by label name |
 | `--limit` | Results per page, 1-100 (default: 5) |
-| `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, or artist/label searches. Rejected on the default filtered path. |
-| `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (filtered searches only) |
-| `--release-type` | Filter by release type: `official` (default), `unofficial`, `all` |
+| `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, `--release-type unofficial` (without `--format`), or artist/label searches. Rejected on the client-side filtered path. |
+| `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (client-side filtered searches only: `--release-type official`, or `unofficial` with `--format`) |
+| `--release-type` | `official` (default): client-side scan, `≤N` total, continues with `--after`. `unofficial`: filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` it falls back to the client-side scan. `all`: no filter. |
 | `--sort` | `date_added` only, and only on `search release ...`: order by when releases were added to Discogs (ascending; add `--desc` for newest first). Undocumented by Discogs and only seen working on release searches, so any other search, or `--desc` without `--sort`, fails with `invalid_argument` before any request. If Discogs drops it, results most likely come back in relevance order with no error. The filtered (default) path keeps the server's order. |
 | `--style` | Filter by style |
 | `--year` | Filter by release year |

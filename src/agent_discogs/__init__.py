@@ -76,8 +76,9 @@ Options:
   --limit N        Results per page, 1-100 (search, get)
   --page N         Page number, from 1, for server-side pages (search, get)
   --after CURSOR   Continue a client-side filtered list; copy from Next page /
-                   Continue scan (search with --release-type official|unofficial,
-                   get releases --role, get releases @l --year)
+                   Continue scan (search with --release-type official, or
+                   unofficial with --format; get releases --role, get releases
+                   @l --year)
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its

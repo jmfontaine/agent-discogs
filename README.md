@@ -70,7 +70,7 @@ agent-discogs search release "When The Whip Comes Down" --release-type unofficia
 agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc
 ```
 
-Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (1-100, default: 5) for page size. To continue, paste the `Next page:` command printed under the results: the default `--release-type official` filter is applied client-side, so continuation is a cursor (`--after`), not a page number. `--page` (from 1) works only with `--release-type all` (server-side pages) or artist/label searches. A search needs a query or at least one non-blank filter; an out-of-range `--limit`/`--page` or an empty search fails with `invalid_argument` before any request. A query starting with `-` goes after `--` (`agent-discogs search --release-type all -- -ambient`); the printed `Next page:` command always puts the type and query there, so it pastes back unchanged.
+Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (1-100, default: 5) for page size. To continue, paste the `Next page:` command printed under the results: the default `--release-type official` filter is applied client-side, so continuation is a cursor (`--after`), not a page number, and the total is an upper bound (`≤N`). `--release-type unofficial` is filtered by Discogs itself (`format=Unofficial Release`), so it shows an exact total and pages with `--page`; combined with `--format` it falls back to the client-side scan, because Discogs cannot reliably combine two format filters. `--page` (from 1) works with those server-side pages, `--release-type all`, and artist/label searches. A search needs a query or at least one non-blank filter; an out-of-range `--limit`/`--page` or an empty search fails with `invalid_argument` before any request. A query starting with `-` goes after `--` (`agent-discogs search --release-type all -- -ambient`); the printed `Next page:` command always puts the type and query there, so it pastes back unchanged.
 
 Discogs occasionally returns a result whose type is not one of those four, or has none. Such a row has no ref, because nothing says what its ID refers to: it reads `id 9001 [playlist] "..."` in text (`[no type]` when Discogs sends none) and carries `id` instead of `ref` under `--json`. The rest of the page prints as usual.
 
@@ -223,8 +223,8 @@ What commands cost (network requests; listing rows are per ref):
 | `get releases @a...`, `get releases @l...`, `get versions @m...` | `--json`: 1; text: 2 (the header's artist, label or master name) |
 | `get versions @r...` | 2, text or `--json` (the release, for its master, then the list) |
 | Client-side scans: `get releases @a... --role`, `get releases @l... --year` | `--json`: 1 to 5; text: 2 to 6 |
-| `search artist\|label`, `search --release-type all` | 1 |
-| Other searches (`--release-type official`, the default, or `unofficial`): client-side scans | 1 to 5 |
+| `search artist\|label`, `search --release-type all`, `search --release-type unofficial` (filtered by Discogs, without `--format`) | 1 |
+| Other searches (`--release-type official`, the default, or `unofficial` with `--format`): client-side scans | 1 to 5 |
 | Anything repeated within 1 hour | 0 (cached) |
 
 A scan stops once the page is full, so a sparse filter costs the most.
