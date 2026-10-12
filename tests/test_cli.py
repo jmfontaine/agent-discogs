@@ -15,6 +15,7 @@ import click
 import pytest
 from click.testing import CliRunner
 from discogs_sdk import (
+    Artist,
     CacheMissError,
     NotFoundError,
     RateLimit,
@@ -1969,6 +1970,38 @@ class TestJsonGet:
             "members": [{"ref": "@a27457", "name": "Trent Reznor"}],
             "former": [{"ref": "@a4237", "name": "Chris Vrenna"}],
         }
+
+    def test_get_artist_unknown_member_status_is_not_former(self) -> None:
+        """A real Member with no `active` value (None) is not a former member."""
+        artist = Artist.model_validate(
+            {
+                "id": 3857,
+                "name": "Nine Inch Nails",
+                "members": [
+                    {"id": 27457, "name": "Trent Reznor", "active": True},
+                    {"id": 4237, "name": "Chris Vrenna", "active": False},
+                    {"id": 5555, "name": "Unknown Status"},
+                ],
+            }
+        )
+        assert artist.members is not None
+        assert artist.members[2].active is None
+        self._set_client(_fake_client(artists_get=lambda _id: artist))
+
+        text = CliRunner().invoke(cli, ["get", "artist", "@a3857"]).output
+        assert (
+            "Members: Trent Reznor [@a27457], Unknown Status [@a5555]\n"
+            "Former: Chris Vrenna [@a4237]\n"
+        ) in text
+
+        data = json.loads(
+            CliRunner().invoke(cli, ["get", "--json", "artist", "@a3857"]).output
+        )
+        assert data["members"] == [
+            {"ref": "@a27457", "name": "Trent Reznor"},
+            {"ref": "@a5555", "name": "Unknown Status"},
+        ]
+        assert data["former"] == [{"ref": "@a4237", "name": "Chris Vrenna"}]
 
     def test_get_label_json_projection(self) -> None:
         label = _fake_model(

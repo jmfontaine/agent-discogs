@@ -265,6 +265,14 @@ def _urls_short(urls: list[str] | None) -> str:
     return ", ".join(domains)
 
 
+def split_members(artist: Any) -> tuple[list[Any], list[Any]]:
+    """(members, former): only `active is False` is former; unknown (None) is not."""
+    members = getattr(artist, "members", None) or []
+    former = [m for m in members if getattr(m, "active", None) is False]
+    current = [m for m in members if getattr(m, "active", None) is not False]
+    return current, former
+
+
 def format_artist(artist: Any) -> str:
     """Format an artist profile view."""
     ref = make_ref("artist", artist.id)
@@ -278,9 +286,7 @@ def format_artist(artist: Any) -> str:
     if urls:
         lines.append(f"URLs: {urls}")
 
-    members = getattr(artist, "members", None) or []
-    current = [m for m in members if getattr(m, "active", True)]
-    former = [m for m in members if not getattr(m, "active", True)]
+    current, former = split_members(artist)
     if current:
         lines.append(f"Members: {named_refs(current, 'artist')}")
     if former:

@@ -18,6 +18,7 @@ from agent_discogs.formatting import (
     _urls_short,
     credits_by_role,
     field,
+    split_members,
     track_summary,
 )
 from agent_discogs.refs import make_ref
@@ -203,20 +204,16 @@ def _refs_of(items: list[Any], entity_type: str) -> list[dict[str, Any]]:
 
 
 def project_artist(artist: Any) -> dict[str, Any]:
-    """Text parity: `members` (current) and `former`, each with refs."""
-    members = getattr(artist, "members", None) or []
+    """Text parity: `members` (current or unknown) and `former`, each with refs."""
+    current, former = split_members(artist)
     return drop_empty(
         {
             "ref": make_ref("artist", artist.id),
             "name": artist.name,
             "profile": _truncate(getattr(artist, "profile", None)),
             "urls": _urls_short(getattr(artist, "urls", None)),
-            "members": _refs_of(
-                [m for m in members if getattr(m, "active", True)], "artist"
-            ),
-            "former": _refs_of(
-                [m for m in members if not getattr(m, "active", True)], "artist"
-            ),
+            "members": _refs_of(current, "artist"),
+            "former": _refs_of(former, "artist"),
         }
     )
 

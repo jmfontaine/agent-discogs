@@ -57,7 +57,7 @@ Check status: `agent-discogs status`
 - **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`. `--sort released` puts the earliest pressing first; `--year` narrows.
 - **get releases @a...** — artist discography: ref, `[type]`, title, year, label, format, role. `--sort year|title|format`, `--desc`.
 - **get releases @l...** — label catalogue: ref, title, artist, year, catalog number, format. No server-side filters or sorting (API limit): `--year` is a client-side scan that continues via `--after`, otherwise page with `--page`.
-- **get artist** — profile, `Members:` and `Former:` each with `[@a...]` refs. **get label** — profile, `Parent:` and `Sub-labels:` with `[@l...]` refs.
+- **get artist** — profile, `Members:` and `Former:` each with `[@a...]` refs. `Former:` lists only members Discogs marks inactive; a member with no recorded status is listed under `Members:` (JSON `members`/`former` match). **get label** — profile, `Parent:` and `Sub-labels:` with `[@l...]` refs.
 
 ## Common Patterns
 
