@@ -127,6 +127,8 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 - `py.typed` marker present (PEP 561)
 - Imports live at module scope; ruff's `PLC0415` enforces it. Only `TYPE_CHECKING` blocks may import inside a function or block.
 - Run `git` commands directly, never with `git -C`
+- Never commit on `main`. Work starts on a branch named `<type>/issue-<N>-<slug>` for an issue, otherwise `<type>/<slug>`, where `<type>` is the Conventional Commits type of the change (`feat`, `fix`, `docs`, `test`, `ci`, ...). Either way it lands through a pull request.
+- Pull requests land by squash merge (the only method the repository allows): `gh pr merge <n> --squash`, or, for a stack, `gh stack merge --yes --squash` run with no number from a worktree that has the stack checked out (a bare number is read as a stack number before a pull request number). GitHub signs the squash commit itself, but `main`'s signed-commit ruleset also checks every commit on the pull request branch, so each one must be signed and verified: an unsigned commit blocks the merge until it is rebased, signed, and force-pushed. The pull request title becomes the commit subject, and git-cliff builds the changelog from it, so write the title as a Conventional Commit (`fix: ...`, `feat(cache): ...`).
 - When adding or changing user-facing behavior (commands, flags, output shape, errors), update all of: `_HELP_TEXT` in `src/agent_discogs/__init__.py`, `README.md`, and `src/agent_discogs/skills/core/` (`SKILL.md` for workflow/overview, `references/*.md` for detail). Agents load the bundled skill from the installed binary, so stale content there is a live bug.
 
 ## Releasing
@@ -141,7 +143,7 @@ work, run `just qa` and `just test`, report, and stop.
 Publishing is fully automated via CI. The `publish.yml` workflow triggers on `v*` tag push.
 
 1. Update `version` in `pyproject.toml`
-2. Commit the version bump and get it onto `origin/main`
+2. Commit the version bump and get it onto `origin/main` through a pull request
 3. Run `just release` on `main` — creates a signed tag, pushes `main` and the
    tag in one atomic push, and watches the publish run. It refuses to run
    unless HEAD is `main`, the working tree is clean, `main` equals
