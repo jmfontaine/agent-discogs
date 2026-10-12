@@ -88,6 +88,10 @@ Price data also needs seller settings filled out on the Discogs account the
 token belongs to (discogs.com/settings/seller). Without them the API answers
 404 and only 'price' is affected.
 
+get artist groups members as Members: and Former: (JSON members/former).
+Only members Discogs marks inactive are Former; a member with no recorded
+status stays under Members.
+
 Examples:
   agent-discogs search "The Downward Spiral"
   agent-discogs search artist "Nine Inch Nails"
