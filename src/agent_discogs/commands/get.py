@@ -25,7 +25,7 @@ from agent_discogs.formatting import (
     format_tracklist,
     iter_tracks,
 )
-from agent_discogs.json_output import Mode, dump, raw
+from agent_discogs.json_output import Mode, dump, raw, tracks_as_sent
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
     fetch_filtered_page,
@@ -318,7 +318,8 @@ def _get_releases(
 def _get_tracklist(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
-        return {"tracklist": [t.model_dump() for t in release.tracklist or []]}
+        tracks = [t.model_dump() for t in release.tracklist or []]
+        return tracks_as_sent({"tracklist": tracks})
     if mode.json:
         return project_tracklist(release)
     return format_tracklist(release)

@@ -10,7 +10,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# Passed to Discogs(cache_ttl=...); `status` and --debug show CACHE_TTL_LABEL.
+# Passed to SQLiteCache(ttl=...) in client.py; `status` and --debug show
+# CACHE_TTL_LABEL.
 CACHE_TTL = 3600.0
 CACHE_TTL_LABEL = f"{CACHE_TTL / 3600:g}h"
 # Requests one client-side filtered scan may spend.

@@ -3930,13 +3930,17 @@ class TestRealSdk:
         monkeypatch.setenv("DISCOGS_TOKEN", "test-token")
         monkeypatch.setattr("time.sleep", lambda _seconds: None)  # SDK retries
         monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        self.cache_home = tmp_path
         monkeypatch.setattr(client_module, "_client", None)
         monkeypatch.setattr(
             client_module, "Discogs", functools.partial(Discogs, http_client=http)
         )
         yield
-        if client_module._client is not None:
-            client_module._client.close()
+        client = client_module._client
+        if client is not None:
+            client.close()
+            if client._cache is not None:  # injected, so close() left it open
+                client._cache.close()
         http.close()
 
     def test_repeat_lookup_is_served_from_cache(self) -> None:
@@ -3989,3 +3993,54 @@ class TestRealSdk:
         assert not [line for line in lines if line.startswith(("api:", "GET "))]
         assert len(self.sends) > 1  # the SDK retried; no attempt was counted
         assert set(self.sends) == {"/releases/1"}
+
+    def test_full_json_keeps_track_type_underscore(self) -> None:
+        result = CliRunner().invoke(cli, ["tracks", "--json", "--full", "@r1"])
+        tracks = json.loads(result.stdout)["tracklist"]
+        assert [t["type_"] for t in tracks] == ["heading", "track"]
+        assert not [t for t in tracks if "type" in t]
+        result = CliRunner().invoke(cli, ["get", "release", "--json", "--full", "@r1"])
+        tracks = json.loads(result.stdout)["tracklist"]
+        assert [t["type_"] for t in tracks] == ["heading", "track"]
+
+    def test_full_json_keeps_search_uri_as_sent(self) -> None:
+        self.respond = lambda _request: httpx2.Response(
+            200,
+            json={
+                "pagination": {"page": 1, "pages": 1, "items": 1},
+                "results": [
+                    {"id": 1, "type": "release", "title": "Sides", "uri": "/release/1"}
+                ],
+            },
+        )
+        result = CliRunner().invoke(
+            cli, ["search", "--json", "--full", "--release-type", "all", "Sides"]
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["results"][0]["uri"] == "/release/1"
+
+    def test_failed_purge_still_reports_cleared(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        directory = self.cache_home / "agent-discogs"
+        directory.mkdir(mode=0o700)
+        (directory / "cache.db").write_bytes(b"not a sqlite database " * 8)
+        (directory / "cache.db").chmod(0o600)
+        result = CliRunner().invoke(cli, ["cache", "clear"])
+        assert result.exit_code == 0
+        assert result.stdout == "Cache cleared.\n"
+        assert "could not clear the cache" in caplog.text  # a logged warning
+
+    def test_unusable_cache_dir_fails_before_any_command(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        not_a_dir = self.cache_home / "file"
+        not_a_dir.write_text("")
+        monkeypatch.setenv("XDG_CACHE_HOME", str(not_a_dir))
+        result = CliRunner().invoke(cli, ["--fresh", "tracks", "@r1"])
+        assert result.exit_code == 1
+        assert result.stderr.startswith("✗ Unexpected error: [Errno ")
+        result = CliRunner().invoke(cli, ["get", "release", "--json", "@r1", "@r2"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "unexpected"
+        assert self.sends == []

@@ -6,7 +6,7 @@ import os
 from typing import Literal
 
 import click
-from discogs_sdk import Discogs
+from discogs_sdk import CacheError, Discogs, SQLiteCache
 
 from agent_discogs import trace
 from agent_discogs.config import CACHE_TTL, cache_dir
@@ -41,16 +41,24 @@ def _enter_pending_scope(discogs: Discogs) -> None:
 
 
 def get_client() -> Discogs:
-    """Get or create the Discogs SDK client, entering any pending cache scope."""
+    """Get or create the Discogs SDK client, entering any pending cache scope.
+
+    The cache is opened when the client is built, so a cache that cannot be
+    opened fails the command before any request, raising the underlying error.
+    discogs-sdk 0.8.0 would open it at the first request and wrap the error in
+    `CacheError`; 0.7.0 did neither, and this keeps its behavior.
+    """
     global _client  # noqa: PLW0603  # module-level singleton is the point
     if _client is None:
         token = os.environ.get("DISCOGS_TOKEN")
-        _client = Discogs(
-            token=token,
-            cache=True,
-            cache_dir=cache_dir(),
-            cache_ttl=CACHE_TTL,
-            on_request=trace.record,
-        )
+        cache = SQLiteCache(ttl=CACHE_TTL, cache_dir=cache_dir())
+        client = Discogs(token=token, cache=cache, on_request=trace.record)
+        try:
+            cache.open()
+        except CacheError as exc:
+            client.close()
+            # The SDK chains every open failure to the error that caused it.
+            raise (exc.__cause__ or exc) from None
+        _client = client
     _enter_pending_scope(_client)
     return _client
