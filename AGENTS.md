@@ -141,8 +141,11 @@ Publishing is fully automated via CI. The `publish.yml` workflow triggers on `v*
    tag in one atomic push, and watches the publish run. It refuses to run
    unless HEAD is `main`, the working tree is clean, `main` equals
    `origin/main` after a fetch, and the tag exists neither locally nor on
-   `origin`. If the run does not appear within 2 minutes it exits 1; the tag
-   is already pushed by then, so check the Actions page.
+   `origin`. If the push fails, it asks `origin` whether the tag arrived
+   anyway and deletes the local tag only when `origin` has no such tag; if
+   the tag is on `origin`, or `origin` can't be reached, it keeps the tag and
+   exits 1 with what to check. If the run does not appear within 2 minutes
+   it exits 1; the tag is already pushed by then, so check the Actions page.
 
 `publish.yml` calls the reusable `checks.yml`, which builds the distributions
 once, checks them with `scripts/check_distributions.py` (archive contents:

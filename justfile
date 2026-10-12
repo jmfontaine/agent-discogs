@@ -101,8 +101,20 @@ release:
     git tag -s "$tag" -m "Release $tag"
     echo "Pushing main and $tag to origin in one atomic push..."
     if ! git push --atomic origin main "refs/tags/$tag"; then
-        git tag -d "$tag" >/dev/null
-        fail "push rejected; nothing was pushed and the local tag $tag was deleted"
+        # A failed push is not proof of rejection: the connection can drop after
+        # origin accepted it. Ask origin before touching the local tag.
+        status=0
+        git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null || status=$?
+        case "$status" in
+            2)
+                cleanup="the local tag was deleted"
+                git tag -d "$tag" >/dev/null || cleanup="deleting the local tag failed; run: git tag -d $tag"
+                fail "push failed; origin has no $tag, so nothing was pushed or published; $cleanup" ;;
+            0)
+                fail "git push reported an error, but $tag is on origin, so publishing has started; kept the local tag; check https://github.com/jmfontaine/agent-discogs/actions" ;;
+            *)
+                fail "git push failed and origin could not be checked, so $tag may have been pushed; kept the local tag; check with 'git ls-remote --tags origin refs/tags/$tag' and https://github.com/jmfontaine/agent-discogs/actions" ;;
+        esac
     fi
     echo "Waiting for the publish workflow run for $tag..."
     run_id=""
