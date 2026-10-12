@@ -233,6 +233,8 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
 ✗ Connection error. Check your network and retry.
 ```
 
+If the reader closes stdout early (`agent-discogs ... | head -1`), the CLI exits 1 without an error message. Under `set -o pipefail` that exit 1 is expected, not a failed lookup.
+
 ## License
 
 agent-discogs is licensed under the [Apache License 2.0](LICENSE.txt).
