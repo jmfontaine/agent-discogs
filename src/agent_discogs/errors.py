@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import asdict, dataclass
 from typing import Any, NoReturn
@@ -156,10 +157,15 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         )
 
     if isinstance(exc, RateLimitError):
-        raw = getattr(exc, "retry_after", None)
-        retry_after = int(raw) if isinstance(raw, str) and raw.isdigit() else None
+        # The SDK parses Retry-After (seconds or an HTTP date). Round a fraction
+        # up, so the hint never suggests retrying before the server asked; 0 is
+        # a real answer, not a missing one.
+        seconds = exc.retry_after_seconds
+        retry_after = None if seconds is None else math.ceil(seconds)
         wait = (
-            f"Retry in {retry_after}s." if retry_after else "Wait a moment and retry."
+            "Wait a moment and retry."
+            if retry_after is None
+            else f"Retry in {retry_after}s."
         )
         rl = exc.ratelimit
         message = (

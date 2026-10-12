@@ -131,6 +131,8 @@ Budget:
   'api: 3 requests · 43/60 left this minute'. ⚠ means 10 or fewer requests
   remain in the moving 60s window: pause ~60s or stick to cached refs. Cache
   hits cost nothing ('api: 0 requests · cached'). Never inside --json output.
+  A 429 names the wait Discogs asked for, rounded up: 'Retry in 2s.' (--json:
+  retry_after; 0 = retry now; omitted without a usable Retry-After).
 
 Price data also needs seller settings filled out on the Discogs account the
 token belongs to (discogs.com/settings/seller). Without them the API answers

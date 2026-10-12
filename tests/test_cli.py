@@ -2101,7 +2101,11 @@ class TestJsonSearch:
     def test_json_error_envelope_for_api_errors(self) -> None:
         def _raise(*_a: object, **_kw: object) -> None:
             raise RateLimitError(
-                "slow", status_code=429, response_body={}, retry_after="12"
+                "slow",
+                status_code=429,
+                response_body={},
+                retry_after="12",
+                retry_after_seconds=12.0,
             )
 
         self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _raise)

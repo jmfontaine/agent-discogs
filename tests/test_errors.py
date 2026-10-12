@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 
+import httpx2
 import pytest
 from discogs_sdk import (
     AuthenticationError,
     CacheError,
     CacheMissError,
+    Discogs,
     DiscogsAPIError,
     DiscogsConnectionError,
     ForbiddenError,
@@ -25,6 +30,28 @@ from agent_discogs.errors import (
     format_error,
     format_error_json,
 )
+
+_BUDGET = "60 req/min with DISCOGS_TOKEN, 25 without."
+
+
+def _rate_limited(retry_after: str | None) -> RateLimitError:
+    """The RateLimitError the real SDK raises for a 429 carrying `retry_after`
+    as its `Retry-After` header (none when None), so the header goes through
+    the SDK's own parsing."""
+    headers = {} if retry_after is None else {"Retry-After": retry_after}
+
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(429, json={"message": "slow down"}, headers=headers)
+
+    transport = httpx2.MockTransport(handler)
+    with (
+        Discogs(
+            max_retries=0, http_client=httpx2.Client(transport=transport)
+        ) as client,
+        pytest.raises(RateLimitError) as caught,
+    ):
+        _ = client.releases.get(1).title
+    return caught.value
 
 
 class TestFormatError:
@@ -94,24 +121,42 @@ class TestFormatError:
         result = format_error(exc)
         assert "Access forbidden" in result
 
-    def test_rate_limit_error_with_retry_after(self) -> None:
-        exc = RateLimitError(
-            "slow down", status_code=429, response_body={}, retry_after="60"
-        )
+    @pytest.mark.parametrize(
+        ("header", "seconds"),
+        [
+            pytest.param("1.5", 2, id="fraction-rounds-up"),
+            pytest.param("0", 0, id="zero"),
+            pytest.param("120", 120, id="seconds"),
+            pytest.param("86400", 86400, id="long-wait-in-full"),
+        ],
+    )
+    def test_rate_limit_retry_after(self, header: str, seconds: int) -> None:
+        exc = _rate_limited(header)
         assert format_error(exc) == (
-            "✗ Rate limit exceeded.\n"
-            "  Retry in 60s. 60 req/min with DISCOGS_TOKEN, 25 without."
+            f"✗ Rate limit exceeded.\n  Retry in {seconds}s. {_BUDGET}"
         )
-        assert classify(exc).retry_after == 60
+        assert json.loads(format_error_json(exc))["error"]["retry_after"] == seconds
 
-    def test_rate_limit_error_without_usable_retry_after(self) -> None:
-        exc = RateLimitError(
-            "slow down", status_code=429, response_body={}, retry_after="soon"
+    def test_rate_limit_retry_after_http_date(self) -> None:
+        before = datetime.now(timezone.utc)
+        # An HTTP date has whole seconds.
+        when = (before + timedelta(seconds=30)).replace(microsecond=0)
+        info = classify(_rate_limited(format_datetime(when, usegmt=True)))
+        after = datetime.now(timezone.utc)
+        # The SDK reads the clock between `before` and `after`.
+        assert info.retry_after is not None
+        assert (
+            math.ceil((when - after).total_seconds())
+            <= info.retry_after
+            <= math.ceil((when - before).total_seconds())
         )
-        info = classify(exc)
+        assert info.hint == f"Retry in {info.retry_after}s. {_BUDGET}"
+
+    @pytest.mark.parametrize("header", ["soon", "-1", "nan", None])
+    def test_rate_limit_without_usable_retry_after(self, header: str | None) -> None:
+        info = classify(_rate_limited(header))
         assert info.retry_after is None
-        assert info.hint is not None
-        assert info.hint.startswith("Wait a moment and retry.")
+        assert info.hint == f"Wait a moment and retry. {_BUDGET}"
 
     def test_rate_limit_error_reports_the_budget(self) -> None:
         exc = RateLimitError(
@@ -119,6 +164,7 @@ class TestFormatError:
             status_code=429,
             response_body={},
             retry_after="30",
+            retry_after_seconds=30.0,
             ratelimit=RateLimit(60, 60, 0),
         )
         assert format_error(exc) == (
@@ -295,7 +341,13 @@ class TestFormatErrorJson:
         }
 
     def test_envelope_carries_hint_status_and_retry(self) -> None:
-        exc = RateLimitError("x", status_code=429, response_body={}, retry_after="5")
+        exc = RateLimitError(
+            "x",
+            status_code=429,
+            response_body={},
+            retry_after="5",
+            retry_after_seconds=5.0,
+        )
         assert json.loads(format_error_json(exc)) == {
             "error": {
                 "code": "rate_limited",
