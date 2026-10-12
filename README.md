@@ -80,6 +80,8 @@ Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`,
 
 `search release ... --sort date_added` orders results by when they were added to Discogs; add `--desc` for newest first. The parameter is undocumented: Discogs lists no sort keys for search, and it has only been seen working on release searches, so `--sort` on any other search (or `--desc` without `--sort`) fails with `invalid_argument` before any request. If Discogs ever drops it, results will most likely come back in relevance order with no error. With the default `--release-type official` filter, the client-side scan keeps the server's order, and the printed `Next page:` command keeps `--sort` and `--desc`.
 
+Client-side scans (`--release-type official`, or `unofficial` with `--format`; `get releases --role`; `get releases @l... --year`) read Discogs' largest pages, 100 rows each, until `--limit` rows match or the list ends. There is no cap by default, so a sparse filter over a long list can take many requests. `--max-requests N` caps the HTTP sends of the whole command, header lookups included (cache hits are free); it is accepted only where a scan runs and with one ref, and must be 1 or more, otherwise `invalid_argument` before any request. A scan that stops at the cap ends in a `Continue scan:` command that repeats `--max-requests`, with `scan stopped at --max-requests N` in the header (`capped: true`, `stop_reason: "max_requests"` in JSON). If text-mode header lookups use the whole budget, the scan has not started: the header says so and shows no counts, and JSON's `total_items`/`total_pages` are `null`. When Discogs answers 429 partway through a scan, the rows read so far are returned with a `Continue scan:` command and a `scan stopped: rate limited` note (`stop_reason: "rate_limited"` and `retry_after` in JSON), exit 0; a 429 on the first page is an error. Agents whose tool calls have a time limit should pass `--max-requests`.
+
 ### get
 
 Get entity details by noun and ref. Aliases: `fetch`, `show`.
@@ -101,13 +103,13 @@ Nouns: `artist`, `credits`, `identifiers` (alias `ids`), `label`, `master`, `pri
 
 Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) and `--page` (from 1); `releases --role` filters client-side and continues via the printed `--after` cursor instead. `releases` takes an artist ref (discography, with `--role` and `--sort year|title|format`) or a label ref (catalogue; the API offers no filters or sorting there, so `--year` on a label is a client-side scan that continues via the printed `--after` cursor). `versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`. Every navigable name in `artist` and `label` output carries a ref: members and former members, parent label, sub-labels. Their `URLs:` line lists each linked site by domain, omitting empty entries. `Former:` lists only members Discogs marks inactive; a member with no recorded status stays under `Members:`. Use `--json` for JSON output.
 
-Each flag applies only to the nouns below. Any other flag you pass (even `--limit 5`, the default value) fails with `invalid_argument` before a request is made, and so does `--after` with more than one ref, since a cursor continues one listing.
+Each flag applies only to the nouns below. Any other flag you pass (even `--limit 5`, the default value) fails with `invalid_argument` before a request is made, and so do `--after` and `--max-requests` with more than one ref, since a cursor continues one listing and a cap is spent on one.
 
 | Noun | Flags besides `--json` / `--full` |
 |---|---|
 | `release` | `-v, --verbose`, `-c, --compact` |
-| `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--after` (with `--role`) |
-| `releases @l...` | `--limit`, `--page`, `--year`, `--after` (with `--year`) |
+| `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--after` and `--max-requests` (with `--role`) |
+| `releases @l...` | `--limit`, `--page`, `--year`, `--after` and `--max-requests` (with `--year`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc` |
 | `artist`, `credits`, `identifiers`, `label`, `master`, `price`, `tracklist` | none |
 
@@ -156,7 +158,7 @@ agent-discogs skills path [core]       # directory holding the bundled skill fil
 
 ## JSON output
 
-`search`, `get`, `tracks`, and `price` accept `--json` (as does `cache clear`, which prints `{"cleared":true}` or the error envelope). The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping. Empty fields are omitted, so test for a key rather than for null (the `pagination` envelope is the exception: its keys are always present, and `next_cursor` is `null` when nothing remains). Each release, master, artist, label, and search result also carries `url`, its page on the Discogs website, always absolute: `"url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral"`. Use it to hand a person a link; text output leaves it out to save tokens. Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link. `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`. Lists are wrapped as `{"pagination":{...},"results":[...]}`.
+`search`, `get`, `tracks`, and `price` accept `--json` (as does `cache clear`, which prints `{"cleared":true}` or the error envelope). The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping. Empty fields are omitted, so test for a key rather than for null (the `pagination` envelope is the exception: `page`, `total_items` and `total_pages` are always present, with `null` totals only when a scan stopped before reading any page; a filtered list always adds `filtered`, `capped` and `next_cursor`, `null` when nothing remains; a capped one adds `stop_reason`, plus `retry_after` when Discogs sent one). Each release, master, artist, label, and search result also carries `url`, its page on the Discogs website, always absolute: `"url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral"`. Use it to hand a person a link; text output leaves it out to save tokens. Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link. `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`. Lists are wrapped as `{"pagination":{...},"results":[...]}`.
 
 ```bash
 agent-discogs get release @r352665 --json            # projection
@@ -205,11 +207,13 @@ agent-discogs --fresh get release @r352665 # bypass the cache; go to the API
 
 `--cached` fails with a `cache_miss` error (exit code 1) on any request the cache cannot serve, before any network I/O. With several refs, hits print normally and each miss reports inline, exactly like other per-ref failures; under `--json` the miss item carries `error.code == "cache_miss"`. The check is exact: it uses the real cache key at the real moment, so a command that issues several requests fails at the first one that is not cached. There is no separate "is it cached?" query because the answer depends on the whole request sequence a command issues.
 
+That includes client-side scans: under `--cached` a scan reads cached pages until its page is full, and the first page the cache does not hold fails the whole command with `cache_miss`, rows read so far included. Cache hits never count against `--max-requests`, so the cap does not stop a cache-only scan early. `--fresh` stores nothing, so under it a text `get releases` scan spends one request on the header every run: with `--max-requests 1` it returns the empty capped page, and its header says to continue with a higher `--max-requests`, since the same cap would spend itself on the header again.
+
 `--fresh` fetches every request from the API and does **not** store the response, so a later run without `--fresh` can still be served the older cached entry until its 1-hour TTL expires.
 
 A cache the CLI cannot use (its directory cannot be created, `cache.db` is a symlink, not a regular file, or owned by someone else, or SQLite cannot open it) fails the first request that needs it with a `cache_error` (exit code 1): the message names the database path and what failed, and the hint says what to fix. Nothing deletes the database for you; fix its permissions or ownership, or delete it by hand. `--fresh` never opens the cache, so it still works meanwhile.
 
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh`, so the next page is read under the same cache policy as the first.
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` (and `--max-requests`), so the next page is read under the same cache policy and cap as the first.
 
 ## Budget
 
@@ -231,14 +235,16 @@ What commands cost (network requests; listing rows are per ref):
 | `get price`, `price` | 3 per ref (`--json --full`: 2, the release itself is not read) |
 | `get releases @a...`, `get releases @l...`, `get versions @m...` | `--json`: 1; text: 2 (the header's artist, label or master name) |
 | `get versions @r...` | 2, text or `--json` (the release, for its master, then the list) |
-| Client-side scans: `get releases @a... --role`, `get releases @l... --year` | `--json`: 1 to 5; text: 2 to 6 |
+| Client-side scans: `get releases @a... --role`, `get releases @l... --year` | `--json`: one per 100 rows scanned; text: one more, for the header name |
 | `search artist\|label`, `search --release-type all`, `search --release-type unofficial` (filtered by Discogs, without `--format`) | 1 |
-| Other searches (`--release-type official`, the default, or `unofficial` with `--format`): client-side scans | 1 to 5 |
+| Other searches (`--release-type official`, the default, or `unofficial` with `--format`): client-side scans | one per 100 rows scanned |
 | Anything repeated within 1 hour | 0 (cached) |
 
-A scan stops once the page is full, so a sparse filter costs the most.
+A scan reads 100-row pages until the page is full or the list ends: a dense filter costs one request, and a sparse one over 2,000 results up to 20. With `--max-requests N` the command sends at most N.
 
 The CLI reports; it never retries, sleeps, or throttles on your behalf. Each request is sent once: a 429, a 5xx, or a connection failure is reported as that request's error without a retry, and retrying is the caller's call. With several refs, the failing ref gets its error block and the rest still run (exit 1). When Discogs answers 429, the error says how much of the minute is left (`Rate limited: 0/60 requests left this minute.`), and under `--json` the envelope carries `retry_after`, `limit`, and `remaining`. Without credentials, the hint adds `60 req/min with DISCOGS_TOKEN, 25 without.`; with any credentials it states the limit Discogs reported for them instead (`Discogs reported 60 req/min for the credentials in use (oauth).`), or the authenticated 60 req/min when the 429 carried no rate-limit headers.
+
+One exception: a 429 partway through a client-side scan returns the rows read so far, exit 0, with a `Continue scan:` command and `stop_reason: "rate_limited"` (plus `retry_after` when Discogs sent one) under `--json`. A 429 on a scan's first page is the usual error.
 
 ## Debugging
 
@@ -248,9 +254,9 @@ The CLI reports; it never retries, sleeps, or throttles on your behalf. Each req
 api: 2 requests · 58/60 left this minute
 ── debug ───────────────────────────────────────────────
 total     1310ms
-GET /artists/3857/releases?page=1&per_page=15   200   947ms
-GET /artists/3857                               200   338ms
-scan      1 API calls, 15 rows fetched, 5 kept, not capped
+GET /artists/3857                                200   338ms
+GET /artists/3857/releases?page=1&per_page=100   200   947ms
+scan      1 API calls, 100 rows fetched, 5 kept, not capped
 cache     ~/.cache/agent-discogs  540.0 KB  ttl 1h
 output    494 chars, 9 lines, ≈123 tokens
 ```

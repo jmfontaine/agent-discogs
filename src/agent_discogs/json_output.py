@@ -82,7 +82,10 @@ def page_document(
     """Paginated results as a JSON envelope.
 
     Client-side filtered pages add `filtered` (total is an upper bound),
-    `capped`, and `next_cursor` (pass back via `--after`).
+    `capped`, and `next_cursor` (pass back via `--after`). A capped page adds
+    `stop_reason` (`max_requests` or `rate_limited`) and, after a 429 that
+    said, `retry_after`. Totals are null when the scan stopped before reading
+    any listing page.
     """
     pagination: dict[str, Any] = {
         "page": result.page,
@@ -93,5 +96,9 @@ def page_document(
         pagination["filtered"] = True
         pagination["capped"] = result.capped
         pagination["next_cursor"] = result.next_cursor
+    if result.stop is not None:
+        pagination["stop_reason"] = result.stop.reason
+        if result.stop.retry_after is not None:
+            pagination["retry_after"] = result.stop.retry_after
     rows = [full_dump(item) if full else project(item) for item in result.items]
     return {"pagination": pagination, "results": rows}

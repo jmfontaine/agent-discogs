@@ -31,6 +31,7 @@ from agent_discogs.pagination import (
     DEFAULT_LIMIT,
     fetch_filtered_page,
     fetch_page,
+    max_requests_error,
     next_page_cmd,
     paging_error,
     parse_cursor,
@@ -198,11 +199,16 @@ def _get_label_releases(
     limit: int,
     after: str | None,
     year: str | None,
+    max_requests: int | None,
     mode: Mode,
 ) -> Any:
     """A label's catalogue. The API has no filters or sorting here, so `--year`
     is a client-side scan with cursor continuation (like `--role`)."""
+    # A lazy proxy: reading .name sends the request, so only the text header
+    # pays for it. It is read before the scan so that, under --max-requests,
+    # the lookup the output needs counts first.
     label = client.labels.get(entity_id)
+    label_name = "" if mode.json else label.name
     label_ref = make_ref("label", entity_id)
 
     if year:
@@ -211,6 +217,7 @@ def _get_label_releases(
             limit=limit,
             keep=lambda item: str(getattr(item, "year", None) or "") == year,
             cursor=after,
+            max_requests=max_requests,
         )
     else:
         result = fetch_page(label.releases.list, page=page or 1, per_page=limit)
@@ -219,17 +226,22 @@ def _get_label_releases(
         return mode.page(result, project_label_release)
 
     footer_cmd = next_page_cmd(
-        ["get", "releases", label_ref], result, limit=limit, year=year
+        ["get", "releases", label_ref],
+        result,
+        limit=limit,
+        year=year,
+        max_requests=max_requests,
     )
     return format_label_releases(
         result.items,
         label_ref,
-        label.name,
+        label_name,
         result.page,
         result.total_items,
         footer_cmd,
         filtered=result.filtered,
-        capped=result.capped,
+        stop=result.stop,
+        header_resent=_fresh(),
     )
 
 
@@ -245,6 +257,7 @@ def _get_releases(
     year: str | None,
     sort: str | None,
     desc: bool,
+    max_requests: int | None,
     mode: Mode,
 ) -> Any:
     if entity_type == "label":
@@ -255,12 +268,14 @@ def _get_releases(
             limit=limit,
             after=after,
             year=year,
+            max_requests=max_requests,
             mode=mode,
         )
 
     # A lazy proxy: reading .name sends the request, so only the text header
-    # pays for it (as for a label's catalogue).
+    # pays for it (as for a label's catalogue), before the scan.
     artist = client.artists.get(entity_id)
+    artist_name = "" if mode.json else artist.name
     artist_ref = make_ref("artist", entity_id)
 
     listing = functools.partial(artist.releases.list, **sort_params(sort, desc))
@@ -273,6 +288,7 @@ def _get_releases(
             limit=limit,
             keep=lambda item: role_lower in (getattr(item, "role", "") or "").lower(),
             cursor=after,
+            max_requests=max_requests,
         )
     else:
         result = fetch_page(listing, page=page or 1, per_page=limit)
@@ -287,17 +303,19 @@ def _get_releases(
         role=role,
         sort=sort,
         desc=desc,
+        max_requests=max_requests,
     )
 
     return format_artist_releases(
         result.items,
         artist_ref,
-        artist.name,
+        artist_name,
         result.page,
         result.total_items,
         footer_cmd,
         filtered=result.filtered,
-        capped=result.capped,
+        stop=result.stop,
+        header_resent=_fresh(),
     )
 
 
@@ -396,7 +414,7 @@ SORT_KEYS: dict[str, tuple[str, ...]] = {
 NOUN_OPTIONS: dict[str, frozenset[str]] = {
     "release": frozenset({"compact", "verbose"}),
     "releases": frozenset(
-        {"after", "desc", "limit", "page", "role", "sort", "year"},
+        {"after", "desc", "limit", "max_requests", "page", "role", "sort", "year"},
     ),
     "versions": frozenset(
         {"country", "desc", "format_", "label", "limit", "page", "sort", "year"},
@@ -406,8 +424,14 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
 NOUN_SPECIFIC_OPTIONS: frozenset[str] = frozenset().union(*NOUN_OPTIONS.values())
 
 
+def _fresh() -> bool:
+    """Whether this invocation runs under `--fresh`, which caches nothing, so
+    the text header lookup is sent again on every run."""
+    return bool(click.get_current_context().find_root().params.get("fresh"))
+
+
 def _option_flag(name: str) -> str:
-    return "--" + name.rstrip("_")
+    return "--" + name.rstrip("_").replace("_", "-")
 
 
 def _explicit_options() -> frozenset[str]:
@@ -438,6 +462,7 @@ def _flag_error(
     year: str | None,
     sort: str | None,
     desc: bool,
+    max_requests: int | None,
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
@@ -459,6 +484,17 @@ def _flag_error(
         return (
             "--after continues one listing, so it takes exactly one ref "
             f"({len(refs)} given)."
+        )
+    if max_requests is not None and noun == "releases" and not filtered:
+        return (
+            "--max-requests caps a client-side filtered scan (get releases "
+            "--role, or get releases @l... --year). This listing pages "
+            "server-side and sends one request per page."
+        )
+    if max_requests is not None and len(refs) > 1:
+        return (
+            "--max-requests caps one scan, so it takes exactly one ref "
+            f"({len(refs)} given): a capped listing continues one ref at a time."
         )
     if filtered and page is not None:
         return (
@@ -489,6 +525,9 @@ def _flag_error(
     bad_paging = paging_error(limit, page)
     if bad_paging:
         return bad_paging
+    bad_cap = max_requests_error(max_requests)
+    if bad_cap:
+        return bad_cap
     if year and artist_refs:
         return (
             "--year filters versions and label catalogues; for an artist "
@@ -534,6 +573,7 @@ def _run_one(
     sort: str | None,
     desc: bool,
     role: str | None,
+    max_requests: int | None,
     verbose: bool,
     compact: bool,
     mode: Mode,
@@ -569,6 +609,7 @@ def _run_one(
             year=year,
             sort=sort,
             desc=desc,
+            max_requests=max_requests,
             mode=mode,
         )
     if noun == "tracklist":
@@ -604,6 +645,7 @@ def _dispatch(
     sort: str | None,
     desc: bool,
     role: str | None,
+    max_requests: int | None,
     verbose: bool,
     compact: bool,
     mode: Mode,
@@ -629,6 +671,7 @@ def _dispatch(
         year=year,
         sort=sort,
         desc=desc,
+        max_requests=max_requests,
     )
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
@@ -666,6 +709,7 @@ def _dispatch(
                     sort=sort,
                     desc=desc,
                     role=role,
+                    max_requests=max_requests,
                     verbose=verbose,
                     compact=compact,
                     mode=mode,
@@ -735,6 +779,11 @@ def _json_options(command: Any) -> Any:
 @click.option(
     "--limit", type=int, default=DEFAULT_LIMIT, help="Results per page (1-100)"
 )
+@click.option(
+    "--max-requests",
+    type=int,
+    help="releases --role / @l --year: cap the command's HTTP sends (default: no cap)",
+)
 @click.option("--page", type=int, help="Page number, from 1 (server-side pages only)")
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
 @click.option(
@@ -764,6 +813,7 @@ def get(
     format_: str | None,
     label: str | None,
     limit: int,
+    max_requests: int | None,
     page: int | None,
     role: str | None,
     sort: str | None,
@@ -790,6 +840,7 @@ def get(
         sort=sort,
         desc=desc,
         role=role,
+        max_requests=max_requests,
         verbose=verbose,
         compact=compact,
         mode=_mode(json_output, full),
@@ -810,6 +861,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         sort=None,
         desc=False,
         role=None,
+        max_requests=None,
         verbose=False,
         compact=False,
         mode=_mode(json_output, full),

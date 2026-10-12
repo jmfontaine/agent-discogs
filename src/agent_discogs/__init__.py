@@ -84,6 +84,13 @@ Options:
                    Continue scan (search with --release-type official, or
                    unofficial with --format; get releases --role, get releases
                    @l --year)
+  --max-requests N Cap the command's HTTP sends (header lookups included; cache
+                   hits are free) for a client-side scan: search with
+                   --release-type official, or unofficial with --format; get
+                   releases --role / @l --year; one ref only. Default: no cap,
+                   the scan runs until the page fills or the list ends. Pass it
+                   if your tool calls have a time limit. Text get releases
+                   under --fresh resends its header every run: 2 or more there
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its
@@ -101,12 +108,15 @@ Options:
 
 Get flags by noun (any other get flag fails with invalid_argument):
   release          -v/--verbose, -c/--compact
-  releases @a      --limit, --page, --role, --sort, --desc, --after (with --role)
-  releases @l      --limit, --page, --year, --after (with --year)
+  releases @a      --limit, --page, --role, --sort, --desc, --after and
+                   --max-requests (with --role)
+  releases @l      --limit, --page, --year, --after and --max-requests (with
+                   --year)
   versions         --limit, --page, --country, --format, --label, --year,
                    --sort, --desc
   any other noun   none beyond --json and --full
-  --after continues one listing, so it takes exactly one ref.
+  --after and --max-requests continue or cap one listing, so they take exactly
+  one ref.
 
 Environment:
   DISCOGS_TOKEN        Personal access token (60 req/min, required for price data)
@@ -123,8 +133,14 @@ Environment:
 
 Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
-  it repeats --cached or --fresh and puts a search's type and query after --,
-  so a query such as -ambient survives.
+  it repeats --cached or --fresh and --max-requests, and puts a search's type
+  and query after --, so a query such as -ambient survives.
+  Filtered lists scan Discogs' 100-row pages until --limit rows match or the
+  list ends. 'Continue scan:' means the scan stopped early: --max-requests ran
+  out (the header says so; before the scan started, it shows no counts and JSON
+  totals are null), or Discogs answered 429 partway, in which case the rows read
+  so far are kept (JSON: capped, stop_reason "max_requests" or "rate_limited",
+  retry_after). A 429 on the first page is an error.
 
 Budget:
   After any command that talks to the API, stderr ends with a budget line, e.g.

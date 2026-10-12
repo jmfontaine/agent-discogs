@@ -6,7 +6,7 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 
 | Flag | Description |
 |------|-------------|
-| `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. A cache that cannot be opened fails with `cache_error` instead. |
+| `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. A cache that cannot be opened fails with `cache_error` instead. A client-side scan reads cached pages until its page is full and fails with `cache_miss` at the first uncached one (cache hits never count against `--max-requests`). |
 | `--fresh` | Bypass the cache for this command. Every request goes to the API; the response is not stored, so a later run without `--fresh` may still see the older cached entry until its 1h TTL expires. It never opens the cache, so it works even when other commands fail with `cache_error`. Mutually exclusive with `--cached` (exit 2). |
 | `--debug` | Trace panel on stderr after the budget line: one row per response (path, status, timing or `cache`; a `--cached` miss or a failed connection has no row), scan statistics, cache size (`unknown (no home directory)` when the cache location cannot be resolved), output size with a token estimate, plus the SDK's own log lines in real time. `AGENT_DISCOGS_DEBUG=1` does the same. stdout and the exit code are unchanged. |
 | `--help` | Show help |
@@ -14,7 +14,7 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 
 After any command that talks to the API, stderr ends with a budget line such as `api: 3 requests · 43/60 left this minute` (`⚠` when 10 or fewer remain). See the Budget section of the core skill.
 
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy.
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and repeats `--max-requests` when it was given.
 
 **`bad_response` (exit 1):** Discogs answered with something the CLI cannot read: a non-JSON body (a gateway error page), a record that does not fit the SDK's models, or a malformed results page (`"results" is an object, expected an array`). The message names the problem (a validation failure names its first failing field, never the value), bounded to one line. It is never caused by your arguments, so do not change the command: retry in a moment. Such a response is not cached, so a plain retry asks Discogs again, with one exception: a price guide whose conditions are malformed is cached before they are read, so if the same error repeats, rerun with `--fresh`.
 
@@ -31,6 +31,13 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 
 - With credentials, the limit Discogs reported for them, e.g. `Discogs reported 60 req/min for the credentials in use (oauth).`, or `Discogs allows 60 req/min for the credentials in use (oauth).` when the 429 carried no rate-limit headers. Setting `DISCOGS_TOKEN` is never suggested here: wait, or continue with `--cached`.
 - Without any credentials, `60 req/min with DISCOGS_TOKEN, 25 without.`
+
+**Client-side scans:** `search` with `--release-type official` (the default) or `unofficial --format ...`, `get releases @a... --role`, and `get releases @l... --year` filter rows the API cannot filter. They read 100-row pages until `--limit` rows match or the list ends, with no cap by default: a dense filter costs one request, a sparse one over 2,000 results up to 20, plus the text header lookup for `get releases`. `--max-requests N` (N ≥ 1, one ref, only on these listings; otherwise `invalid_argument` before any request) caps every HTTP send of the command, header lookups included, which run first; cache hits are free. A scan that stops early ends in `Continue scan:` and says why in its header:
+
+- `scan stopped at --max-requests N`: the cap ran out (JSON: `capped: true`, `stop_reason: "max_requests"`). If the header lookup used the whole cap, the header reads `(--max-requests N ran out before the scan started)` with no counts, JSON `total_items` and `total_pages` are `null`, and the continuation starts the scan. Under `--fresh` the header adds `; --fresh sends the header lookup again on every run, so continue with a higher --max-requests`: the lookup is not cached, so the same cap would spend itself on it again.
+- `scan stopped: rate limited, retry in Ns`: Discogs answered 429 after at least one page, and the rows read so far are returned, exit 0 (JSON: `stop_reason: "rate_limited"`, `retry_after` when Discogs sent one). A 429 on the first page is the `rate_limited` error.
+
+With a tool-call time limit, pass `--max-requests`.
 
 
 ## search
@@ -63,6 +70,7 @@ agent-discogs search [type] <query> [--flags]
 | `--full` | With `--json`: the complete record instead of the projection, normalized (consistent field names such as `catalog_number`, RFC 3339 timestamps, `null` for an absent or unparseable timestamp; unmodeled fields as Discogs sends them) |
 | `--label` | Filter by label name |
 | `--limit` | Results per page, 1-100 (default: 5) |
+| `--max-requests` | Cap the command's HTTP sends during a client-side scan (`--release-type official`, or `unofficial` with `--format`); cache hits are free. Default: no cap. Rejected on server-side pages. See Client-side scans above. |
 | `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, `--release-type unofficial` (without `--format`), or artist/label searches. Rejected on the client-side filtered path. |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (client-side filtered searches only: `--release-type official`, or `unofficial` with `--format`) |
 | `--release-type` | `official` (default): client-side scan, `≤N` total, continues with `--after`. `unofficial`: filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` it falls back to the client-side scan. `all`: no filter. |
@@ -83,7 +91,7 @@ agent-discogs search release --barcode "606949235024"
 agent-discogs search release "Blue Monday" --artist "New Order"
 agent-discogs search release "Pretty Hate Machine" --format "Vinyl" --country US
 agent-discogs search release "The Downward Spiral" --release-type all --page 2 --limit 10
-agent-discogs search release "The Downward Spiral" --after 2:1.5   # cursor copied from the previous footer
+agent-discogs search release "The Downward Spiral" --after 2:5   # cursor copied from the previous footer
 agent-discogs search release "Pretty Hate Machine" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
 agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc   # newest additions first
@@ -127,6 +135,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--limit` | `releases`, `versions` only: results per page, 1-100 (default: 5) |
 | `--page` | Page number, from 1 (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`, one ref only) |
+| `--max-requests` | `releases --role` and `releases @l... --year`, one ref only: cap the command's HTTP sends, the text header lookup included (it runs first). Default: no cap. In text under `--fresh` the header is sent again on every run, so a cap it uses up ends in an empty capped page whose header says to continue with a higher `--max-requests`. See Client-side scans above. |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 | `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; an index track counts as its parts, timed by their sum or, when a part is untimed, by the index track's own duration; otherwise the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
 
@@ -150,13 +159,13 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--sort` | `released`, `title`, `format`, `label`, `catno`, or `country` (server-side) |
 | `--desc` | With `--sort`: descending |
 
-**Which flags apply where:** each flag applies only to the nouns below. Any other flag fails with `invalid_argument` before a request is made, even one set to its default value (`--limit 5`). `--after` also needs exactly one ref: a cursor continues one listing.
+**Which flags apply where:** each flag applies only to the nouns below. Any other flag fails with `invalid_argument` before a request is made, even one set to its default value (`--limit 5`). `--after` and `--max-requests` also need exactly one ref: a cursor continues one listing, and a capped listing continues one ref at a time.
 
 | Noun | Flags besides `--json` / `--full` |
 |------|-----------------------------------|
 | `release` | `-v, --verbose`, `-c, --compact` |
-| `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--after` (with `--role`) |
-| `releases @l...` | `--limit`, `--page`, `--year`, `--after` (with `--year`) |
+| `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--after` and `--max-requests` (with `--role`) |
+| `releases @l...` | `--limit`, `--page`, `--year`, `--after` and `--max-requests` (with `--year`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc` |
 | `artist`, `credits`, `identifiers`, `label`, `master`, `price`, `tracklist` | none |
 
@@ -178,7 +187,8 @@ agent-discogs get ids @r847868
 agent-discogs get releases @a3857
 agent-discogs get releases @a3857 --page 2 --limit 10
 agent-discogs get releases @a3857 --role Remix
-agent-discogs get releases @a3857 --role Remix --after 2:6.0   # cursor copied from the previous footer
+agent-discogs get releases @a3857 --role Remix --after 2:112   # cursor copied from the previous footer
+agent-discogs get releases @a3857 --role Remix --max-requests 5   # at most 5 requests, header lookup included
 agent-discogs get releases @a3857 --sort year --desc
 agent-discogs get releases @l647                       # label catalogue
 agent-discogs get releases @l647 --year 1999           # client-side scan; continue with the printed --after
