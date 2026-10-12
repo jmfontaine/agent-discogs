@@ -49,6 +49,19 @@ class TestParseRef:
         with pytest.raises(ValueError, match="Invalid ref"):
             parse_ref("@abc")
 
+    @pytest.mark.parametrize(
+        ("ref", "message"),
+        [
+            ("@r²", "Invalid ref @r²"),
+            ("²", "Invalid ref format"),
+            ("@a¹2", "Invalid ref @a¹2"),
+        ],
+    )
+    def test_invalid_non_decimal_digits(self, ref: str, message: str) -> None:
+        # str.isdigit() accepts these, but int() rejects them.
+        with pytest.raises(ValueError, match=message):
+            parse_ref(ref)
+
 
 class TestRoundTrip:
     def test_roundtrip(self) -> None:

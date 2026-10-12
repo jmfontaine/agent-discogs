@@ -34,7 +34,7 @@ def parse_ref(ref_string: str) -> tuple[str, int]:
 
     Raises ValueError on invalid format.
     """
-    if ref_string.isdigit():
+    if ref_string.isdecimal():
         return ("unknown", int(ref_string))
 
     if not ref_string.startswith("@"):
@@ -51,7 +51,7 @@ def parse_ref(ref_string: str) -> tuple[str, int]:
 
     prefix = body[0]
     id_str = body[1:]
-    if not id_str.isdigit():
+    if not id_str.isdecimal():
         raise ValueError(
             f"Invalid ref {ref_string}. Expected format: @a12345 (prefix + numeric ID)."
         )
