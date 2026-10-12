@@ -1356,7 +1356,7 @@ class TestGetCommand:
             ),
             (
                 ["get", "release", "@r847868", "--sort", "title"],
-                "--sort/--desc apply to 'get releases' and 'get versions' only.",
+                "--sort does not apply to 'get release'.",
             ),
             (["get", "releases", "@a3857", "--desc"], "--desc needs --sort <key>."),
             (
@@ -1365,7 +1365,7 @@ class TestGetCommand:
             ),
             (
                 ["get", "release", "@r847868", "--year", "1994"],
-                "--year applies to 'get versions' and 'get releases @l...' only.",
+                "--year does not apply to 'get release'.",
             ),
             (
                 ["get", "releases", "@l647", "--year", "1999", "--page", "2"],
@@ -1382,6 +1382,109 @@ class TestGetCommand:
         result = CliRunner().invoke(cli, argv)
         assert result.exit_code == 1
         assert message in result.output
+
+    @pytest.mark.parametrize(
+        ("argv", "message"),
+        [
+            (
+                ["get", "releases", "@a11", "--country", "FR", "--format", "Vinyl"],
+                (
+                    "--country, --format do not apply to 'get releases'. "
+                    "'get releases' takes --after, --desc, --limit, --page, --role, "
+                    "--sort, --year."
+                ),
+            ),
+            (
+                ["get", "releases", "@l647", "--label", "Nothing"],
+                "--label does not apply to 'get releases'.",
+            ),
+            (
+                ["get", "versions", "@m3719", "--role", "Main"],
+                "--role does not apply to 'get versions'.",
+            ),
+            (
+                ["get", "release", "@r847868", "--role", "Main"],
+                "--role does not apply to 'get release'.",
+            ),
+            # An explicit --limit equal to the default is still explicit.
+            (
+                ["get", "artist", "@a3857", "--limit", "5"],
+                (
+                    "--limit does not apply to 'get artist'. "
+                    "'get artist' takes only --json and --full."
+                ),
+            ),
+            (
+                ["get", "label", "@l647", "--page", "2"],
+                "--page does not apply to 'get label'.",
+            ),
+            (
+                ["get", "credits", "@r847868", "--desc"],
+                "--desc does not apply to 'get credits'.",
+            ),
+            (
+                ["get", "tracklist", "@r847868", "--limit", "10", "--page", "2"],
+                "--limit, --page do not apply to 'get tracklist'.",
+            ),
+            (
+                ["get", "ids", "@r847868", "--page", "1"],
+                "--page does not apply to 'get identifiers'.",
+            ),
+            (
+                ["get", "master", "@m3719", "--verbose"],
+                "--verbose does not apply to 'get master'.",
+            ),
+            (
+                ["get", "releases", "@a3857", "-c"],
+                "--compact does not apply to 'get releases'.",
+            ),
+            (
+                ["get", "versions", "@m3719", "-v", "--compact"],
+                "--compact, --verbose do not apply to 'get versions'.",
+            ),
+            (
+                ["get", "release", "@r847868", "--limit", "5"],
+                (
+                    "--limit does not apply to 'get release'. "
+                    "'get release' takes --compact, --verbose."
+                ),
+            ),
+            (
+                ["get", "releases", "@a1", "@a2", "--role", "Main", "--after", "2:1.0"],
+                "--after continues one listing, so it takes exactly one ref (2 given).",
+            ),
+            (
+                [
+                    "get",
+                    "releases",
+                    "@l1",
+                    "@l2",
+                    "--year",
+                    "1999",
+                    "--after",
+                    "2:1.0",
+                ],
+                "--after continues one listing, so it takes exactly one ref (2 given).",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("json_output", [False, True], ids=["text", "json"])
+    def test_inapplicable_flags_rejected_before_client(
+        self, argv: list[str], message: str, json_output: bool
+    ) -> None:
+        built: list[None] = []
+        self._monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client", lambda: built.append(None)
+        )
+        result = CliRunner().invoke(cli, [*argv, "--json"] if json_output else argv)
+        assert result.exit_code == 1
+        assert built == []  # rejected before the client exists: no request
+        if json_output:
+            error = json.loads(result.output)["error"]
+            assert error["code"] == "invalid_argument"
+            assert message in error["message"]
+        else:
+            assert message in result.output
 
     def test_get_releases_label_year_scans_client_side_with_cursor(self) -> None:
         label = _fake(id=647, name="Nothing Records")

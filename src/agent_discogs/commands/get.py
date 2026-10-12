@@ -6,6 +6,7 @@ import sys
 from typing import Any
 
 import click
+from click.core import ParameterSource
 from discogs_sdk import ArtistRelease, Discogs, LabelRelease, MasterVersion
 
 from agent_discogs.client import get_client
@@ -424,11 +425,47 @@ SORT_KEYS: dict[str, tuple[str, ...]] = {
     "versions": ("released", "title", "format", "label", "catno", "country"),
 }
 
+# Which `get` options each noun takes, by click parameter name. Every other
+# noun takes only --json/--full. The per-ref nuances of `releases` (--role and
+# --sort need an artist, --year a label) are checked in _flag_error.
+NOUN_OPTIONS: dict[str, frozenset[str]] = {
+    "release": frozenset({"compact", "verbose"}),
+    "releases": frozenset(
+        {"after", "desc", "limit", "page", "role", "sort", "year"},
+    ),
+    "versions": frozenset(
+        {"country", "desc", "format_", "label", "limit", "page", "sort", "year"},
+    ),
+}
+
+NOUN_SPECIFIC_OPTIONS: frozenset[str] = frozenset().union(*NOUN_OPTIONS.values())
+
+
+def _option_flag(name: str) -> str:
+    return "--" + name.rstrip("_")
+
+
+def _explicit_options() -> frozenset[str]:
+    """The noun-specific options the user supplied, by parameter name.
+
+    Uses click's parameter source rather than the value, so an explicit value
+    equal to the default (`--limit 5`) still counts as supplied. The `tracks`
+    and `price` shortcuts have none of these options, so their set is empty.
+    """
+    ctx = click.get_current_context()
+    defaults = (None, ParameterSource.DEFAULT, ParameterSource.DEFAULT_MAP)
+    return frozenset(
+        name
+        for name in NOUN_SPECIFIC_OPTIONS
+        if ctx.get_parameter_source(name) not in defaults
+    )
+
 
 def _flag_error(
     noun: str,
     refs: tuple[str, ...],
     *,
+    explicit: frozenset[str],
     page: int | None,
     after: str | None,
     role: str | None,
@@ -452,6 +489,11 @@ def _flag_error(
             "(get releases --role, or get releases @l... --year). This command "
             "pages server-side or is not paginated; use --page where applicable."
         )
+    if after is not None and len(refs) > 1:
+        return (
+            "--after continues one listing, so it takes exactly one ref "
+            f"({len(refs)} given)."
+        )
     if filtered and page is not None:
         return (
             "--page is not available while results are filtered client-side "
@@ -463,18 +505,27 @@ def _flag_error(
             parse_cursor(after)
         except ValueError as exc:
             return str(exc)
-    if year and noun not in ("versions", "releases"):
-        return "--year applies to 'get versions' and 'get releases @l...' only."
+    accepted = NOUN_OPTIONS.get(noun, frozenset())
+    rejected = sorted(_option_flag(name) for name in explicit - accepted)
+    if rejected:
+        verb = "does" if len(rejected) == 1 else "do"
+        takes = (
+            ", ".join(sorted(_option_flag(name) for name in accepted))
+            if accepted
+            else "only --json and --full"
+        )
+        return (
+            f"{', '.join(rejected)} {verb} not apply to 'get {noun}'. "
+            f"'get {noun}' takes {takes}."
+        )
     if year and artist_refs:
         return (
             "--year filters versions and label catalogues; for an artist "
             "discography use --sort year (optionally --desc) and page."
         )
-    if (sort or desc) and noun not in SORT_KEYS:
-        return "--sort/--desc apply to 'get releases' and 'get versions' only."
     if desc and not sort:
         return "--desc needs --sort <key>."
-    if sort and sort not in SORT_KEYS.get(noun, ()):
+    if sort and sort not in SORT_KEYS[noun]:
         keys = ", ".join(SORT_KEYS[noun])
         return f"--sort {sort!r} is not valid for 'get {noun}'. Keys: {keys}."
     if label_refs and (role or sort):
@@ -599,6 +650,7 @@ def _dispatch(
     flag_error = _flag_error(
         noun,
         refs,
+        explicit=_explicit_options(),
         page=page,
         after=after,
         role=role,

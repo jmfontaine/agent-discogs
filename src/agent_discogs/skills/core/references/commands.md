@@ -103,9 +103,9 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 |------|-------------|
 | `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
 | `--full` | With `--json`: the raw SDK record instead of the projection |
-| `--limit` | Results per page (default: 5) |
+| `--limit` | `releases`, `versions` only: results per page (default: 5) |
 | `--page` | Page number (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
-| `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`) |
+| `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`, one ref only) |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 | `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; an index track counts as its parts, timed by their sum or, when a part is untimed, by the index track's own duration; otherwise the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
 
@@ -128,6 +128,16 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--year` | Filter versions by release year |
 | `--sort` | `released`, `title`, `format`, `label`, `catno`, or `country` (server-side) |
 | `--desc` | With `--sort`: descending |
+
+**Which flags apply where:** each flag applies only to the nouns below. Any other flag fails with `invalid_argument` before a request is made, even one set to its default value (`--limit 5`). `--after` also needs exactly one ref: a cursor continues one listing.
+
+| Noun | Flags besides `--json` / `--full` |
+|------|-----------------------------------|
+| `release` | `-v, --verbose`, `-c, --compact` |
+| `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--after` (with `--role`) |
+| `releases @l...` | `--limit`, `--page`, `--year`, `--after` (with `--year`) |
+| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc` |
+| `artist`, `credits`, `identifiers`, `label`, `master`, `price`, `tracklist` | none |
 
 **Smart resolution:** `get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. Errors with a hint if the release has no master.
 

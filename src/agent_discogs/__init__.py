@@ -90,6 +90,15 @@ Options:
   --version        Show version and exit
   --help           Show this message and exit
 
+Get flags by noun (any other get flag fails with invalid_argument):
+  release          -v/--verbose, -c/--compact
+  releases @a      --limit, --page, --role, --sort, --desc, --after (with --role)
+  releases @l      --limit, --page, --year, --after (with --year)
+  versions         --limit, --page, --country, --format, --label, --year,
+                   --sort, --desc
+  any other noun   none beyond --json and --full
+  --after continues one listing, so it takes exactly one ref.
+
 Environment:
   DISCOGS_TOKEN        Personal access token (60 req/min, required for price data)
   AGENT_DISCOGS_DEBUG  Same as --debug

@@ -96,6 +96,16 @@ Nouns: `artist`, `credits`, `identifiers` (alias `ids`), `label`, `master`, `pri
 
 Paginated nouns (`releases`, `versions`) support `--limit` (default: 5) and `--page`; `releases --role` filters client-side and continues via the printed `--after` cursor instead. `releases` takes an artist ref (discography, with `--role` and `--sort year|title|format`) or a label ref (catalogue; the API offers no filters or sorting there, so `--year` on a label is a client-side scan that continues via the printed `--after` cursor). `versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`. Every navigable name in `artist` and `label` output carries a ref: members and former members, parent label, sub-labels. Their `URLs:` line lists each linked site by domain, omitting empty entries. `Former:` lists only members Discogs marks inactive; a member with no recorded status stays under `Members:`. Use `--json` for JSON output.
 
+Each flag applies only to the nouns below. Any other flag you pass (even `--limit 5`, the default value) fails with `invalid_argument` before a request is made, and so does `--after` with more than one ref, since a cursor continues one listing.
+
+| Noun | Flags besides `--json` / `--full` |
+|---|---|
+| `release` | `-v, --verbose`, `-c, --compact` |
+| `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--after` (with `--role`) |
+| `releases @l...` | `--limit`, `--page`, `--year`, `--after` (with `--year`) |
+| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc` |
+| `artist`, `credits`, `identifiers`, `label`, `master`, `price`, `tracklist` | none |
+
 ### tracks / price
 
 Shortcuts for `get tracklist` and `get price`. Both support `--json`.
