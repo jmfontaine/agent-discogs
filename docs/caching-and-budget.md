@@ -67,8 +67,6 @@ A scan reads 100-row pages until the page is full or the list ends: a dense filt
 
 ## Capping requests with --max-requests
 
-With `--max-requests N` the command sends at most N.
-
 `--max-requests N` caps the HTTP sends of the whole command, header lookups included (cache hits are free); it is accepted only where a scan runs (or with `--added-since`, see [Releases added since a date](commands.md#releases-added-since-a-date)) and with one ref, and must be 1 or more, otherwise `invalid_argument` before any request.
 
 A scan that stops at the cap ends in a `Continue scan:` command that repeats `--max-requests`, with `scan stopped at --max-requests N` in the header (`capped: true`, `stop_reason: "max_requests"` in JSON).

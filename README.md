@@ -76,7 +76,11 @@ agent-discogs cache clear
 agent-discogs skills get core
 ```
 
-Every command, flag and text output is described in [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md).
+Each command, its own flags and its text output are described in [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md). The global flags (`--cached`, `--fresh`, `--debug`), the output modes (`--json`, `--full`) and the `--max-requests` cap have their own pages:
+
+- `--json` and `--full`: [JSON output](https://github.com/jmfontaine/agent-discogs/blob/main/docs/json-output.md);
+- `--cached`, `--fresh` and `--max-requests`: [Caching and request budget](https://github.com/jmfontaine/agent-discogs/blob/main/docs/caching-and-budget.md);
+- `--debug`: [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md).
 
 ## Ref system
 

@@ -1,6 +1,12 @@
 # Commands
 
-Every command, its flags and its text output. The `--json` documents are described in [JSON output](json-output.md), the cache flags and request costs in [Caching and request budget](caching-and-budget.md), and error messages in [Errors](errors.md).
+Each command, its own flags and its text output. The global flags (`--cached`, `--fresh`, `--debug`), the output modes (`--json`, `--full`), the `--max-requests` cap and errors are described on the pages that cover them:
+
+- `--json` and `--full`: [JSON output](json-output.md) and its [--full](json-output.md#--full) section;
+- `--cached` and `--fresh`: [--cached and --fresh](caching-and-budget.md#--cached-and---fresh);
+- `--max-requests`: [Capping requests with --max-requests](caching-and-budget.md#capping-requests-with---max-requests), next to what each command costs;
+- `--debug`: [The --debug panel](debugging.md#the---debug-panel);
+- error messages: [Errors](errors.md).
 
 ## search
 
