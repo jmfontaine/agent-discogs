@@ -264,7 +264,7 @@ class TestFormatRelease:
             in output
         )
         assert "Label: Nothing Records (INT-92346)" in output
-        assert "Format: Vinyl, LP, Album" in output
+        assert "Format: Vinyl (LP, Album)" in output
         assert "Genres: Electronic, Rock" in output
         assert "Rating: 4.38/5 (4,521 votes)" in output
         assert "Have: 89,234" in output

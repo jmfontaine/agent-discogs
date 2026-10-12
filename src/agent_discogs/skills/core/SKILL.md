@@ -47,7 +47,7 @@ Check status: `agent-discogs status`
 ## Output Format
 
 - **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches.
-- **get release** — title, artists `[@a...]`, label `[@l...]` + catalog number, format, country, release date, community stats, market summary, master ref, full tracklist. Refs are always inline.
+- **get release** — title, artists `[@a...]`, label `[@l...]` + catalog number, format (one entry per physical format: `2×Vinyl (LP, Album, 180g); CD (Album)`), country, release date, community stats, market summary, master ref, full tracklist. Refs are always inline.
 - **get release --verbose** — the above plus notes, credits, and identifiers.
 - **get release --compact** — the above with the tracklist collapsed to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). A suite or medley split into parts counts as its parts, timed by their sum, or by the suite's own duration when a part is untimed. Combine with `-v` to compare pressings without paying for tracklists.
 - **get credits** — who did what, grouped by role (Producer, Engineer, Mastered By, ...), each person with an `[@a...]` ref and the tracks they worked on. Credits filed on individual tracks and sub-tracks are included: each person appears once per role with every track the credit covers; no track list means the whole release. `--json --full` gives the raw release `credits` plus `track_credits` (`position`, `title`, raw `extra_artists` for each credited track).

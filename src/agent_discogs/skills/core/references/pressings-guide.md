@@ -42,7 +42,7 @@ A **version** is simply a release that belongs to a master. When you list versio
 
 - **Country**: The distribution/sales market (not the manufacturing location)
 - **Catalog Number (catno)**: Label's identifier for this pressing
-- **Format**: Physical format and descriptions (Vinyl, LP, CD, 180g, Reissue, etc.)
+- **Format**: Physical format and descriptions (Vinyl, LP, CD, 180g, Reissue, etc.). `get release` prints one entry per physical format, separated by `;`: the quantity when above one, the name, then descriptions and free text in parentheses, e.g. `2×Vinyl (LP, Album, 180g, Gatefold); CD (Album)`. Search, releases and versions rows keep Discogs' flat list (`Vinyl, LP, Album`).
 - **Label**: The label that released this pressing
 
 ## Master Grouping Rules

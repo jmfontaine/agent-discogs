@@ -72,6 +72,8 @@ A format display string is composed of: `Qty x Format, Description, Description,
 
 Example: `2xLP, Album, Reissue, (180g, Gatefold)` means 2 vinyl LPs, album-length, reissued, pressed at 180g in a gatefold sleeve.
 
+`get release` prints each entry as `Qty×Format (Description, Description, Free Text)`, entries separated by `;`, and omits a quantity of 1: the example above appears as `2×Vinyl (LP, Album, Reissue, 180g, Gatefold)`.
+
 ## Genre and Style
 
 Discogs uses a two-level system: **genre** (broad category) and **style** (sub-genre).

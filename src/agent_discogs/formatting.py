@@ -56,17 +56,28 @@ def _artist_string(artists: list[Any] | None) -> str:
 
 
 def _format_string(formats: list[Any] | None) -> str:
-    """Join format info into a compact string."""
-    if not formats:
-        return ""
-    parts = []
-    for f in formats:
+    """One entry per format, `;`-separated: `2xVinyl (LP, Album, 180g); CD (Album)`.
+
+    A quantity above 1 prefixes the name, joined by a multiplication sign (`x`
+    above). Descriptions and the free text (`180g, Gatefold`) go in
+    parentheses, so entries never blur together.
+    """
+    entries = []
+    for f in formats or []:
         name = getattr(f, "name", None) or ""
-        descriptions = getattr(f, "descriptions", None) or []
-        if name:
-            parts.append(name)
-        parts.extend(descriptions)
-    return ", ".join(parts)
+        quantity = str(getattr(f, "quantity", None) or "")
+        if name and quantity not in ("", "0", "1"):
+            name = f"{quantity}\u00d7{name}"  # multiplication sign
+        details = list(getattr(f, "descriptions", None) or [])
+        text = getattr(f, "text", None)
+        if text:
+            details.append(text)
+        detail = ", ".join(details)
+        if name and detail:
+            entries.append(f"{name} ({detail})")
+        elif name or detail:
+            entries.append(name or detail)
+    return "; ".join(entries)
 
 
 def _label_string(labels: list[Any] | None) -> str:

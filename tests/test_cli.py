@@ -1930,7 +1930,7 @@ class TestJsonGet:
             "released": "1994-03-08",
             "country": "US",
             "labels": [{"ref": "@l647", "name": "Nothing Records", "catno": "92346-2"}],
-            "formats": "CD, Album",
+            "formats": "CD (Album)",
             "genres": ["Electronic", "Rock"],
             "master": "@m3719",
             "community": {"have": 7545, "want": 1342, "rating": 4.42, "votes": 593},
@@ -2402,6 +2402,48 @@ class TestUnknownDates:
             },
             "results": [{"ref": "@r10", "type": "release", "title": "R"}],
         }
+
+
+class TestFormatEntries:
+    """Each format entry keeps its quantity, descriptions, and free text, and
+    entries stay separate: a double LP plus a CD is not one flat list."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = Release.model_validate(
+            {
+                "id": 1,
+                "title": "R",
+                "formats": [
+                    {
+                        "name": "Vinyl",
+                        "qty": "2",
+                        "descriptions": ["LP", "Album"],
+                        "text": "180g, Gatefold",
+                    },
+                    {"name": "CD", "qty": "1", "descriptions": ["Album"]},
+                    {"name": "All Media", "qty": "1", "text": "Box"},
+                    {"name": "Box Set", "qty": "1"},
+                ],
+            }
+        )
+        monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=lambda _id: release),
+        )
+
+    expected = (
+        "2×Vinyl (LP, Album, 180g, Gatefold); "  # noqa: RUF001
+        "CD (Album); All Media (Box); Box Set"
+    )
+
+    def test_text(self) -> None:
+        output = CliRunner().invoke(cli, ["get", "release", "@r1"]).output
+        assert f"Format: {self.expected}" in output.splitlines()
+
+    def test_json(self) -> None:
+        result = CliRunner().invoke(cli, ["get", "--json", "release", "@r1"])
+        assert json.loads(result.output)["formats"] == self.expected
 
 
 def _network_event(remaining: int = 59, limit: int = 60) -> RequestEvent:
