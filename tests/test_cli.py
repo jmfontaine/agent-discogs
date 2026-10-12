@@ -2558,6 +2558,91 @@ class TestCacheFlags:
         assert result.stderr == "api: 0 requests · cached\n"
 
 
+def _suite_release() -> Release:
+    """The #29 probe as a real SDK model: index track "Suite" with two parts."""
+    return Release.model_validate(
+        {
+            "id": 1,
+            "title": "Suites",
+            "tracklist": [
+                {
+                    "position": "1",
+                    "title": "Suite",
+                    "duration": "",
+                    "type_": "index",
+                    "sub_tracks": [
+                        {
+                            "position": "1.a",
+                            "title": "Part A",
+                            "duration": "3:00",
+                            "type_": "track",
+                        },
+                        {
+                            "position": "1.b",
+                            "title": "Part B",
+                            "duration": "4:00",
+                            "type_": "track",
+                        },
+                    ],
+                },
+                {
+                    "position": "2",
+                    "title": "Solo",
+                    "duration": "5:00",
+                    "type_": "track",
+                },
+            ],
+        }
+    )
+
+
+class TestIndexTracks:
+    """Index tracks (suites, medleys) carry their parts in `sub_tracks`."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = _suite_release()
+        monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=lambda _id: release),
+        )
+
+    def test_text_tracklist_indents_sub_tracks(self) -> None:
+        result = CliRunner().invoke(cli, ["get", "tracklist", "@r1"])
+        assert result.exit_code == 0
+        assert result.stdout.splitlines()[2:] == [
+            "  1. Suite",
+            "    1.a. Part A (3:00)",
+            "    1.b. Part B (4:00)",
+            "  2. Solo (5:00)",
+        ]
+
+    def test_json_tracklist_nests_sub_tracks_under_index(self) -> None:
+        result = CliRunner().invoke(cli, ["get", "--json", "tracklist", "@r1"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["tracklist"] == [
+            {
+                "pos": "1",
+                "title": "Suite",
+                "type": "index",
+                "sub_tracks": [
+                    {"pos": "1.a", "title": "Part A", "duration": "3:00"},
+                    {"pos": "1.b", "title": "Part B", "duration": "4:00"},
+                ],
+            },
+            {"pos": "2", "title": "Solo", "duration": "5:00"},
+        ]
+
+    def test_compact_counts_leaf_tracks_and_sums_their_durations(self) -> None:
+        text = CliRunner().invoke(cli, ["get", "release", "-c", "@r1"])
+        assert text.exit_code == 0
+        assert "Tracks: 3 (12:00)" in text.stdout
+        data = json.loads(
+            CliRunner().invoke(cli, ["get", "--json", "release", "-c", "@r1"]).stdout
+        )
+        assert data["tracks"] == "3 (12:00)"
+
+
 class TestDebug:
     def test_panel_on_stderr_stdout_identical(
         self, monkeypatch: pytest.MonkeyPatch

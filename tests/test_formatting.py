@@ -686,6 +686,44 @@ class TestTrackSummary:
             track_summary([_fake(title="Side A", duration="", type_="heading")]) == "0"
         )
 
+    def test_index_track_counts_its_parts_and_sums_their_durations(self) -> None:
+        suite = _fake(
+            title="Suite",
+            duration="",
+            type_="index",
+            sub_tracks=[
+                _fake(title="A", duration="3:00", type_="track"),
+                _fake(title="B", duration="4:00", type_="track"),
+            ],
+        )
+        solo = _fake(title="Solo", duration="5:00", type_="track")
+        assert track_summary([suite, solo]) == "3 (12:00)"
+
+    def test_index_duration_stands_in_for_untimed_parts(self) -> None:
+        """Discogs often times only the whole work; that is not a partial sum."""
+        suite = _fake(
+            title="Suite",
+            duration="10:00",
+            type_="index",
+            sub_tracks=[
+                _fake(title="A", duration="", type_="track"),
+                _fake(title="B", duration="", type_="track"),
+            ],
+        )
+        assert track_summary([suite]) == "2 (10:00)"
+
+    def test_untimed_part_of_untimed_index_drops_the_total(self) -> None:
+        suite = _fake(
+            title="Suite",
+            duration="",
+            type_="index",
+            sub_tracks=[
+                _fake(title="A", duration="3:00", type_="track"),
+                _fake(title="B", duration="", type_="track"),
+            ],
+        )
+        assert track_summary([suite]) == "2"
+
 
 class TestFormatReleaseCompact:
     def _release(self, tracklist: list[SimpleNamespace] | None) -> SimpleNamespace:

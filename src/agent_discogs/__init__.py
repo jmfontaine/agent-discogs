@@ -63,7 +63,8 @@ Options:
                    get releases --role, get releases @l --year)
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
-                   (total omitted if any track lacks a duration)
+                   (a suite counts as its parts, timed by their sum or else its
+                   own duration; total omitted if any track lacks a duration)
   --sort KEY       Server-side order. get releases @a: year|title|format;
                    get versions: released|title|format|label|catno|country
   --desc           With --sort: descending

@@ -90,7 +90,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `price` | `@r` or numeric ID | Marketplace pricing (requires auth *and* seller settings on the token's account), each amount with its ISO currency code |
 | `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, tracklist |
 | `releases` | `@a` or `@l` (numeric ID = artist) | Artist discography, or a label's catalogue (paginated) |
-| `tracklist` | `@r` or numeric ID | Tracklist only (from a release) |
+| `tracklist` | `@r` or numeric ID | Tracklist only (from a release); an index track's parts are indented beneath it (JSON: `"type": "index"` with `sub_tracks`) |
 | `versions` | `@m` or numeric ID | Master release versions (paginated) |
 
 **Currency:** `price` prints amounts as `EUR 20.00`, the ISO code Discogs returns, never a symbol; under `--json` each suggestion is `{"value":20.0,"currency":"EUR"}` and `market` carries `lowest` and `currency`. The `Market: N for sale from 9.36` line of `release` and `master` is a bare amount in the token account's buyer currency (USD when unauthenticated): Discogs does not name it, so its JSON `market` has no `currency` key. Use `price @r...` when the currency matters.
@@ -105,7 +105,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--page` | Page number (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`) |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
-| `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
+| `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; an index track counts as its parts, timed by their sum or, when a part is untimed, by the index track's own duration; otherwise the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
 
 **Additional flags for `releases`:**
 

@@ -46,15 +46,17 @@ def _artist_refs(artists: list[Any] | None) -> list[dict[str, Any]]:
 
 
 def _tracks(tracklist: list[Any] | None) -> list[dict[str, Any]]:
+    """Tracklist rows; an index track (suite, medley) nests its `sub_tracks`."""
     return [
         {
             "pos": getattr(t, "position", None),
             "title": getattr(t, "title", None),
             "duration": getattr(t, "duration", None),
             "type": getattr(t, "type_", None)
-            if getattr(t, "type_", None) == "heading"
+            if getattr(t, "type_", None) in ("heading", "index")
             else None,
             "artists": _artist_refs(getattr(t, "artists", None)),
+            "sub_tracks": _tracks(getattr(t, "sub_tracks", None)),
         }
         for t in tracklist or []
     ]

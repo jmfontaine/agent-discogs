@@ -49,10 +49,10 @@ Check status: `agent-discogs status`
 - **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches.
 - **get release** — title, artists `[@a...]`, label `[@l...]` + catalog number, format, country, release date, community stats, market summary, master ref, full tracklist. Refs are always inline.
 - **get release --verbose** — the above plus notes, credits, and identifiers.
-- **get release --compact** — the above with the tracklist collapsed to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). Combine with `-v` to compare pressings without paying for tracklists.
+- **get release --compact** — the above with the tracklist collapsed to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). A suite or medley split into parts counts as its parts, timed by their sum, or by the suite's own duration when a part is untimed. Combine with `-v` to compare pressings without paying for tracklists.
 - **get credits** — who did what, grouped by role (Producer, Engineer, Mastered By, ...), each person with an `[@a...]` ref and the tracks they worked on.
 - **get identifiers** (alias `ids`) — barcodes, matrix/runout etchings, label codes, rights societies. This is what distinguishes pressings that share a catalog number.
-- **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
+- **tracks** — numbered tracklist with durations and per-track artists (for VA releases). Index tracks (a suite or medley) list their parts indented beneath them; in `--json` an index row has `"type": "index"` and nests its parts under `sub_tracks`.
 - **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats, each amount with the ISO currency code Discogs returns: `Mint (M): EUR 20.00`, `Lowest: GBP 9.99`.
 - **Currency** — amounts are never shown with a symbol. The `Market: 9 for sale from 9.36` line of `get release` and `get master` is a bare amount: Discogs prices it in the token account's buyer currency (USD when unauthenticated) without saying which, so the JSON `market` there has no `currency` key. Use `price @r...` when the currency matters.
 - **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`. `--sort released` puts the earliest pressing first; `--year` narrows.

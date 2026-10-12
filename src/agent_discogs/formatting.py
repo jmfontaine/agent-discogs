@@ -148,8 +148,12 @@ def _track_artist_prefix(track: Any) -> str:
     return _artist_string(artists) + " - "
 
 
-def _format_track_lines(tracklist: list[Any]) -> list[str]:
-    """Format a tracklist into display lines with optional per-track artists."""
+def _format_track_lines(tracklist: list[Any], depth: int = 1) -> list[str]:
+    """Format a tracklist into display lines with optional per-track artists.
+
+    An index track (a suite or medley) lists its parts one level deeper.
+    """
+    indent = "  " * depth
     lines: list[str] = []
     for track in tracklist:
         pos = getattr(track, "position", "") or ""
@@ -157,14 +161,16 @@ def _format_track_lines(tracklist: list[Any]) -> list[str]:
         dur = getattr(track, "duration", "") or ""
         type_ = getattr(track, "type_", "") or ""
         if type_ == "heading":
-            lines.append(f"  {title}")
+            lines.append(f"{indent}{title}")
             continue
         artist_prefix = _track_artist_prefix(track)
         dur_str = f" ({dur})" if dur else ""
         if pos:
-            lines.append(f"  {pos}. {artist_prefix}{title}{dur_str}")
+            lines.append(f"{indent}{pos}. {artist_prefix}{title}{dur_str}")
         else:
-            lines.append(f"  {artist_prefix}{title}{dur_str}")
+            lines.append(f"{indent}{artist_prefix}{title}{dur_str}")
+        sub_tracks = getattr(track, "sub_tracks", None) or []
+        lines.extend(_format_track_lines(sub_tracks, depth + 1))
     return lines
 
 
@@ -535,29 +541,56 @@ def format_price_guide(
     return "\n".join(lines)
 
 
+def _duration_seconds(duration: str | None) -> int | None:
+    """`4:30` or `1:02:03` in seconds; None for a blank or malformed duration."""
+    parts = (duration or "").split(":")
+    if not all(p.isdigit() for p in parts):
+        return None
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + int(part)
+    return seconds
+
+
+def _leaf_timing(tracklist: list[Any]) -> tuple[int, int | None]:
+    """`(leaf track count, summed seconds)`; seconds is None if any leaf is untimed.
+
+    Headings are skipped. An index track counts as its sub-tracks and sums
+    their durations; when a sub-track is untimed, the index's own duration
+    stands in for the group, since Discogs often times only the whole work.
+    """
+    count = 0
+    total: int | None = 0
+    for track in tracklist:
+        if (getattr(track, "type_", None) or "track") == "heading":
+            continue
+        own = _duration_seconds(getattr(track, "duration", None))
+        sub_tracks = getattr(track, "sub_tracks", None) or []
+        leaves, seconds = _leaf_timing(sub_tracks) if sub_tracks else (0, None)
+        if not leaves:
+            leaves, seconds = 1, own
+        elif seconds is None:
+            seconds = own
+        count += leaves
+        total = None if total is None or seconds is None else total + seconds
+    return count, total
+
+
 def track_summary(tracklist: list[Any]) -> str:
     """`14 (65:01)`: track count and summed duration, for compact views.
 
-    Headings are not counted. The total is shown only when every counted track
-    has a valid duration; a partial sum would read as the whole release's
-    running time, so a single blank duration drops it to the bare count.
+    Headings are not counted, and an index track counts as its sub-tracks
+    (see `_leaf_timing`). The total is shown only when every counted track has
+    a valid duration; a partial sum would read as the whole release's running
+    time, so a single blank duration drops it to the bare count.
     """
-    tracks = [
-        t for t in tracklist if (getattr(t, "type_", None) or "track") != "heading"
-    ]
-    seconds = 0
-    for track in tracks:
-        parts = (getattr(track, "duration", None) or "").split(":")
-        if not all(p.isdigit() for p in parts):
-            return str(len(tracks))
-        track_seconds = 0
-        for part in parts:
-            track_seconds = track_seconds * 60 + int(part)
-        seconds += track_seconds
-    if not tracks:
+    count, seconds = _leaf_timing(tracklist)
+    if not count:
         return "0"
+    if seconds is None:
+        return str(count)
     minutes, secs = divmod(seconds, 60)
-    return f"{len(tracks)} ({minutes}:{secs:02d})"
+    return f"{count} ({minutes}:{secs:02d})"
 
 
 def format_release(
