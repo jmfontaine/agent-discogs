@@ -18,6 +18,8 @@ from agent_discogs.formatting import (
     _urls_short,
     credits_by_role,
     field,
+    known_year,
+    release_date,
     split_members,
     track_summary,
 )
@@ -71,7 +73,7 @@ def project_search_result(r: Any) -> dict[str, Any]:
             "ref": make_ref(entity_type, r.id),
             "type": entity_type,
             "title": r.title,
-            "year": getattr(r, "year", None),
+            "year": known_year(getattr(r, "year", None)),
             "country": getattr(r, "country", None),
             "label": label[0] if label else None,
             "catno": getattr(r, "catalog_number", None),
@@ -95,8 +97,8 @@ def project_release(
         "ref": make_ref("release", rel.id),
         "title": rel.title,
         "artists": _artist_refs(getattr(rel, "artists", None)),
-        "year": getattr(rel, "year", None),
-        "released": getattr(rel, "released", None),
+        "year": known_year(getattr(rel, "year", None)),
+        "released": release_date(getattr(rel, "released", None)),
         "country": getattr(rel, "country", None),
         "labels": [
             {
@@ -246,7 +248,7 @@ def project_label_release(rel: Any) -> dict[str, Any]:
             "ref": make_ref("release", rel.id),
             "title": rel.title,
             "artist": getattr(rel, "artist", None),
-            "year": getattr(rel, "year", None) or None,  # Discogs uses 0 for unknown
+            "year": known_year(getattr(rel, "year", None)),
             "catno": getattr(rel, "catalog_number", None),
             "format": getattr(rel, "format", None),
         }
@@ -260,7 +262,7 @@ def project_master(master: Any) -> dict[str, Any]:
             "ref": make_ref("master", master.id),
             "title": master.title,
             "artists": _artist_refs(getattr(master, "artists", None)),
-            "year": getattr(master, "year", None),
+            "year": known_year(getattr(master, "year", None)),
             "genres": getattr(master, "genres", None),
             "styles": getattr(master, "styles", None),
             "main_release": make_ref("release", main) if main else None,
@@ -278,7 +280,7 @@ def project_master_version(ver: Any) -> dict[str, Any]:
         {
             "ref": make_ref("release", ver.id),
             "title": getattr(ver, "title", None),
-            "released": getattr(ver, "released", None),
+            "released": release_date(getattr(ver, "released", None)),
             "country": getattr(ver, "country", None),
             "label": getattr(ver, "label", None),
             "catno": getattr(ver, "catalog_number", None),
@@ -295,7 +297,7 @@ def project_artist_release(rel: Any) -> dict[str, Any]:
             "ref": make_ref(entity_type, rel.id),
             "type": entity_type,
             "title": rel.title,
-            "year": getattr(rel, "year", None) or None,  # Discogs uses 0 for unknown
+            "year": known_year(getattr(rel, "year", None)),
             "role": getattr(rel, "role", None),
             "label": getattr(rel, "label", None),
             "format": getattr(rel, "format", None),

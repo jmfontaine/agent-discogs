@@ -229,7 +229,9 @@ Three date formats are used:
 |--------|---------|
 | YYYY-MM-DD | Exact release date (e.g., 1997-09-02). |
 | YYYY-MM-00 | Known year and month, unknown day. |
-| YYYY | Known year only. |
+| YYYY or YYYY-00-00 | Known year only. |
+
+agent-discogs drops the unknown parts before printing, in text and `--json`: `1997-09-00` shows as `1997-09`, and `1997-00-00` as `1997`. Discogs stores an unknown year as `0`; the CLI omits it rather than printing `0`.
 
 ### Copyright vs release date
 

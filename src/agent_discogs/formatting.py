@@ -252,13 +252,33 @@ def _community_have(obj: Any) -> int | None:
     return have if isinstance(have, int) else None
 
 
+def known_year(year: int | str | None) -> int | str | None:
+    """The year, or None for Discogs' `0` / `"0"` meaning unknown."""
+    return year if year and str(year).strip("0") else None
+
+
+_UNKNOWN_DATE_PARTS = re.compile(r"(?:-00)+$")
+
+
+def release_date(released: str | None) -> str | None:
+    """`1994-05-00` → `1994-05`, `1994-00-00` → `1994`; None for an unknown year.
+
+    Discogs pads unknown month and day with `-00`; shown as-is they read as a
+    date, and a bare year would not match the release year it repeats.
+    """
+    if not released:
+        return None
+    date = _UNKNOWN_DATE_PARTS.sub("", released)
+    return date if known_year(date.split("-", 1)[0]) else None
+
+
 def _release_row(
     *,
     ref: str,
     type_: str | None = None,
     title: str | None = None,
     artist: str | None = None,
-    year: object = None,
+    year: int | str | None = None,
     country: str | None = None,
     label: str | None = None,
     catno: str | None = None,
@@ -279,7 +299,7 @@ def _release_row(
         parts.append(f'"{title}"')
     if artist:
         parts.append(f"by {artist}")
-    meta = " ".join(str(p) for p in (year, country) if p)
+    meta = " ".join(str(p) for p in (known_year(year), country) if p)
     if meta:
         parts.append(meta)
     if label or catno:
@@ -459,7 +479,7 @@ def format_master(master: Any) -> str:
     """Format a master release detail view."""
     ref = make_ref("master", master.id)
     artists = _artist_string(getattr(master, "artists", None))
-    year = getattr(master, "year", None) or ""
+    year = known_year(getattr(master, "year", None)) or ""
     year_str = f" ({year})" if year else ""
 
     lines = [f'{ref} [master] "{master.title}" by {artists}{year_str}']
@@ -510,7 +530,7 @@ def format_master_versions(
     lines.extend(
         _release_row(
             ref=make_ref("release", ver.id),
-            year=getattr(ver, "released", None),
+            year=release_date(getattr(ver, "released", None)),
             country=getattr(ver, "country", None),
             label=getattr(ver, "label", None),
             catno=getattr(ver, "catalog_number", None),
@@ -654,7 +674,7 @@ def format_release(
     """
     ref = make_ref("release", release.id)
     artists = _artist_string(getattr(release, "artists", None))
-    year = getattr(release, "year", None) or ""
+    year = known_year(getattr(release, "year", None)) or ""
     year_str = f" ({year})" if year else ""
 
     lines = [f'{ref} [release] "{release.title}" by {artists}{year_str}']
@@ -668,7 +688,7 @@ def format_release(
         lines.append(f"Format: {fmt}")
 
     country = getattr(release, "country", None)
-    released = getattr(release, "released", None)
+    released = release_date(getattr(release, "released", None))
     # `released` repeats the header year unless it carries a month/day.
     origin = [f"Country: {country}" if country else ""]
     if released and released != str(year):

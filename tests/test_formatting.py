@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from discogs_sdk import MarketplaceReleaseStats, Master, PriceSuggestions, Release
+from discogs_sdk import (
+    MarketplaceReleaseStats,
+    Master,
+    MasterVersion,
+    PriceSuggestions,
+    Release,
+)
 
 from agent_discogs.formatting import (
     _artist_string,
@@ -816,6 +822,33 @@ class TestFormatReleaseOrigin:
         output = format_release(self._release())
         assert "Country:" not in output
         assert "Released:" not in output
+
+    def test_zero_padded_bare_year_is_not_repeated(self) -> None:
+        release = Release.model_validate(
+            {"id": 1, "title": "X", "year": 1994, "released": "1994-00-00"}
+        )
+        output = format_release(release)
+        assert output.splitlines()[0] == '@r1 [release] "X" by Unknown Artist (1994)'
+        assert "Released:" not in output
+        assert "-00" not in output
+
+    def test_unknown_day_is_dropped(self) -> None:
+        release = Release.model_validate(
+            {"id": 1, "title": "X", "year": 1994, "released": "1994-05-00"}
+        )
+        assert "Released: 1994-05" in format_release(release).splitlines()
+
+
+class TestMasterVersionsDates:
+    def test_released_drops_unknown_parts_and_zero(self) -> None:
+        versions = [
+            MasterVersion.model_validate({"id": 1, "title": "A", "released": "0"}),
+            MasterVersion.model_validate(
+                {"id": 2, "title": "B", "released": "1994-00-00"}
+            ),
+        ]
+        rows = format_master_versions(versions, "@m3", "M", 1, 2, None).splitlines()
+        assert rows[2:] == ["@r1", "@r2 1994"]
 
 
 class TestFormatCredits:

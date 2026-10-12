@@ -25,6 +25,7 @@ from discogs_sdk import (
     RateLimitError,
     Release,
     RequestEvent,
+    SearchResult,
 )
 
 from agent_discogs import cli, main, trace
@@ -2345,6 +2346,62 @@ class TestJsonShortcuts:
         result = CliRunner().invoke(cli, ["price", "--full", "@r123"])
         assert result.exit_code == 1
         assert "--full requires --json" in result.output
+
+
+class TestUnknownDates:
+    """Discogs sends year 0 / `"0"` for unknown and pads unknown date parts
+    with `-00`; neither may reach an agent."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_clients(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = Release.model_validate(
+            {"id": 1, "title": "R", "year": 0, "released": "1994-05-00"}
+        )
+        master = Master.model_validate({"id": 3, "title": "M", "year": 0})
+        client = _fake_client(
+            releases_get=lambda _id: release, masters_get=lambda _id: master
+        )
+        monkeypatch.setattr("agent_discogs.commands.get.get_client", lambda: client)
+        monkeypatch.setattr("agent_discogs.commands.search.get_client", lambda: None)
+        item = SearchResult.model_validate(
+            {"id": 10, "type": "release", "title": "R", "year": "0"}
+        )
+
+        def page(*_a: object, **_kw: object) -> PageResult:
+            return PageResult(items=[item], page=1, total_items=1, total_pages=1)
+
+        monkeypatch.setattr("agent_discogs.commands.search.fetch_page", page)
+        monkeypatch.setattr("agent_discogs.pagination.fetch_page", page)
+
+    def test_year_zero_is_omitted_from_text(self) -> None:
+        release = CliRunner().invoke(cli, ["get", "release", "@r1"])
+        assert release.output.splitlines()[0] == '@r1 [release] "R" by Unknown Artist'
+        master = CliRunner().invoke(cli, ["get", "master", "@m3"])
+        assert master.output.splitlines()[0] == '@m3 [master] "M" by Unknown Artist'
+        search = CliRunner().invoke(cli, ["search", "release", "R"])
+        assert search.output.splitlines()[2] == '@r10 "R"'
+
+    def test_unknown_parts_are_omitted_from_json(self) -> None:
+        def run(*args: str) -> object:
+            return json.loads(CliRunner().invoke(cli, list(args)).output)
+
+        assert run("get", "--json", "release", "@r1") == {
+            "ref": "@r1",
+            "title": "R",
+            "released": "1994-05",
+        }
+        assert run("get", "--json", "master", "@m3") == {"ref": "@m3", "title": "M"}
+        assert run("search", "--json", "R") == {
+            "pagination": {
+                "page": 1,
+                "total_items": 1,
+                "total_pages": 1,
+                "filtered": True,
+                "capped": False,
+                "next_cursor": None,
+            },
+            "results": [{"ref": "@r10", "type": "release", "title": "R"}],
+        }
 
 
 def _network_event(remaining: int = 59, limit: int = 60) -> RequestEvent:
