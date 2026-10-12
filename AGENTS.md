@@ -11,7 +11,7 @@ A token-efficient Discogs CLI designed for AI agents. Built on click and the `di
 Task runner is `just`. All commands use `uv run` under the hood.
 
 ```bash
-just setup                             # Install deps + pre-commit hooks
+just setup                             # Install deps + pre-commit hooks (main checkout only; see below)
 just test                              # Run pytest; fails below 100% coverage of src/agent_discogs
 just test <path> --cov-fail-under=0    # Run specific test file or directory (a partial run can't reach 100%)
 just qa                                # All checks: dead-code, deps-unused, format-check, lint, type-check, verify-types
@@ -25,11 +25,15 @@ just deps-update                       # Update deps to latest versions
 just verify-types                      # Audit public API type annotation coverage
 just release                           # Tag, push, and monitor the publish workflow
 just pre-commit                        # Run pre-commit hooks on all files
-just pre-commit-install                # Install pre-commit hooks
+just pre-commit-install                # Install pre-commit hooks (main checkout only)
 just pre-commit-update                 # Update pre-commit hooks to latest versions
 ```
 
 Run a single test: `uv run pytest tests/test_cli.py -k test_version`
+
+### Worktrees
+
+Every linked worktree (`git worktree add`) shares the main checkout's `.git/hooks`. In a linked worktree, never run `just setup`, `just pre-commit-install`, `pre-commit install`, `prek install`, or anything else that writes `.git/hooks` or sets `core.hooksPath`: an installer replaces the hook every checkout uses, moving the existing one to `pre-commit.legacy` to run in pre-commit's "migration mode" (a prek hook there fails every commit), and points the new hook at the worktree's `.venv`, which disappears with the worktree. Get a working environment with `uv sync --all-extras --all-groups` instead. Both recipes check for a linked worktree (`git rev-parse --git-dir` differs from `--git-common-dir`): `just setup` installs the dependencies and skips the hook, `just pre-commit-install` exits 1. The guard does not cover running an installer directly. If a commit hook fails for a reason unrelated to your change, stop and report it; never bypass it with `--no-verify`.
 
 ## Architecture
 
