@@ -88,7 +88,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `label` | `@l` or numeric ID | Label profile; `URLs:` lists linked sites by domain, omitting empty entries |
 | `master` | `@m` or numeric ID | Master release details |
 | `price` | `@r` or numeric ID | Marketplace pricing (requires auth *and* seller settings on the token's account), each amount with its ISO currency code |
-| `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, tracklist |
+| `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, `Added: YYYY-MM-DD` (day added to Discogs, in the timestamp's own offset; JSON `added`, RFC 3339), tracklist |
 | `releases` | `@a` or `@l` (numeric ID = artist) | Artist discography, or a label's catalogue (paginated) |
 | `tracklist` | `@r` or numeric ID | Tracklist only (from a release); an index track's parts are indented beneath it (JSON: `"type": "index"` with `sub_tracks`) |
 | `versions` | `@m` or numeric ID | Master release versions (paginated) |

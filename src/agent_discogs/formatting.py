@@ -704,6 +704,10 @@ def format_release(
     origin = [f"Country: {country}" if country else ""]
     if released and released != str(year):
         origin.append(f"Released: {released}")
+    added = getattr(release, "date_added", None)
+    if added:
+        # The day in the timestamp's own offset, not converted to UTC or local.
+        origin.append(f"Added: {added.date().isoformat()}")
     if any(origin):
         lines.append(" · ".join(p for p in origin if p))
 

@@ -8,7 +8,10 @@ exactly the fields that view shows, plus refs. `--json` serializes these;
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+
+from pydantic import TypeAdapter
 
 from agent_discogs.formatting import (
     _community_have,
@@ -34,6 +37,18 @@ def drop_empty(value: Any) -> Any:
     if isinstance(value, list):
         return [drop_empty(v) for v in value]
     return value
+
+
+_DATETIME: TypeAdapter[datetime] = TypeAdapter(datetime)
+
+
+def _timestamp(value: datetime | None) -> str | None:
+    """RFC 3339, exactly as `model_dump(mode="json")` serializes it.
+
+    Matches `--full` once that dumps in JSON mode (issue #17); until then
+    `--full` prints the same instant with a space instead of `T`.
+    """
+    return _DATETIME.dump_python(value, mode="json") if value else None
 
 
 def _artist_refs(artists: list[Any] | None) -> list[dict[str, Any]]:
@@ -99,6 +114,7 @@ def project_release(
         "artists": _artist_refs(getattr(rel, "artists", None)),
         "year": known_year(getattr(rel, "year", None)),
         "released": release_date(getattr(rel, "released", None)),
+        "added": _timestamp(getattr(rel, "date_added", None)),
         "country": getattr(rel, "country", None),
         "labels": [
             {

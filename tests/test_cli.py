@@ -2446,6 +2446,44 @@ class TestFormatEntries:
         assert json.loads(result.output)["formats"] == self.expected
 
 
+class TestDateAdded:
+    """`date_added` is when the release joined Discogs; shown in its own offset."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        base = {"title": "R", "country": "US", "released": "1994-03-08"}
+        releases = {
+            # 23:30 at -07:00 is already 2026-10-04 in UTC.
+            1: Release.model_validate(
+                {**base, "id": 1, "date_added": "2026-10-03T23:30:00-07:00"}
+            ),
+            2: Release.model_validate({**base, "id": 2}),
+        }
+        monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=releases.__getitem__),
+        )
+
+    def test_text_shows_the_date_beside_the_release_date(self) -> None:
+        output = CliRunner().invoke(cli, ["get", "release", "@r1"]).output
+        assert (
+            "Country: US · Released: 1994-03-08 · Added: 2026-10-03"
+            in output.splitlines()
+        )
+
+    def test_json_carries_rfc3339_timestamp(self) -> None:
+        result = CliRunner().invoke(cli, ["get", "--json", "release", "@r1"])
+        assert json.loads(result.output)["added"] == "2026-10-03T23:30:00-07:00"
+
+    def test_missing_date_is_omitted(self) -> None:
+        output = CliRunner().invoke(cli, ["get", "release", "@r2"]).output
+        assert "Country: US · Released: 1994-03-08" in output.splitlines()
+        result = CliRunner().invoke(cli, ["get", "--json", "release", "@r2"])
+        data = json.loads(result.output)
+        assert data["released"] == "1994-03-08"
+        assert "added" not in data
+
+
 def _network_event(remaining: int = 59, limit: int = 60) -> RequestEvent:
     return RequestEvent(
         method="GET",
