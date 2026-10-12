@@ -9,6 +9,7 @@ import click
 
 from agent_discogs import client, style, trace
 from agent_discogs.commands.cache import cache
+from agent_discogs.commands.completion import completion
 from agent_discogs.commands.get import get, price, tracks
 from agent_discogs.commands.search import search
 from agent_discogs.commands.skills import skills
@@ -36,6 +37,8 @@ Commands:
   cache clear [--json]        Clear HTTP cache; a failed purge exits 1 (cache_error)
   skills [list|get|path]      Print the bundled agent guide (start: skills get core)
   status                      Show version, auth mode, and cache location
+  completion bash|zsh|fish    Print the Tab-completion script for an interactive
+                              shell, e.g. eval "$(agent-discogs completion zsh)"
 
 Search Types:  artist, label, master, release
 Search Flags:  --artist, --barcode, --catno, --country, --format, --genre,
@@ -327,6 +330,7 @@ def cli(
 
 
 cli.add_command(cache)
+cli.add_command(completion)
 cli.add_command(get)
 cli.add_command(price)
 cli.add_command(search)

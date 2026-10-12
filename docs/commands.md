@@ -183,3 +183,26 @@ agent-discogs skills get core          # workflows, output format, common patter
 agent-discogs skills get core --full   # plus references: command reference, search patterns, pressings guide, Discogs data model
 agent-discogs skills path [core]       # directory holding the bundled skill files
 ```
+
+## Shell completion
+
+`agent-discogs completion bash|zsh|fish` prints click's completion script for that shell, for a person typing in an interactive shell (agents get the same lists from `--help` and `skills get core`). It makes no API call and never opens the cache. Any other shell is a usage error (exit 2) naming the supported ones. Set it up once:
+
+```bash
+eval "$(agent-discogs completion bash)"   # in ~/.bashrc (bash 4.4 or later)
+eval "$(agent-discogs completion zsh)"    # in ~/.zshrc, after compinit
+agent-discogs completion fish > ~/.config/fish/completions/agent-discogs.fish
+```
+
+The script asks agent-discogs for the candidates on each Tab, so it follows the installed version without being regenerated.
+
+Tab completes every closed set of values:
+
+- commands, each under one name: the aliases (`find`, `query`, `fetch`, `show`) are not offered, but typed in full they still complete what follows;
+- option names (`--<Tab>`);
+- `get` nouns, `ids` included;
+- the `search` type word (`release`, `master`, `artist`, `label`), only as the first positional after `search` (options or `--` may come before it); the query after it gets no suggestions;
+- `search --release-type`, `search --sort`, the global `--color`, `cache clear`, the `skills` subcommands and skill names, and the `completion` shells;
+- `get --sort`: the keys of the noun typed before it (`get versions --sort <Tab>` offers `released title format label catno country`), or every key of `releases` and `versions` before a noun, and none after a noun that takes no `--sort`. A key the noun does not take is still rejected when the command runs.
+
+Refs, queries, Discogs names and free-text filters (`--artist`, `--format`, `--role`, ...) are not completed: refs are stateless, so there is no list to offer.

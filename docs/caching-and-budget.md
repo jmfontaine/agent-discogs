@@ -45,7 +45,7 @@ The count is what this command spent: every HTTP request sent, including one who
 
 `⚠` appears when 10 or fewer requests remain: pause about a minute, or keep to refs that are already cached (`--cached` guarantees zero spend). When the limit Discogs reported is below 60/min (the anonymous tier), the warning suggests setting `DISCOGS_TOKEN` instead; which credentials are set does not change it.
 
-The line is on stderr and never inside `--json` output; commands that make no request (`status`, `skills`, `cache clear`) print nothing.
+The line is on stderr and never inside `--json` output; commands that make no request (`status`, `skills`, `cache clear`, `completion`) print nothing.
 
 ## What commands cost
 

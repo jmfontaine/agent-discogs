@@ -102,6 +102,17 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
     return None, " ".join(args_list).strip()
 
 
+def _complete_type(
+    ctx: click.Context, _param: click.Parameter, incomplete: str
+) -> list[str]:
+    """Tab offers a type word only for the first positional; anything else
+    there is free query text, so it gets no suggestions."""
+    # ctx.args holds the words typed before an option click could not parse.
+    if ctx.params.get("args") or ctx.args:
+        return []
+    return [t for t in sorted(KNOWN_TYPES) if t.startswith(incomplete)]
+
+
 def _added_since_error(
     type_filter: str | None,
     *,
@@ -208,7 +219,7 @@ def _search_added_since(
 
 
 @click.command()
-@click.argument("args", nargs=-1)
+@click.argument("args", nargs=-1, shell_complete=_complete_type)
 @click.option(
     "--added-since",
     type=click.DateTime(formats=["%Y-%m-%d"]),

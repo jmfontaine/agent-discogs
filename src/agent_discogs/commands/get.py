@@ -409,6 +409,23 @@ SORT_KEYS: dict[str, tuple[str, ...]] = {
     "versions": ("released", "title", "format", "label", "catno", "country"),
 }
 
+
+def _complete_sort(
+    ctx: click.Context, _param: click.Parameter, incomplete: str
+) -> list[str]:
+    """Tab offers the noun's sort keys, or before a noun every key some noun
+    takes. A noun without --sort gets none."""
+    # After `--sort ` click stops parsing at the option awaiting its value, so
+    # the words typed before it, noun first, are left unconverted in ctx.args;
+    # after `--sort=` (one word in zsh and fish) they parse, into ctx.params.
+    noun = ctx.params.get("noun") or next(iter(ctx.args), None)
+    if noun is None:
+        keys = list(dict.fromkeys(k for ks in SORT_KEYS.values() for k in ks))
+    else:
+        keys = list(SORT_KEYS.get(noun, ()))
+    return [k for k in keys if k.startswith(incomplete)]
+
+
 # Which `get` options each noun takes, by click parameter name. Every other
 # noun takes only --json/--full. The per-ref nuances of `releases` (--role and
 # --sort need an artist, --year a label) are checked in _flag_error.
@@ -791,6 +808,7 @@ def _json_options(command: Any) -> Any:
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
 @click.option(
     "--sort",
+    shell_complete=_complete_sort,
     help=(
         "Server-side order. releases @a: year|title|format; "
         "versions: released|title|format|label|catno|country"
