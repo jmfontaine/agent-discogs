@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import math
 import sys
 from dataclasses import asdict, dataclass
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
+import pydantic
 from discogs_sdk import (
     AuthenticationError,
     CacheError,
     CacheMissError,
     DiscogsAPIError,
     DiscogsConnectionError,
+    DiscogsError,
     ForbiddenError,
     NotFoundError,
     RateLimitError,
@@ -51,6 +54,26 @@ def _api_message(exc: Exception) -> str:
         return body
     message = body.get("message") if isinstance(body, dict) else None
     return message if isinstance(message, str) else ""
+
+
+def _is_bad_response(exc: Exception) -> bool:
+    """A 2xx response the SDK could not read: a body that is not JSON (or not
+    text at all), JSON its models reject, or a malformed page envelope, which
+    the SDK reports as a bare `DiscogsError`. Its subclasses mean other things."""
+    return type(exc) is DiscogsError or isinstance(
+        exc, (json.JSONDecodeError, UnicodeDecodeError, pydantic.ValidationError)
+    )
+
+
+def _bad_response_detail(exc: Exception) -> str:
+    """What was wrong with the response. A validation error names its first
+    failing field, never the value Discogs sent, and counts the rest."""
+    if not isinstance(exc, pydantic.ValidationError):
+        return str(exc)
+    first, *rest = exc.errors(include_url=False, include_input=False)
+    where = ".".join([exc.title, *map(str, first["loc"])])
+    more = f" (and {len(rest)} more)" if rest else ""
+    return f"{where}: {first['msg']}{more}"
 
 
 def _describe(exc: BaseException) -> str:
@@ -218,6 +241,19 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
 
     if isinstance(exc, CacheError):
         return _cache_error(exc)
+
+    if _is_bad_response(exc):
+        # Never the caller's input. The SDK stores no response that fails to
+        # parse, so a retry normally asks Discogs again. A price guide is the
+        # exception: its conditions are validated only when read, after the
+        # body is cached, so only --fresh gets past a bad one.
+        detail = sanitize.summary(_bad_response_detail(exc))
+        return ErrorInfo(
+            "bad_response",
+            f"Discogs sent a response that cannot be read: {detail}",
+            "Not caused by your arguments. Retry in a moment, or with --fresh "
+            "if the same error repeats.",
+        )
 
     # UnicodeError is a ValueError too, but an encoding failure says nothing
     # about the caller's arguments.

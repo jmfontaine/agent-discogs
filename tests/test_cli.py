@@ -3940,6 +3940,8 @@ class TestContinuation:
         assert sent == []
 
 
+_ONE_PAGE = {"page": 1, "pages": 1, "items": 1}
+
 _RELEASE_WITH_HEADINGS = {
     "id": 1,
     "title": "Sides",
@@ -4146,25 +4148,155 @@ class TestRealSdk:
         assert row["uri"] == "https://www.discogs.com/release/1"
 
     @pytest.mark.parametrize(
-        "argv",
+        ("argv", "body", "detail"),
         [
-            ["search", "--release-type", "all", "Sides"],
-            ["search", "Sides"],  # a filtered scan
-            ["get", "releases", "@l1"],
+            (["get", "release", "@r1"], None, "Expecting value"),
+            (["search", "--release-type", "all", "x"], None, "Expecting value"),
+            (
+                ["get", "release", "@r1"],
+                {"id": "one", "title": "T"},
+                "Release.id: Input should be a valid integer",
+            ),
+            (
+                ["search", "--release-type", "all", "x"],
+                {"pagination": _ONE_PAGE, "results": [{"id": "one", "title": "T"}]},
+                "SearchResult.id: Input should be a valid integer",
+            ),
+            (
+                ["search", "--release-type", "all", "x"],
+                {"pagination": _ONE_PAGE, "results": {}},
+                '"results" is an object, expected an array',
+            ),
+            (
+                ["search", "x"],  # a filtered scan
+                {"pagination": _ONE_PAGE, "results": {}},
+                '"results" is an object, expected an array',
+            ),
+            (
+                ["get", "releases", "@l1"],
+                {"pagination": _ONE_PAGE, "releases": {}},
+                '"releases" is an object, expected an array',
+            ),
+            (
+                ["search", "--release-type", "all", "x"],
+                {"pagination": [], "results": []},
+                '"pagination" is an array, expected an object',
+            ),
         ],
-        ids=["search", "scan", "label"],
+        ids=[
+            "html-entity",
+            "html-page",
+            "invalid-entity",
+            "invalid-row",
+            "results-object",
+            "results-object-scan",
+            "releases-object",
+            "pagination-list",
+        ],
     )
-    def test_malformed_page_is_an_error(self, argv: list[str]) -> None:
-        """A page whose items are not a list fails the SDK's envelope check
-        instead of reading as an empty page."""
-        key = "results" if argv[0] == "search" else "releases"
-        self.respond = lambda _request: httpx2.Response(
-            200, json={"pagination": {"page": 1, "pages": 1, "items": 1}, key: {}}
+    def test_unreadable_response_is_a_bad_response(
+        self, argv: list[str], body: object, detail: str
+    ) -> None:
+        """A 200 the CLI cannot read is Discogs' fault, not the caller's: it
+        fails with `bad_response` instead of `invalid_argument` or an empty page."""
+        self.respond = lambda _request: (
+            httpx2.Response(200, text="<html>Bad gateway</html>")
+            if body is None
+            else httpx2.Response(200, json=body)
         )
         result = CliRunner().invoke(cli, [*argv, "--json"])
         assert result.exit_code == 1, result.output
         error = json.loads(result.stdout)["error"]
-        assert f'"{key}" is an object, expected an array' in error["message"]
+        assert error["code"] == "bad_response"
+        assert detail in error["message"]
+
+        text = CliRunner().invoke(cli, argv)
+        assert text.exit_code == 1, text.output
+        assert text.stdout == ""
+        first = text.stderr.splitlines()[0]
+        assert first.startswith("✗ Discogs sent a response that cannot be read: ")
+        assert detail in first
+        # Nothing was cached: the retry asked Discogs again.
+        assert self.sends == [self.sends[0]] * 2
+
+    def test_bad_price_guide_recovers_with_fresh(self) -> None:
+        """A price guide's conditions are validated only when read, after the
+        SDK has cached the body, so the hint's `--fresh` is what gets past it."""
+        conditions: dict[str, object] = {"currency": "USD", "value": "n/a"}
+
+        def _respond(request: httpx2.Request) -> httpx2.Response:
+            path = request.url.path
+            if path.startswith("/marketplace/price_suggestions/"):
+                return httpx2.Response(200, json={"Mint (M)": conditions})
+            if path.startswith("/marketplace/stats/"):
+                return httpx2.Response(200, json={"num_for_sale": 1})
+            return httpx2.Response(200, json=_RELEASE_WITH_HEADINGS)
+
+        self.respond = _respond
+        bad = CliRunner().invoke(cli, ["price", "--json", "@r1"])
+        assert bad.exit_code == 1, bad.output
+        error = json.loads(bad.stdout)["error"]
+        assert error["code"] == "bad_response"
+        assert "--fresh" in error["hint"]
+
+        conditions["value"] = 9.5
+        retry = CliRunner().invoke(cli, ["price", "--json", "@r1"])
+        assert json.loads(retry.stdout)["error"]["code"] == "bad_response"
+        assert self.sends.count("/marketplace/price_suggestions/1") == 1  # cached
+
+        fresh = CliRunner().invoke(cli, ["--fresh", "price", "--json", "@r1"])
+        assert fresh.exit_code == 0, fresh.output
+        assert "9.5" in fresh.stdout
+
+    def test_page_without_pagination_is_one_page(self) -> None:
+        """An absent `pagination` key is intentional: one page of what was sent."""
+        row = {"id": 1, "type": "release", "title": "Sides"}
+        self.respond = lambda _request: httpx2.Response(200, json={"results": [row]})
+        result = CliRunner().invoke(
+            cli, ["search", "--json", "--release-type", "all", "x"]
+        )
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == {
+            "pagination": {"page": 1, "total_items": 1, "total_pages": 1},
+            "results": [{"ref": "@r1", "type": "release", "title": "Sides"}],
+        }
+
+    def _seed_unreadable_release(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Cache a /releases/1 body the Release model rejects, as an older SDK
+        or another process sharing the cache file could have stored it. The
+        SDK never stores such a body itself, so this goes around its parsing."""
+        self.respond = lambda _request: httpx2.Response(
+            200, json={"id": "one", "title": "T"}
+        )
+        client = client_module.get_client()
+        client._send("GET", client._build_url("/releases/1"), parse=lambda d: d)
+        self.respond = lambda _request: httpx2.Response(
+            200, json=_RELEASE_WITH_HEADINGS
+        )
+        self.sends.clear()
+        caplog.clear()
+
+    def test_unreadable_cache_entry_is_fetched_again(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        self._seed_unreadable_release(caplog)
+        result = CliRunner().invoke(cli, ["get", "release", "--json", "@r1"])
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout)["title"] == "Sides"
+        assert "no longer parses" in caplog.text  # the seeded entry was found
+        assert self.sends == ["/releases/1"]
+
+    def test_unreadable_cache_entry_is_a_miss_under_cached(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        self._seed_unreadable_release(caplog)
+        result = CliRunner().invoke(
+            cli, ["--cached", "get", "release", "--json", "@r1"]
+        )
+        assert result.exit_code == 1, result.output
+        assert json.loads(result.stdout)["error"]["code"] == "cache_miss"
+        assert "no longer parses" in caplog.text  # the seeded entry was found
+        assert self.sends == []
 
     def _database(self) -> Path:
         return self.cache_home / "agent-discogs" / "cache.db"

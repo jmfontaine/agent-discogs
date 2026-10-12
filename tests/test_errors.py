@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TypeVar
 
 import httpx2
+import pydantic
 import pytest
 from discogs_sdk import (
     AuthenticationError,
@@ -20,10 +21,12 @@ from discogs_sdk import (
     Discogs,
     DiscogsAPIError,
     DiscogsConnectionError,
+    DiscogsError,
     ForbiddenError,
     NotFoundError,
     RateLimit,
     RateLimitError,
+    Release,
 )
 
 from agent_discogs.errors import (
@@ -369,6 +372,10 @@ class TestCacheError:
         assert "--fresh" in info.hint
 
 
+class _OtherDiscogsError(DiscogsError):
+    """A subclass no branch of classify() names."""
+
+
 class TestClassify:
     def test_codes(self) -> None:
         cases = [
@@ -391,6 +398,12 @@ class TestClassify:
             (CacheError("x"), "cache_error"),
             (ValueError("x"), "invalid_argument"),
             (RuntimeError("x"), "unexpected"),
+            (json.JSONDecodeError("Expecting value", "<html>", 0), "bad_response"),
+            (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad"), "bad_response"),
+            (_model_error({"id": "one"}), "bad_response"),
+            (DiscogsError('GET /x: "results" is an object'), "bad_response"),
+            # A DiscogsError subclass is not a response failure.
+            (_OtherDiscogsError("x"), "unexpected"),
         ]
         assert [classify(exc).code for exc, _ in cases] == [code for _, code in cases]
 
@@ -400,6 +413,42 @@ class TestClassify:
             == 502
         )
         assert classify(ValueError("x")).status is None
+
+
+def _model_error(body: object) -> pydantic.ValidationError:
+    try:
+        Release.model_validate(body)
+    except pydantic.ValidationError as exc:
+        return exc
+    raise AssertionError(f"{body!r} validated")
+
+
+class TestBadResponse:
+    def test_text_and_json(self) -> None:
+        exc = DiscogsError('GET /database/search: "results" is an object')
+        assert format_error(exc) == (
+            "✗ Discogs sent a response that cannot be read: "
+            'GET /database/search: "results" is an object\n'
+            "  Not caused by your arguments. Retry in a moment, or with --fresh "
+            "if the same error repeats."
+        )
+        assert json.loads(format_error_json(exc))["error"]["code"] == "bad_response"
+
+    def test_validation_detail_names_the_field_not_the_value(self) -> None:
+        """Only the first failure is described, without the value Discogs sent."""
+        exc = _model_error({"id": "x" * 5000, "title": None, "year": "?"})
+        message = classify(exc).message
+        assert message == (
+            "Discogs sent a response that cannot be read: Release.id: Input should "
+            "be a valid integer, unable to parse string as an integer (and 2 more)"
+        )
+
+    def test_detail_is_bounded_and_on_one_line(self) -> None:
+        exc = DiscogsError("GET /x:\n\x1b[2J" + "y" * 5000)
+        message = classify(exc).message
+        assert len(message) < 300
+        assert "\n" not in message
+        assert "\x1b" not in message
 
 
 class TestFormatErrorJson:

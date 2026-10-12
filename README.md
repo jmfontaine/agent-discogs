@@ -175,7 +175,7 @@ Errors under `--json` are a JSON document on stdout with exit code 1:
 {"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}
 ```
 
-Codes: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` in whole seconds, rounded up, when Discogs sends a usable `Retry-After`, as seconds or an HTTP date; `0` means retry now; and `limit`/`remaining` for the current minute when Discogs reports them), `cache_miss` (only under `--cached`), `cache_error` (with `path`, the cache database; see [Caching](#caching)), `api_error`, `connection_error`, `invalid_argument`, `unexpected` (the message names the exception class).
+Codes: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` in whole seconds, rounded up, when Discogs sends a usable `Retry-After`, as seconds or an HTTP date; `0` means retry now; and `limit`/`remaining` for the current minute when Discogs reports them), `cache_miss` (only under `--cached`), `cache_error` (with `path`, the cache database; see [Caching](#caching)), `api_error`, `connection_error`, `bad_response` (Discogs answered with something the CLI cannot read: a non-JSON page, data that does not fit the expected shape, or a malformed results page; never your arguments, so retry later, with `--fresh` if the same error repeats), `invalid_argument`, `unexpected` (the message names the exception class).
 
 ## Ref system
 
