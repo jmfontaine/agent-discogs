@@ -3,7 +3,8 @@ that does not contradict it, and (live) resolves to the entity the docs claim.
 
 The docs once cited a master that 404s and a release that was a different
 album. Agents copy these examples verbatim, so a stale ID sends them in
-circles. The non-live checks run always; the live check is opt-in
+circles. KNOWN_REFS holds exactly the cited refs, so none is checked for
+nothing. The non-live checks run always; the live check is opt-in
 (`just test-live`) and needs DISCOGS_TOKEN.
 """
 
@@ -12,11 +13,16 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+from discogs_sdk import Discogs
 
 from agent_discogs import _HELP_TEXT
 from agent_discogs.refs import parse_ref
+
+if TYPE_CHECKING:
+    from discogs_sdk import RequestEvent
 
 ROOT = Path(__file__).resolve().parent.parent
 DOC_FILES = [
@@ -28,10 +34,10 @@ DOC_FILES = [
 
 # Every ref that may appear in docs, and what it must resolve to. Adding a new
 # example ID means adding it here, which is the point: examples are deliberate.
+# Dropping the last citation of one means removing it here.
 KNOWN_REFS: dict[str, tuple[str, str]] = {
     "@r847868": ("release", "The Downward Spiral"),
     "@r352665": ("release", "The Downward Spiral"),
-    "@r20755": ("release", "Blue Monday"),
     "@m3719": ("master", "The Downward Spiral"),
     "@a3857": ("artist", "Nine Inch Nails"),
     "@l647": ("label", "Nothing Records"),
@@ -98,6 +104,12 @@ def test_docs_contain_refs() -> None:
     assert OCCURRENCES, "no refs found in docs; DOC_FILES is probably wrong"
 
 
+def test_every_known_ref_is_cited() -> None:
+    # An entry no doc cites still costs a live lookup and vouches for nothing.
+    cited = {ref for _, ref, _ in OCCURRENCES}
+    assert set(KNOWN_REFS) - cited == set(), "in KNOWN_REFS but cited nowhere"
+
+
 @pytest.mark.parametrize(
     ("location", "ref", "context"),
     OCCURRENCES,
@@ -122,11 +134,13 @@ def test_doc_ref_is_known_and_prose_agrees(
 @pytest.mark.skipif(not os.environ.get("DISCOGS_TOKEN"), reason="needs DISCOGS_TOKEN")
 @pytest.mark.parametrize(("ref", "expected"), sorted(KNOWN_REFS.items()))
 def test_doc_ref_resolves_to_named_entity(ref: str, expected: tuple[str, str]) -> None:
-    from agent_discogs.client import get_client
-
+    # Not get_client(): its on-disk cache would answer a recent lookup without
+    # asking the API, and would read and write the developer's real cache dir.
+    events: list[RequestEvent] = []
     entity_type, entity_id = parse_ref(ref)
-    resource = getattr(get_client(), f"{entity_type}s")
-    entity = resource.get(entity_id)
-    name = entity.title if entity_type in ("release", "master") else entity.name
+    with Discogs(token=os.environ["DISCOGS_TOKEN"], on_request=events.append) as client:
+        entity = getattr(client, f"{entity_type}s").get(entity_id)
+        name = entity.title if entity_type in ("release", "master") else entity.name
+    assert [e.source for e in events] == ["network"]
     assert entity_type == expected[0]
     assert name == expected[1], f"{ref} is {name!r}, docs say {expected[1]!r}"
