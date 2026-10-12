@@ -92,6 +92,10 @@ get artist groups members as Members: and Former: (JSON members/former).
 Only members Discogs marks inactive are Former; a member with no recorded
 status stays under Members.
 
+Prices carry the ISO code Discogs returns ('EUR 20.00'), never a symbol. The
+'Market: 9 for sale from 9.36' line of get release/master is a bare amount in
+the account's buyer currency (USD without a token); 'price' names the currency.
+
 Examples:
   agent-discogs search "The Downward Spiral"
   agent-discogs search artist "Nine Inch Nails"

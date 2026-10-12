@@ -426,7 +426,7 @@ def format_master(master: Any) -> str:
     if num_for_sale is not None:
         sale_str = f"Market: {num_for_sale:,} for sale"
         if lowest_price is not None:
-            sale_str += f" from ${lowest_price:.2f}"
+            sale_str += f" from {lowest_price:.2f}"
         lines.append(sale_str)
 
     tracklist = getattr(master, "tracklist", None)
@@ -469,6 +469,19 @@ def format_master_versions(
     return "\n".join(lines)
 
 
+def _price(price: Any) -> str | None:
+    """`EUR 20.00`: an SDK `Price` with the ISO code Discogs sent, never a symbol.
+
+    A dollar sign would be ambiguous (USD, CAD, AUD) and wrong for anything else.
+    None when the price carries no value.
+    """
+    value = getattr(price, "value", None)
+    if value is None:
+        return None
+    currency = getattr(price, "currency", None)
+    return f"{currency} {value:.2f}" if currency else f"{value:.2f}"
+
+
 def format_price_guide(
     release: Any,
     price_suggestions: Any,
@@ -501,24 +514,21 @@ def format_price_guide(
     if conditions:
         for cond in condition_order:
             if cond in conditions:
-                price = conditions[cond]
-                value = getattr(price, "value", None)
-                if value is not None:
-                    lines.append(f"{cond + ':':30s} ${value:.2f}")
+                amount = _price(conditions[cond])
+                if amount is not None:
+                    lines.append(f"{cond + ':':30s} {amount}")
     else:
         lines.append("  No price suggestions available")
 
     lines.append("")
 
     num_for_sale = getattr(marketplace_stats, "num_for_sale", None)
-    lowest_price = getattr(marketplace_stats, "lowest_price", None)
+    lowest = _price(getattr(marketplace_stats, "lowest_price", None))
     parts = []
     if num_for_sale is not None:
         parts.append(f"For sale: {num_for_sale:,}")
-    if lowest_price is not None:
-        value = getattr(lowest_price, "value", None)
-        if value is not None:
-            parts.append(f"Lowest: ${value:.2f}")
+    if lowest is not None:
+        parts.append(f"Lowest: {lowest}")
     if parts:
         lines.append(" · ".join(parts))
 
@@ -611,7 +621,7 @@ def format_release(
     if num_for_sale is not None:
         sale_str = f"Market: {num_for_sale:,} for sale"
         if lowest_price is not None:
-            sale_str += f" from ${lowest_price:.2f}"
+            sale_str += f" from {lowest_price:.2f}"
         lines.append(sale_str)
 
     master_id = getattr(release, "master_id", None)

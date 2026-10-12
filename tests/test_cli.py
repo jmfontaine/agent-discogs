@@ -17,9 +17,13 @@ from click.testing import CliRunner
 from discogs_sdk import (
     Artist,
     CacheMissError,
+    MarketplaceReleaseStats,
+    Master,
     NotFoundError,
+    PriceSuggestions,
     RateLimit,
     RateLimitError,
+    Release,
     RequestEvent,
 )
 
@@ -743,22 +747,27 @@ class TestGetCommand:
         assert "The Downward Spiral" in result.output
 
     def test_get_price(self) -> None:
-        price = _fake(value=100.00)
+        suggestions = PriceSuggestions.model_validate(
+            {"Mint (M)": {"currency": "EUR", "value": 100.0}}
+        )
+        stats = MarketplaceReleaseStats.model_validate(
+            {"num_for_sale": 100, "lowest_price": {"currency": "GBP", "value": 5.0}}
+        )
         release = _fake(
             id=367113,
             title="TDS",
             year=1994,
             artists=None,
-            price_suggestions=_fake(get=lambda: _fake(conditions={"Mint (M)": price})),
-            marketplace_stats=_fake(
-                get=lambda: _fake(num_for_sale=100, lowest_price=_fake(value=5.00))
-            ),
+            price_suggestions=_fake(get=lambda: suggestions),
+            marketplace_stats=_fake(get=lambda: stats),
         )
         self._set_client(_fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "price", "@r367113"])
         assert result.exit_code == 0
         assert "Price Guide:" in result.output
-        assert "$100.00" in result.output
+        assert "EUR 100.00" in result.output
+        assert "Lowest: GBP 5.00" in result.output
+        assert "$" not in result.output
 
     def test_get_credits(self) -> None:
         release = _fake(
@@ -1598,7 +1607,9 @@ class TestMultiRef:
                 year=None,
                 price_suggestions=_fake(
                     get=lambda: _fake(
-                        conditions={"Mint (M)": _fake(value=float(release_id))}
+                        conditions={
+                            "Mint (M)": _fake(value=float(release_id), currency="USD")
+                        }
                     )
                 ),
                 marketplace_stats=_fake(
@@ -1617,10 +1628,10 @@ class TestMultiRef:
         # position: guide 10, then the inline error, then guide 20.
         markers = [
             out.index('Price Guide: @r10 "R10" by Unknown Artist'),
-            out.index("$10.00"),
+            out.index("USD 10.00"),
             out.index("\n\n✗ Price @r1 not found.\n  Try: agent-discogs search"),
             out.index('\n\nPrice Guide: @r20 "R20" by Unknown Artist'),
-            out.index("$20.00"),
+            out.index("USD 20.00"),
         ]
         assert markers == sorted(markers)
         assert result.stderr == ""
@@ -1628,7 +1639,9 @@ class TestMultiRef:
         data = json.loads(
             CliRunner().invoke(cli, ["price", "--json", "@r10", "@r1"]).output
         )
-        assert data[0]["suggestions"] == {"Mint (M)": 10.0}
+        assert data[0]["suggestions"] == {
+            "Mint (M)": {"value": 10.0, "currency": "USD"}
+        }
         assert data[1]["error"]["code"] == "not_found"
 
     def test_ref_cap(self) -> None:
@@ -2054,6 +2067,27 @@ class TestJsonGet:
             "tracklist": [{"pos": "1", "title": "A"}],
         }
 
+    def test_lowest_price_without_currency_is_a_bare_amount(self) -> None:
+        # Release and master lowest_price is a bare float: Discogs prices it in
+        # the account's buyer currency without saying which, so neither the
+        # text nor the JSON may claim one.
+        market = {"num_for_sale": 9, "lowest_price": 9.36}
+        release = Release.model_validate({"id": 1, "title": "R", **market})
+        master = Master.model_validate({"id": 2, "title": "M", **market})
+        self._set_client(
+            _fake_client(
+                releases_get=lambda _id: release, masters_get=lambda _id: master
+            )
+        )
+        for noun, ref in (("release", "@r1"), ("master", "@m2")):
+            text = CliRunner().invoke(cli, ["get", noun, ref]).output
+            assert "Market: 9 for sale from 9.36" in text
+            assert "$" not in text
+            data = json.loads(
+                CliRunner().invoke(cli, ["get", "--json", noun, ref]).output
+            )
+            assert data["market"] == {"for_sale": 9, "lowest": 9.36}
+
     def test_get_releases_json_projection(self) -> None:
         artist = _fake(id=3857, name="NIN")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
@@ -2192,14 +2226,14 @@ class TestJsonGet:
         assert data == {"ref": "@r123"}  # empty facets are omitted, per contract
 
     def test_get_price_json_projection_and_full(self) -> None:
-        price_suggestions = _fake_model(
-            conditions={
-                "Mint (M)": _fake(value=100.0),
-                "Good (G)": _fake(value=None),
+        price_suggestions = PriceSuggestions.model_validate(
+            {
+                "Mint (M)": {"currency": "EUR", "value": 100.0},
+                "Good (G)": {"currency": "EUR", "value": 12.5},
             }
         )
-        marketplace_stats = _fake_model(
-            num_for_sale=50, lowest_price=_fake(value=5.0, currency="USD")
+        marketplace_stats = MarketplaceReleaseStats.model_validate(
+            {"num_for_sale": 50, "lowest_price": {"currency": "GBP", "value": 5.0}}
         )
         release = _fake(
             id=123,
@@ -2214,16 +2248,23 @@ class TestJsonGet:
         assert data == {
             "ref": "@r123",
             "title": "R",
-            "suggestions": {"Mint (M)": 100.0},
-            "market": {"for_sale": 50, "lowest": 5.0, "currency": "USD"},
+            "suggestions": {
+                "Mint (M)": {"value": 100.0, "currency": "EUR"},
+                "Good (G)": {"value": 12.5, "currency": "EUR"},
+            },
+            "market": {"for_sale": 50, "lowest": 5.0, "currency": "GBP"},
         }
         full = json.loads(
             CliRunner()
             .invoke(cli, ["get", "--json", "--full", "price", "@r123"])
             .output
         )
-        assert "conditions" in full
-        assert full["marketplace_stats"] == _via_json(marketplace_stats.model_dump())
+        assert full == _via_json(
+            {
+                **price_suggestions.model_dump(),
+                "marketplace_stats": marketplace_stats.model_dump(),
+            }
+        )
 
     def test_get_json_error_envelope(self) -> None:
         def _missing(_id: int) -> None:
@@ -2271,7 +2312,14 @@ class TestJsonShortcuts:
         assert data["tracklist"][0]["title"] == "Song"
 
     def test_price_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        price_suggestions = _fake_model(conditions={"Mint (M)": _fake(value=50.0)})
+        # A suggestion without a value is omitted whole, as in the text view,
+        # not left behind as a bare {"currency": ...}.
+        price_suggestions = _fake_model(
+            conditions={
+                "Mint (M)": _fake(value=50.0, currency="USD"),
+                "Good (G)": _fake(value=None, currency="USD"),
+            }
+        )
         marketplace_stats = _fake_model(num_for_sale=10, lowest_price=None)
         release = _fake(
             id=123,
@@ -2288,7 +2336,7 @@ class TestJsonShortcuts:
         assert json.loads(result.output) == {
             "ref": "@r123",
             "title": "R",
-            "suggestions": {"Mint (M)": 50.0},
+            "suggestions": {"Mint (M)": {"value": 50.0, "currency": "USD"}},
             "market": {"for_sale": 10},
         }
 

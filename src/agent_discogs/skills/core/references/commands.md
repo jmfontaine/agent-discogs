@@ -87,11 +87,13 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `identifiers` (alias `ids`) | `@r` or numeric ID | Barcodes, matrix/runout, label codes, rights societies |
 | `label` | `@l` or numeric ID | Label profile; `URLs:` lists linked sites by domain, omitting empty entries |
 | `master` | `@m` or numeric ID | Master release details |
-| `price` | `@r` or numeric ID | Marketplace pricing (requires auth *and* seller settings on the token's account) |
+| `price` | `@r` or numeric ID | Marketplace pricing (requires auth *and* seller settings on the token's account), each amount with its ISO currency code |
 | `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, tracklist |
 | `releases` | `@a` or `@l` (numeric ID = artist) | Artist discography, or a label's catalogue (paginated) |
 | `tracklist` | `@r` or numeric ID | Tracklist only (from a release) |
 | `versions` | `@m` or numeric ID | Master release versions (paginated) |
+
+**Currency:** `price` prints amounts as `EUR 20.00`, the ISO code Discogs returns, never a symbol; under `--json` each suggestion is `{"value":20.0,"currency":"EUR"}` and `market` carries `lowest` and `currency`. The `Market: N for sale from 9.36` line of `release` and `master` is a bare amount in the token account's buyer currency (USD when unauthenticated): Discogs does not name it, so its JSON `market` has no `currency` key. Use `price @r...` when the currency matters.
 
 **Flags:**
 

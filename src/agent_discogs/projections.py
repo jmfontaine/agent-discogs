@@ -179,9 +179,15 @@ def project_price(release: Any, suggestions: Any, stats: Any) -> dict[str, Any]:
         {
             "ref": make_ref("release", release.id),
             "title": getattr(release, "title", None),
+            # Each suggestion carries its own currency, like Discogs's Price:
+            # the API takes no currency parameter for suggestions.
             "suggestions": {
-                cond: getattr(price, "value", None)
+                cond: {
+                    "value": getattr(price, "value", None),
+                    "currency": getattr(price, "currency", None),
+                }
                 for cond, price in conditions.items()
+                if getattr(price, "value", None) is not None
             },
             "market": {
                 "for_sale": getattr(stats, "num_for_sale", None),

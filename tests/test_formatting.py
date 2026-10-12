@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from discogs_sdk import MarketplaceReleaseStats, Master, PriceSuggestions, Release
+
 from agent_discogs.formatting import (
     _artist_string,
     _format_track_lines,
@@ -334,6 +336,16 @@ class TestFormatMaster:
         assert "Main release: @r367113" in output
         assert "1. Mr. Self Destruct (4:09)" in output
 
+    def test_lowest_price_is_a_bare_amount(self) -> None:
+        # Master.lowest_price is a bare float and Discogs takes no currency
+        # parameter for masters, so no symbol or code is invented for it.
+        master = Master.model_validate(
+            {"id": 3719, "title": "TDS", "num_for_sale": 9, "lowest_price": 9.36}
+        )
+        output = format_master(master)
+        assert "Market: 9 for sale from 9.36" in output
+        assert "$" not in output
+
 
 class TestFormatLabel:
     def test_label(self) -> None:
@@ -374,29 +386,31 @@ class TestFormatTracklist:
 
 
 class TestFormatPriceGuide:
-    def test_price_guide(self) -> None:
-        artist = _fake(name="Nine Inch Nails", join=None)
-        release = _fake(
-            id=367113, title="The Downward Spiral", year=1994, artists=[artist]
+    def test_amounts_carry_the_iso_code_discogs_returns(self) -> None:
+        release = Release.model_validate(
+            {
+                "id": 367113,
+                "title": "The Downward Spiral",
+                "year": 1994,
+                "artists": [{"id": 3857, "name": "Nine Inch Nails"}],
+            }
         )
-
-        mint_price = _fake(value=150.00, currency="USD")
-        nm_price = _fake(value=85.00, currency="USD")
-        conditions = {
-            "Mint (M)": mint_price,
-            "Near Mint (NM or M-)": nm_price,
-        }
-        price_suggestions = _fake(conditions=conditions)
-
-        lowest = _fake(value=5.00, currency="USD")
-        marketplace_stats = _fake(num_for_sale=1247, lowest_price=lowest)
+        price_suggestions = PriceSuggestions.model_validate(
+            {
+                "Mint (M)": {"currency": "EUR", "value": 150.0},
+                "Near Mint (NM or M-)": {"currency": "EUR", "value": 85.0},
+            }
+        )
+        marketplace_stats = MarketplaceReleaseStats.model_validate(
+            {"num_for_sale": 1247, "lowest_price": {"currency": "GBP", "value": 9.99}}
+        )
 
         output = format_price_guide(release, price_suggestions, marketplace_stats)
         assert "Price Guide:" in output
-        assert "$150.00" in output
-        assert "$85.00" in output
-        assert "For sale: 1,247" in output
-        assert "Lowest: $5.00" in output
+        assert f"{'Mint (M):':30s} EUR 150.00" in output
+        assert f"{'Near Mint (NM or M-):':30s} EUR 85.00" in output
+        assert "For sale: 1,247 · Lowest: GBP 9.99" in output
+        assert "$" not in output
 
 
 class TestFormatArtistReleases:
@@ -1005,7 +1019,7 @@ class TestFormatMasterEdgeCases:
         )
         output = format_master(master)
         assert "Market: 100 for sale" in output
-        assert "from $" not in output
+        assert " from " not in output
 
 
 class TestFormatReleaseEdgeCases:
@@ -1073,7 +1087,17 @@ class TestFormatReleaseEdgeCases:
         )
         output = format_release(release)
         assert "Market: 50 for sale" in output
-        assert "from $" not in output
+        assert " from " not in output
+
+    def test_lowest_price_is_a_bare_amount(self) -> None:
+        # Release.lowest_price is a bare float in the account's buyer currency;
+        # Discogs does not say which, so no symbol or code is invented for it.
+        release = Release.model_validate(
+            {"id": 1, "title": "Album", "num_for_sale": 9, "lowest_price": 9.36}
+        )
+        output = format_release(release)
+        assert "Market: 9 for sale from 9.36" in output
+        assert "$" not in output
 
     def test_community_no_rating(self) -> None:
         community = _fake(rating=None, have=100, want=50)

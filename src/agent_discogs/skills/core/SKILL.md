@@ -53,7 +53,8 @@ Check status: `agent-discogs status`
 - **get credits** — who did what, grouped by role (Producer, Engineer, Mastered By, ...), each person with an `[@a...]` ref and the tracks they worked on.
 - **get identifiers** (alias `ids`) — barcodes, matrix/runout etchings, label codes, rights societies. This is what distinguishes pressings that share a catalog number.
 - **tracks** — numbered tracklist with durations and per-track artists (for VA releases).
-- **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats.
+- **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats, each amount with the ISO currency code Discogs returns: `Mint (M): EUR 20.00`, `Lowest: GBP 9.99`.
+- **Currency** — amounts are never shown with a symbol. The `Market: 9 for sale from 9.36` line of `get release` and `get master` is a bare amount: Discogs prices it in the token account's buyer currency (USD when unauthenticated) without saying which, so the JSON `market` there has no `currency` key. Use `price @r...` when the currency matters.
 - **get versions** — one row per pressing: ref, year, country, label + catalog number, format, `have N`. `--sort released` puts the earliest pressing first; `--year` narrows.
 - **get releases @a...** — artist discography: ref, `[type]`, title, year, label, format, role. `--sort year|title|format`, `--desc`.
 - **get releases @l...** — label catalogue: ref, title, artist, year, catalog number, format. No server-side filters or sorting (API limit): `--year` is a client-side scan that continues via `--after`, otherwise page with `--page`.
