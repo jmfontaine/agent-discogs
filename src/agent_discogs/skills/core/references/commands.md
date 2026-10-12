@@ -82,10 +82,10 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 
 | Noun | Expected Ref Type | Description |
 |------|-------------------|-------------|
-| `artist` | `@a` or numeric ID | Artist profile |
+| `artist` | `@a` or numeric ID | Artist profile; `URLs:` lists linked sites by domain, omitting empty entries |
 | `credits` | `@r` or numeric ID | Credits grouped by role, each person with an artist ref and track scope |
 | `identifiers` (alias `ids`) | `@r` or numeric ID | Barcodes, matrix/runout, label codes, rights societies |
-| `label` | `@l` or numeric ID | Label profile |
+| `label` | `@l` or numeric ID | Label profile; `URLs:` lists linked sites by domain, omitting empty entries |
 | `master` | `@m` or numeric ID | Master release details |
 | `price` | `@r` or numeric ID | Marketplace pricing (requires auth *and* seller settings on the token's account) |
 | `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, tracklist |

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
 
 from agent_discogs.formatting import (
     _artist_string,
@@ -93,13 +92,12 @@ class TestUrlsShort:
         # No "//" means len(parts) == 1, so falls back to parts[0] (full string)
         assert _urls_short(["example.com/path"]) == "example.com/path"
 
-    def test_non_string_url(self) -> None:
-        # Non-string triggers AttributeError → continue
-        assert _urls_short(cast("list[str]", [123])) == ""
-
     def test_empty_urls(self) -> None:
         assert _urls_short(None) == ""
         assert _urls_short([]) == ""
+
+    def test_urls_without_a_domain_are_skipped(self) -> None:
+        assert _urls_short(["", "https://", "https://www."]) == ""
 
 
 class TestFormatSearchResults:
@@ -300,6 +298,16 @@ class TestFormatArtist:
         assert "nin.com" in output
         assert "en.wikipedia.org" in output
 
+    def test_empty_urls_are_skipped(self) -> None:
+        artist = _fake(
+            id=1,
+            name="A",
+            profile=None,
+            urls=["https://a.com", "", "https://b.com"],
+            members=None,
+        )
+        assert "URLs: a.com, b.com" in format_artist(artist).splitlines()
+
 
 class TestFormatMaster:
     def test_master(self) -> None:
@@ -470,21 +478,16 @@ class TestFormatMasterVersions:
 
 class TestFormatStatus:
     def test_authenticated(self) -> None:
-        output = format_status("0.1.0", True)
-        assert "v0.1.0" in output
-        assert "token (authenticated)" in output
+        output = format_status("0.1.0", True, Path("/tmp/test-cache"))
+        assert output.splitlines() == [
+            "agent-discogs v0.1.0",
+            "Auth: token (authenticated)",
+            "Cache: /tmp/test-cache (1h TTL)",
+        ]
 
     def test_unauthenticated(self) -> None:
-        output = format_status("0.1.0", False)
-        assert "none (unauthenticated" in output
-
-    def test_with_cache_dir(self) -> None:
-        output = format_status("0.1.0", True, cache_dir=Path("/tmp/test-cache"))
-        assert "Cache: /tmp/test-cache (1h TTL)" in output
-
-    def test_without_cache_dir(self) -> None:
-        output = format_status("0.1.0", True)
-        assert "Cache:" not in output
+        output = format_status("0.1.0", False, Path("/tmp/test-cache"))
+        assert "Auth: none (unauthenticated, 25 req/min)" in output.splitlines()
 
 
 class TestFormatReleaseVerbose:

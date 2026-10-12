@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-from agent_discogs.config import CACHE_TTL, MAX_API_CALLS, cache_dir, has_token
+from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS, cache_dir, has_token
 
 if TYPE_CHECKING:
     import click
@@ -178,7 +178,7 @@ def _cache_line(cache_dir: Path | None) -> str:
         if cache_dir is not None
         else "unknown (no home directory)"
     )
-    return f"cache     {where}  ttl {CACHE_TTL / 3600:g}h"
+    return f"cache     {where}  ttl {CACHE_TTL_LABEL}"
 
 
 def render_panel(trace: Trace, *, cache_dir: Path | None, elapsed_ms: float) -> str:

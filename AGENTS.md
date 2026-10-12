@@ -47,7 +47,7 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 
 ### Core Modules
 
-- `config.py` — Leaf module (imports nothing from the package) holding shared configuration: `cache_dir()`, `CACHE_TTL`, `MAX_API_CALLS`, and `has_token()`. `cache_dir()` is `$XDG_CACHE_HOME/agent-discogs` when that is non-empty and absolute, else `~/.cache/agent-discogs`; it resolves on each call and looks up home only on the fallback, so nothing touches home at import. Put new shared constants here rather than in a module that needs them, so the package stays free of import cycles.
+- `config.py` — Leaf module (imports nothing from the package) holding shared configuration: `cache_dir()`, `CACHE_TTL` (and `CACHE_TTL_LABEL`, the `1h` that `status` and the `--debug` panel print), `MAX_API_CALLS`, and `has_token()`. `cache_dir()` is `$XDG_CACHE_HOME/agent-discogs` when that is non-empty and absolute, else `~/.cache/agent-discogs`; it resolves on each call and looks up home only on the fallback, so nothing touches home at import. Put new shared constants here rather than in a module that needs them, so the package stays free of import cycles.
 - `client.py` — Singleton `Discogs` client. Reads `DISCOGS_TOKEN` from env; cache settings come from `config.py`.
 - `refs.py` — Typed ref system (`@a3857`, `@r847868`, `@m3719`, `@l647`). `make_ref()` creates refs, `parse_ref()` parses them. Raw numeric IDs return type `"unknown"`.
 - `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`). `_send()` is the SDK's HTTP-error boundary — it raises the mapped `DiscogsAPIError` subclass before returning, so callers never re-check the status.

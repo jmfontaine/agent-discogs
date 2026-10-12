@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
-from agent_discogs.config import MAX_API_CALLS
+from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS
 from agent_discogs.refs import make_ref
 
 
@@ -256,14 +257,11 @@ def _urls_short(urls: list[str] | None) -> str:
         return ""
     domains = []
     for url in urls:
-        # Per-URL try/except: one malformed URL must not discard the others.
-        try:
-            parts = url.split("//", 1)
-            domain = parts[1].split("/", 1)[0] if len(parts) > 1 else parts[0]
-            domain = domain.removeprefix("www.")
+        parts = url.split("//", 1)
+        domain = parts[1].split("/", 1)[0] if len(parts) > 1 else parts[0]
+        domain = domain.removeprefix("www.")
+        if domain:  # an empty URL (or a bare "https://") names no site
             domains.append(domain)
-        except (IndexError, AttributeError):  # noqa: PERF203
-            continue
     return ", ".join(domains)
 
 
@@ -699,24 +697,20 @@ def format_search_results(
     return "\n".join(lines)
 
 
-def format_status(
-    version: str,
-    authenticated: bool,
-    cache_dir: Any = None,
-) -> str:
+def format_status(version: str, authenticated: bool, cache_dir: Path) -> str:
     """Format status output."""
     auth_str = (
         "token (authenticated)"
         if authenticated
         else "none (unauthenticated, 25 req/min)"
     )
-    lines = [
-        f"agent-discogs v{version}",
-        f"Auth: {auth_str}",
-    ]
-    if cache_dir is not None:
-        lines.append(f"Cache: {cache_dir} (1h TTL)")
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            f"agent-discogs v{version}",
+            f"Auth: {auth_str}",
+            f"Cache: {cache_dir} ({CACHE_TTL_LABEL} TTL)",
+        ]
+    )
 
 
 def format_tracklist(release: Any) -> str:

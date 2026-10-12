@@ -22,7 +22,7 @@ from discogs_sdk import (
     RequestEvent,
 )
 
-from agent_discogs import AliasGroup, cli, main, trace
+from agent_discogs import cli, main, trace
 from agent_discogs.pagination import PageResult
 
 
@@ -143,21 +143,25 @@ class TestAliases:
         result = CliRunner().invoke(cli, ["find", "--help"])
         assert result.exit_code == 0
         assert "--year" in result.output
+        assert result.output.startswith("Usage: cli search ")  # canonical name
 
     def test_fetch_alias(self) -> None:
         result = CliRunner().invoke(cli, ["fetch", "--help"])
         assert result.exit_code == 0
         assert "release" in result.output
+        assert result.output.startswith("Usage: cli get ")
 
     def test_query_alias(self) -> None:
         result = CliRunner().invoke(cli, ["query", "--help"])
         assert result.exit_code == 0
         assert "--year" in result.output
+        assert result.output.startswith("Usage: cli search ")
 
     def test_show_alias(self) -> None:
         result = CliRunner().invoke(cli, ["show", "--help"])
         assert result.exit_code == 0
         assert "release" in result.output
+        assert result.output.startswith("Usage: cli get ")
 
 
 class TestSearchCommand:
@@ -1448,22 +1452,6 @@ class TestShortcutCommands:
         result = CliRunner().invoke(cli, ["price", "@r123"])
         assert result.exit_code == 0
         assert "Price Guide:" in result.output
-
-
-class TestResolveCommand:
-    def test_resolve_none_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """resolve_command returns None tuple when super returns None cmd."""
-        group = AliasGroup(name="test")
-        ctx = click.Context(group)
-        monkeypatch.setattr(
-            click.Group,
-            "resolve_command",
-            lambda _self, _ctx, _args: (None, None, ["arg"]),
-        )
-        name, cmd, remaining = group.resolve_command(ctx, ["arg"])
-        assert name is None
-        assert cmd is None
-        assert remaining == ["arg"]
 
 
 class TestMainEntry:

@@ -40,6 +40,7 @@ Commands:
 Search Types:  artist, label, master, release
 Get Nouns:     artist, credits, identifiers (ids), label, master, price, release,
                releases, tracklist, versions
+               (artist/label 'URLs:' lists site domains, empty entries omitted)
 
 Refs:
   Search results return typed refs: @a3857 (artist), @r847868 (release),
@@ -113,11 +114,9 @@ class AliasGroup(click.Group):
     def resolve_command(
         self, ctx: click.Context, args: list[str]
     ) -> tuple[str | None, click.Command | None, list[str]]:
-        # Ensure the canonical name is used so help text is consistent
-        _, cmd, remaining = super().resolve_command(ctx, args)
-        if cmd is not None:
-            return cmd.name, cmd, remaining
-        return None, None, args
+        # Report the canonical name, not the alias typed, so help is consistent.
+        _, cmd, rest = super().resolve_command(ctx, args)
+        return (cmd.name if cmd else None), cmd, rest
 
     def format_help(
         self,
