@@ -79,9 +79,9 @@ Run `just --list` to see all available commands.
 ## Testing
 
 ```bash
-just test                                                      # All unit tests, 100% coverage enforced
-just test tests/test_cli.py --cov-fail-under=0                 # Single file
-just test tests/test_cli.py -k test_version --cov-fail-under=0 # Single test
+just test                                                             # All unit tests, 100% coverage enforced
+just test tests/test_cli_basics.py --cov-fail-under=0                 # Single file
+just test tests/test_cli_basics.py -k test_version --cov-fail-under=0 # Single test
 ```
 
 Tests use `click.testing.CliRunner` for in-process CLI testing. They patch with pytest's `monkeypatch` and fake SDK responses with `SimpleNamespace` objects; tests that need the real SDK client run it over an `httpx2.MockTransport`. `just test` deselects the tests marked `live`, so it never hits the network; `just test-live` runs only those, against the real API.

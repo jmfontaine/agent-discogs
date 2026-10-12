@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ from click.testing import Result
 from discogs_sdk import Discogs
 
 import agent_discogs.client as client_module
+from agent_discogs import trace
 from agent_discogs.pagination import PageResult
 
 pytest_plugins = ["pytester"]
@@ -182,3 +184,100 @@ def real_sdk(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[RealSd
     if client_module._client is not None:
         client_module._client.close()
     http.close()
+
+
+class _FakeAPI:
+    """The real SDK client, with its in-memory cache and real `cache_only()` /
+    `no_cache()`, over a mock transport: `sends` lists every request that
+    reached the network as `(path, query params)`. `respond(path, params)`
+    returns the JSON body, or an `httpx2.Response` to send as is. Like the
+    CLI's own client, it never retries."""
+
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        respond: Callable[[str, dict[str, str]], object],
+    ) -> None:
+        self.sends: list[tuple[str, dict[str, str]]] = []
+        self._respond = respond
+        http = httpx2.Client(transport=httpx2.MockTransport(self._handle))
+        # The SDK caches nothing for an injected http_client without SDK
+        # credentials, so the fake needs a token for cache flags to mean anything.
+        client = Discogs(
+            token="fake",  # noqa: S106  # placeholder, never reaches Discogs
+            cache=True,
+            http_client=http,
+            on_request=trace.record,
+            max_retries=0,
+        )
+        monkeypatch.setattr("agent_discogs.client._client", client)
+
+    def _handle(self, request: httpx2.Request) -> httpx2.Response:
+        params = dict(request.url.params)
+        self.sends.append((request.url.path, params))
+        body = self._respond(request.url.path, params)
+        if isinstance(body, httpx2.Response):
+            return body
+        return httpx2.Response(200, json=body)
+
+
+_LISTING_KEYS = {"search": "results", "releases": "releases", "versions": "versions"}
+
+
+def _empty_listing(path: str, params: dict[str, str]) -> object:
+    """Every listing is an empty page; every entity is `{"id": 1, ...}`."""
+    key = _LISTING_KEYS.get(path.rsplit("/", 1)[-1])
+    if key is None:
+        return {"id": 1, "name": "Entity", "title": "Entity"}
+    page = {"page": int(params.get("page", 1)), "pages": 1, "items": 0}
+    return {"pagination": page, key: []}
+
+
+class _Catalogue:
+    """`rows` rows (default 300) behind every listing, titled `Row<id>e<edition>`.
+    Only the last two rows of each API page pass the client-side filters
+    (official format, role Main, year 1999), so a `--limit 2` filtered page
+    fills on the last row of each 100-row scan page and every continuation
+    needs a new request; with `sparse`, no row passes. Bumping `edition`
+    stands in for Discogs changing data after a page was cached."""
+
+    def __init__(self, rows: int = 300, *, sparse: bool = False) -> None:
+        self.rows, self.sparse = rows, sparse
+        self.edition = 1
+
+    def __call__(self, path: str, params: dict[str, str]) -> object:
+        key = _LISTING_KEYS.get(path.rsplit("/", 1)[-1])
+        if key is None:
+            return {"id": 1, "name": "Entity", "title": "Entity"}
+        page, per = int(params["page"]), int(params["per_page"])
+        rows = []
+        for i in range((page - 1) * per, min(page * per, self.rows)):
+            match = not self.sparse and i % per >= per - 2
+            title = f"Row{i}e{self.edition}"
+            row: dict[str, object] = {"id": i, "title": title, "type": "release"}
+            if key == "results":
+                row["format"] = ["Vinyl"] if match else ["Unofficial Release"]
+            elif key == "releases":
+                row["role"] = "Main" if match else "Remix"
+                row["year"] = 1999 if match else 2000
+            else:  # version rows print the label, not the title
+                row["label"] = title
+            rows.append(row)
+        pagination = {"page": page, "pages": -(-self.rows // per), "items": self.rows}
+        return {"pagination": pagination, key: rows}
+
+
+def _tracks_fake(recorder: Callable[[], None]) -> SimpleNamespace:
+    """A client serving `tracks @r123` whose lookup also runs `recorder`, the
+    way the real client's `on_request` hook fires inside the SDK call."""
+    track = fake_model(position="1", title="Song", duration="3:00", type=None)
+    release = fake(id=123, title="Album", year=2020, artists=None, tracklist=[track])
+
+    def _get(_id: int) -> object:
+        recorder()
+        return release
+
+    return fake_client(releases_get=_get)
+
+
+_ROW = re.compile(r"Row(\d+)e(\d+)")
