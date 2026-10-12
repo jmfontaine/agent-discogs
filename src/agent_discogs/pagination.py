@@ -8,14 +8,18 @@ from dataclasses import dataclass
 from typing import Any
 
 import click
-from discogs_sdk import Discogs
-from pydantic import BaseModel
+from discogs_sdk import SyncPage
 
 from agent_discogs import trace
 from agent_discogs.config import MAX_API_CALLS
 
 DEFAULT_LIMIT = 5
 MAX_LIMIT = 100  # Discogs' largest per_page
+
+Listing = Callable[..., SyncPage[Any]]
+"""A paginated SDK resource method with its filters bound, such as
+`functools.partial(client.search, q="x")` or `artist.releases.list`. It is
+called with `page` and `per_page` keywords and returns the listing they name."""
 
 
 def paging_error(limit: int, page: int | None) -> str | None:
@@ -134,39 +138,23 @@ def _cache_flags() -> list[str]:
     return [f"--{name}" for name in ("cached", "fresh") if params.get(name)]
 
 
-def fetch_page(
-    client: Discogs,
-    path: str,
-    params: dict[str, Any],
-    model_cls: type[BaseModel],
-    items_key: str,
-) -> PageResult:
+def fetch_page(listing: Listing, *, page: int, per_page: int) -> PageResult:
     """Fetch a single page from the Discogs API with full pagination metadata.
 
-    This bypasses SyncPage because iterating it auto-pages: consuming all
-    items on a page triggers a fetch of the next page, and we need exactly one
-    page of items without additional requests. It predates `SyncPage.fetch()`
-    (discogs-sdk 0.8.0), which now reads exactly one page through public API.
-
-    `_send()` is the SDK's HTTP-error boundary: it maps a failing response to
-    the matching DiscogsAPIError subclass before returning, so the body parsed
-    below is always a success payload. Passing `parse` makes it return the
-    decoded JSON and keeps a body that does not decode out of the cache.
+    `SyncPage.fetch()` sends exactly one request, where iterating the listing
+    would fetch the next page as soon as this one runs out. The SDK checks the
+    envelope and validates the items, and keeps a page that fails either out
+    of the cache. Metadata Discogs leaves out reads as one page holding the
+    items it sent.
     """
-    url = client._build_url(path)  # noqa: SLF001
-    body = client._send(  # noqa: SLF001
-        "GET", url, params=params, parse=lambda data: data
-    )
-
-    pagination = body.get("pagination", {})
-    raw_items = body.get(items_key, [])
-    items = [model_cls.model_validate(item) for item in raw_items]
-
+    fetched = listing(page=page, per_page=per_page).fetch()
     return PageResult(
-        items=items,
-        page=pagination.get("page", 1),
-        total_items=pagination.get("items", len(items)),
-        total_pages=pagination.get("pages", 1),
+        items=fetched.items,
+        page=1 if fetched.page is None else fetched.page,
+        total_items=(
+            len(fetched.items) if fetched.total_items is None else fetched.total_items
+        ),
+        total_pages=1 if fetched.total_pages is None else fetched.total_pages,
     )
 
 
@@ -182,11 +170,7 @@ def _advance(
 
 
 def fetch_filtered_page(
-    client: Discogs,
-    path: str,
-    params: dict[str, Any],
-    model_cls: type[BaseModel],
-    items_key: str,
+    listing: Listing,
     *,
     limit: int,
     keep: Callable[[Any], bool],
@@ -213,8 +197,7 @@ def fetch_filtered_page(
     result = PageResult(items=[], page=page, total_items=0, total_pages=1)
 
     for _ in range(MAX_API_CALLS):
-        fetch_params = {**params, "page": api_page, "per_page": api_per_page}
-        result = fetch_page(client, path, fetch_params, model_cls, items_key)
+        result = fetch_page(listing, page=api_page, per_page=api_per_page)
         api_calls += 1
         rows += len(result.items)
 

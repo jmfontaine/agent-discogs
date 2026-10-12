@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import click
@@ -259,26 +260,12 @@ def search(
 
     try:
         client = get_client()
+        listing = functools.partial(client.search, **request)
         if needs_release_filter:
             keep = _is_unofficial if release_type == "unofficial" else _is_official
-            result = fetch_filtered_page(
-                client,
-                "/database/search",
-                request,
-                SearchResult,
-                "results",
-                limit=limit,
-                keep=keep,
-                cursor=after,
-            )
+            result = fetch_filtered_page(listing, limit=limit, keep=keep, cursor=after)
         else:
-            result = fetch_page(
-                client,
-                "/database/search",
-                {**request, "page": page or 1, "per_page": limit},
-                SearchResult,
-                "results",
-            )
+            result = fetch_page(listing, page=page or 1, per_page=limit)
     # classify() maps every exception to a coded, recovery-oriented error, so
     # catching broadly is the point.
     except Exception as e:  # noqa: BLE001

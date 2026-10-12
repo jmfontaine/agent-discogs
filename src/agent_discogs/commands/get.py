@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import functools
 import sys
 from typing import Any
 
 import click
 from click.core import ParameterSource
-from discogs_sdk import ArtistRelease, Discogs, LabelRelease, MasterVersion
+from discogs_sdk import Discogs
 
 from agent_discogs.client import get_client
 from agent_discogs.errors import error_document, fail, format_error
@@ -203,27 +204,16 @@ def _get_label_releases(
     is a client-side scan with cursor continuation (like `--role`)."""
     label = client.labels.get(entity_id)
     label_ref = make_ref("label", entity_id)
-    path = f"/labels/{entity_id}/releases"
 
     if year:
         result = fetch_filtered_page(
-            client,
-            path,
-            {},
-            LabelRelease,
-            "releases",
+            label.releases.list,
             limit=limit,
             keep=lambda item: str(getattr(item, "year", None) or "") == year,
             cursor=after,
         )
     else:
-        result = fetch_page(
-            client,
-            path,
-            {"page": page or 1, "per_page": limit},
-            LabelRelease,
-            "releases",
-        )
+        result = fetch_page(label.releases.list, page=page or 1, per_page=limit)
 
     if mode.json:
         return mode.page(result, project_label_release)
@@ -273,26 +263,19 @@ def _get_releases(
     artist = client.artists.get(entity_id)
     artist_ref = make_ref("artist", entity_id)
 
-    path = f"/artists/{entity_id}/releases"
-    params: dict[str, Any] = sort_params(sort, desc)
+    listing = functools.partial(artist.releases.list, **sort_params(sort, desc))
 
     # Flag validity is checked in _dispatch before any API call.
     if role:
         role_lower = role.lower()
         result = fetch_filtered_page(
-            client,
-            path,
-            params,
-            ArtistRelease,
-            "releases",
+            listing,
             limit=limit,
             keep=lambda item: role_lower in (getattr(item, "role", "") or "").lower(),
             cursor=after,
         )
     else:
-        params["page"] = page or 1
-        params["per_page"] = limit
-        result = fetch_page(client, path, params, ArtistRelease, "releases")
+        result = fetch_page(listing, page=page or 1, per_page=limit)
 
     if mode.json:
         return mode.page(result, project_artist_release)
@@ -364,24 +347,16 @@ def _get_versions(
 
     master_ref = make_ref("master", master_id)
 
-    params: dict[str, Any] = {"page": page or 1, "per_page": limit}
-    if country:
-        params["country"] = country
-    if format:
-        params["format"] = format
-    if label:
-        params["label"] = label
-    if year:
-        params["released"] = year  # the API calls the year filter `released`
-    params.update(sort_params(sort, desc))
-
-    result = fetch_page(
-        client,
-        f"/masters/{master_id}/versions",
-        params,
-        MasterVersion,
-        "versions",
+    # The SDK drops the filters left unset; `released` is the API's year filter.
+    listing = functools.partial(
+        client.masters.get(master_id).versions.list,
+        country=country,
+        format=format,
+        label=label,
+        released=year,
+        **sort_params(sort, desc),
     )
+    result = fetch_page(listing, page=page or 1, per_page=limit)
 
     if mode.json:
         return mode.page(result, project_master_version)

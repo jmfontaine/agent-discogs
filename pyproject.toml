@@ -102,7 +102,6 @@ lint.ignore = [
   "TRY003",  # raise-vanilla-args - these messages are read by agents, so they belong at the raise site rather than in an exception subclass
 ]
 lint.per-file-ignores."tests/**" = [
-  "ARG001",  # unused-function-argument - the fake _send() in test_pagination.py must accept params= because fetch_page passes it by keyword, then ignores it
   "ARG005",  # unused-lambda-argument - the SimpleNamespace lambdas standing in for SDK methods take the real signature and use only part of it
   "PLR2004", # magic-value-comparison - assertions compare against literal Discogs IDs and counts, which read better inline than as named constants
   "S101",    # assert - pytest expresses every assertion this way

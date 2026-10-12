@@ -50,6 +50,24 @@ def _fake(**kwargs: object) -> SimpleNamespace:
     return SimpleNamespace(**kwargs)
 
 
+class _Listing:
+    """A fake SDK listing method (`client.search`, `<proxy>.releases.list`) for
+    tests that fake `fetch_page`: it records the params of each call."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def __call__(self, **params: object) -> None:
+        self.calls.append(params)
+
+
+def _listed(**kwargs: object) -> SimpleNamespace:
+    """A fake artist, label or master proxy with fake `releases`/`versions`."""
+    return SimpleNamespace(
+        **kwargs, releases=_fake(list=_Listing()), versions=_fake(list=_Listing())
+    )
+
+
 def _fake_client(
     *,
     artists_get: object = None,
@@ -59,10 +77,11 @@ def _fake_client(
 ) -> SimpleNamespace:
     """Build a fake Discogs client with specified resource getters."""
     return SimpleNamespace(
-        artists=SimpleNamespace(get=artists_get or (lambda _id: None)),
-        labels=SimpleNamespace(get=labels_get or (lambda _id: None)),
-        masters=SimpleNamespace(get=masters_get or (lambda _id: None)),
+        artists=SimpleNamespace(get=artists_get or (lambda _id: _listed())),
+        labels=SimpleNamespace(get=labels_get or (lambda _id: _listed())),
+        masters=SimpleNamespace(get=masters_get or (lambda _id: _listed())),
         releases=SimpleNamespace(get=releases_get or (lambda _id: None)),
+        search=_Listing(),
     )
 
 
@@ -312,7 +331,7 @@ class TestSearchCommand:
     @pytest.fixture(autouse=True)
     def _patch_search(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._monkeypatch = monkeypatch
-        monkeypatch.setattr("agent_discogs.commands.search.get_client", lambda: None)
+        monkeypatch.setattr("agent_discogs.commands.search.get_client", _fake_client)
 
     def _set_fetch_result(self, result: PageResult) -> None:
         def mock(*_a: object, **_kw: object) -> PageResult:
@@ -580,16 +599,10 @@ class TestSearchCommand:
 
     def test_artist_search_skips_release_filter(self) -> None:
         """Artist type search uses direct fetch, not filtered overfetch."""
-        fetch_params: dict[str, object] = {}
+        pages: list[tuple[int, int]] = []
 
-        def _capture_fetch(
-            _client: object,
-            _path: object,
-            params: dict[str, object],
-            *_rest: object,
-            **_kw: object,
-        ) -> PageResult:
-            fetch_params.update(params)
+        def _capture_fetch(_listing: object, *, page: int, per_page: int) -> PageResult:
+            pages.append((page, per_page))
             item = _fake(
                 id=1, type="artist", title="Test", year=None, label=None, format=None
             )
@@ -601,17 +614,14 @@ class TestSearchCommand:
         result = CliRunner().invoke(cli, ["search", "artist", "test"])
         assert result.exit_code == 0
         # Direct path uses per_page=limit (5), not limit*3 (15)
-        assert fetch_params["per_page"] == 5
+        assert pages == [(1, 5)]
 
     def test_filtered_search_continues_from_cursor(self) -> None:
         """--after resumes at the API page and offset encoded in the cursor."""
         seen: list[tuple[int, int]] = []
 
-        def _mock_fetch(
-            _client: object, _path: object, params: dict[str, object], *_a: object
-        ) -> PageResult:
-            page = int(str(params["page"]))
-            seen.append((page, int(str(params["per_page"]))))
+        def _mock_fetch(_listing: object, *, page: int, per_page: int) -> PageResult:
+            seen.append((page, per_page))
             items = [
                 _fake(
                     id=page * 10 + i,
@@ -1030,7 +1040,7 @@ class TestGetCommand:
         assert "A1. Mr. Self Destruct" in result.output
 
     def test_get_releases(self) -> None:
-        artist = _fake(id=3857, name="Nine Inch Nails")
+        artist = _listed(id=3857, name="Nine Inch Nails")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
 
         rel = _fake(id=4917, type="master", title="TDS", year=1994, role="Main")
@@ -1047,7 +1057,7 @@ class TestGetCommand:
         assert "Next page:" in result.output
 
     def test_get_versions_master(self) -> None:
-        master = _fake(id=4917, title="The Downward Spiral")
+        master = _listed(id=4917, title="The Downward Spiral")
         self._set_client(_fake_client(masters_get=lambda _id: master))
 
         ver = _fake(
@@ -1233,7 +1243,7 @@ class TestGetCommand:
 
     def test_get_releases_role_filter(self) -> None:
         """--role filters releases by credit role (case-insensitive substring)."""
-        artist = _fake(id=3857, name="Nine Inch Nails")
+        artist = _listed(id=3857, name="Nine Inch Nails")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
 
         main_rel = _fake(id=100, type="master", title="TDS", year=1994, role="Main")
@@ -1267,7 +1277,7 @@ class TestGetCommand:
 
     def test_get_releases_role_no_match(self) -> None:
         """--role with no matching releases shows empty results."""
-        artist = _fake(id=3857, name="Nine Inch Nails")
+        artist = _listed(id=3857, name="Nine Inch Nails")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
 
         rel = _fake(id=100, type="master", title="TDS", year=1994, role="Main")
@@ -1286,7 +1296,7 @@ class TestGetCommand:
 
     def test_get_releases_role_header_marks_the_filtered_bound(self) -> None:
         """--role filters client-side, so the total is an upper bound."""
-        artist = _fake(id=3857, name="Nine Inch Nails")
+        artist = _listed(id=3857, name="Nine Inch Nails")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
 
         rel = _fake(id=100, type="master", title="TDS", year=1994, role="Main")
@@ -1352,14 +1362,9 @@ class TestGetCommand:
         assert "Invalid --after cursor" in result.output
 
     def test_get_versions_with_filters(self) -> None:
-        master = _fake(id=4917, title="TDS")
+        master = _listed(id=4917, title="TDS")
         self._set_client(_fake_client(masters_get=lambda _id: master))
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[], page=1, total_items=0, total_pages=1
-            ),
-        )
+        self._capture_fetch()
 
         result = CliRunner().invoke(
             cli,
@@ -1376,24 +1381,30 @@ class TestGetCommand:
             ],
         )
         assert result.exit_code == 0
+        assert master.versions.list.calls == [
+            {
+                "country": "US",
+                "format": "Vinyl",
+                "label": "Nothing",
+                "released": None,
+                "page": 1,
+                "per_page": 5,
+            }
+        ]
 
-    def _capture_fetch(self) -> dict[str, object]:
-        """Record the path/params the command sends; return an empty page."""
-        seen: dict[str, object] = {}
+    def _capture_fetch(self) -> None:
+        """Fake `fetch_page` to request its page from the listing it is given,
+        which a fake listing records, and return an empty page."""
 
-        def _fetch(
-            _client: object, path: str, params: dict[str, object], *_a: object
-        ) -> PageResult:
-            seen["path"] = path
-            seen["params"] = dict(params)
+        def _fetch(listing: Any, *, page: int, per_page: int) -> PageResult:
+            listing(page=page, per_page=per_page)
             return PageResult(items=[], page=1, total_items=0, total_pages=1)
 
         self._monkeypatch.setattr("agent_discogs.commands.get.fetch_page", _fetch)
         self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _fetch)
-        return seen
 
     def test_get_releases_for_a_label(self) -> None:
-        label = _fake(id=647, name="Nothing Records")
+        label = _listed(id=647, name="Nothing Records")
         self._set_client(_fake_client(labels_get=lambda _id: label))
         rel = _fake_model(
             id=4401,
@@ -1403,18 +1414,15 @@ class TestGetCommand:
             catalog_number="0694903742",
             format="CD, Album",
         )
-        seen: dict[str, object] = {}
 
-        def _fetch(
-            _client: object, path: str, params: dict[str, object], *_a: object
-        ) -> PageResult:
-            seen["path"] = path
+        def _fetch(listing: Any, *, page: int, per_page: int) -> PageResult:
+            listing(page=page, per_page=per_page)
             return PageResult(items=[rel], page=1, total_items=2718, total_pages=544)
 
         self._monkeypatch.setattr("agent_discogs.commands.get.fetch_page", _fetch)
         result = CliRunner().invoke(cli, ["get", "releases", "@l647"])
         assert result.exit_code == 0
-        assert seen["path"] == "/labels/647/releases"
+        assert label.releases.list.calls == [{"page": 1, "per_page": 5}]
         assert 'Releases on @l647 "Nothing Records" (page 1, 1 of 2,718 results)' in (
             result.output
         )
@@ -1437,51 +1445,51 @@ class TestGetCommand:
         ]  # year 0 is "unknown" on Discogs and is dropped
 
     def test_get_releases_sort_reaches_api(self) -> None:
-        artist = _fake(id=3857, name="NIN")
+        artist = _listed(id=3857, name="NIN")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
-        seen = self._capture_fetch()
+        self._capture_fetch()
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--sort", "year", "--desc"]
         )
         assert result.exit_code == 0
-        assert seen["params"] == {
-            "sort": "year",
-            "sort_order": "desc",
-            "page": 1,
-            "per_page": 5,
-        }
+        assert artist.releases.list.calls == [
+            {"sort": "year", "sort_order": "desc", "page": 1, "per_page": 5}
+        ]
 
     def test_get_releases_role_with_sort_passes_sort_to_scan(self) -> None:
-        artist = _fake(id=3857, name="NIN")
+        artist = _listed(id=3857, name="NIN")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
-        seen = self._capture_fetch()
+        self._capture_fetch()
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--role", "Main", "--sort", "title"]
         )
         assert result.exit_code == 0
-        params = seen["params"]
-        assert isinstance(params, dict)
-        assert params["sort"] == "title"
-        assert params["sort_order"] == "asc"
-        assert params["per_page"] == 15  # client-side scan overfetches
+        # The client-side scan overfetches.
+        assert artist.releases.list.calls == [
+            {"sort": "title", "sort_order": "asc", "page": 1, "per_page": 15}
+        ]
 
     def test_get_versions_year_and_sort_reach_api(self) -> None:
-        master = _fake(id=3719, title="TDS")
+        master = _listed(id=3719, title="TDS")
         self._set_client(_fake_client(masters_get=lambda _id: master))
-        seen = self._capture_fetch()
+        self._capture_fetch()
         result = CliRunner().invoke(
             cli,
             ["get", "versions", "@m3719", "--year", "1994", "--sort", "released"],
         )
         assert result.exit_code == 0
-        assert seen["path"] == "/masters/3719/versions"
-        assert seen["params"] == {
-            "page": 1,
-            "per_page": 5,
-            "released": "1994",
-            "sort": "released",
-            "sort_order": "asc",
-        }
+        assert master.versions.list.calls == [
+            {
+                "country": None,
+                "format": None,
+                "label": None,
+                "released": "1994",
+                "sort": "released",
+                "sort_order": "asc",
+                "page": 1,
+                "per_page": 5,
+            }
+        ]
 
     @pytest.mark.parametrize(
         ("argv", "message"),
@@ -1636,15 +1644,12 @@ class TestGetCommand:
             assert message in result.output
 
     def test_get_releases_label_year_scans_client_side_with_cursor(self) -> None:
-        label = _fake(id=647, name="Nothing Records")
+        label = _listed(id=647, name="Nothing Records")
         self._set_client(_fake_client(labels_get=lambda _id: label))
-        seen: list[dict[str, object]] = []
 
-        def _fetch(
-            _client: object, path: str, params: dict[str, object], *_a: object
-        ) -> PageResult:
-            seen.append({"path": path, **params})
-            api_page = int(str(params["page"]))
+        def _fetch(listing: Any, *, page: int, per_page: int) -> PageResult:
+            listing(page=page, per_page=per_page)
+            api_page = page
             rows = [
                 _fake_model(
                     id=api_page * 100 + i,
@@ -1663,7 +1668,7 @@ class TestGetCommand:
             cli, ["get", "releases", "@l647", "--year", "1999", "--limit", "2"]
         )
         assert result.exit_code == 0
-        assert seen == [{"path": "/labels/647/releases", "page": 1, "per_page": 6}]
+        assert label.releases.list.calls == [{"page": 1, "per_page": 6}]
         assert 'Releases on @l647 "Nothing Records" (page 1, 2 of ≤60 results)' in (
             result.output
         )
@@ -2034,7 +2039,7 @@ class TestJsonSearch:
     @pytest.fixture(autouse=True)
     def _patch_search(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._monkeypatch = monkeypatch
-        monkeypatch.setattr("agent_discogs.commands.search.get_client", lambda: None)
+        monkeypatch.setattr("agent_discogs.commands.search.get_client", _fake_client)
 
     def test_search_json(self) -> None:
         item = _fake_model(
@@ -2740,7 +2745,7 @@ class TestJsonGet:
             assert data["market"] == {"for_sale": 9, "lowest": 9.36}
 
     def test_get_releases_json_projection(self) -> None:
-        artist = _fake(id=3857, name="NIN")
+        artist = _listed(id=3857, name="NIN")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
         rel = _fake_model(
             id=3373,
@@ -2771,7 +2776,7 @@ class TestJsonGet:
         ]
 
     def test_get_versions_json_projection(self) -> None:
-        master = _fake(id=3719, title="TDS")
+        master = _listed(id=3719, title="TDS")
         self._set_client(_fake_client(masters_get=lambda _id: master))
         ver = _fake_model(
             id=847868,
@@ -3012,7 +3017,7 @@ class TestUnknownDates:
             releases_get=lambda _id: release, masters_get=lambda _id: master
         )
         monkeypatch.setattr("agent_discogs.commands.get.get_client", lambda: client)
-        monkeypatch.setattr("agent_discogs.commands.search.get_client", lambda: None)
+        monkeypatch.setattr("agent_discogs.commands.search.get_client", lambda: client)
         item = SearchResult.model_validate(
             {"id": 10, "type": "release", "title": "R", "year": "0"}
         )
@@ -4139,6 +4144,27 @@ class TestRealSdk:
         row = json.loads(result.stdout)["results"][0]
         assert row["catalog_number"] == "INT-1"
         assert row["uri"] == "https://www.discogs.com/release/1"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["search", "--release-type", "all", "Sides"],
+            ["search", "Sides"],  # a filtered scan
+            ["get", "releases", "@l1"],
+        ],
+        ids=["search", "scan", "label"],
+    )
+    def test_malformed_page_is_an_error(self, argv: list[str]) -> None:
+        """A page whose items are not a list fails the SDK's envelope check
+        instead of reading as an empty page."""
+        key = "results" if argv[0] == "search" else "releases"
+        self.respond = lambda _request: httpx2.Response(
+            200, json={"pagination": {"page": 1, "pages": 1, "items": 1}, key: {}}
+        )
+        result = CliRunner().invoke(cli, [*argv, "--json"])
+        assert result.exit_code == 1, result.output
+        error = json.loads(result.stdout)["error"]
+        assert f'"{key}" is an object, expected an array' in error["message"]
 
     def _database(self) -> Path:
         return self.cache_home / "agent-discogs" / "cache.db"
