@@ -14,11 +14,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import click
+import httpx2
 import pytest
 from click.testing import CliRunner
 from discogs_sdk import (
     Artist,
     CacheMissError,
+    Discogs,
     MarketplaceReleaseStats,
     Master,
     NotFoundError,
@@ -1750,6 +1752,23 @@ def _via_json(data: object) -> object:
     return json.loads(json.dumps(data, default=str))
 
 
+def _mock_api(
+    monkeypatch: pytest.MonkeyPatch, module: str, routes: dict[str, object]
+) -> None:
+    """Point `module`'s `get_client` at a real SDK client whose transport
+    answers from `routes` (URL path → JSON body; anything else is a 404), so
+    the command sees the SDK's own models instead of fakes."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        body = routes.get(request.url.path)
+        if body is None:
+            return httpx2.Response(404, json={"message": "Resource not found."})
+        return httpx2.Response(200, json=body)
+
+    client = Discogs(http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+    monkeypatch.setattr(f"agent_discogs.commands.{module}.get_client", lambda: client)
+
+
 class TestJsonSearch:
     @pytest.fixture(autouse=True)
     def _patch_search(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1892,6 +1911,91 @@ class TestJsonSearch:
         assert result.exit_code == 0
         assert "Search:" not in result.output
         assert "Next page:" not in result.output
+
+
+class TestUnknownSearchTypes:
+    """`SearchResult.type` is any string or null; only a known type says what
+    kind of ID a row carries, so the others get no ref."""
+
+    ROWS = (
+        {
+            "id": 847868,
+            "type": "release",
+            "title": "Nine Inch Nails - The Downward Spiral",
+            "master_id": 3719,
+        },
+        {"id": 9001, "type": "playlist", "title": "Odd list"},
+        {"id": 9002, "type": None, "title": "Typeless"},
+        {"id": 3857, "type": "artist", "title": "Nine Inch Nails"},
+    )
+
+    @pytest.fixture(autouse=True)
+    def _patch_search(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._monkeypatch = monkeypatch
+        page = {"page": 1, "pages": 1, "items": len(self.ROWS), "per_page": 50}
+        body = {"pagination": page, "results": list(self.ROWS)}
+        _mock_api(monkeypatch, "search", {"/database/search": body})
+
+    def test_text_rows(self) -> None:
+        result = CliRunner().invoke(cli, ["search", "nin"])
+        assert result.exit_code == 0, result.output
+        lines = result.stdout.splitlines()
+
+        def row(title: str) -> str:
+            return next(line for line in lines if f'"{title}"' in line)
+
+        assert row("Nine Inch Nails - The Downward Spiral").startswith(
+            "@r847868 [release]"
+        )
+        assert row("Nine Inch Nails").startswith("@a3857 [artist]")
+        assert row("Odd list") == 'id 9001 [playlist] "Odd list"'
+        assert row("Typeless") == 'id 9002 [no type] "Typeless"'
+
+    def test_type_filter_keeps_the_odd_rows_type(self) -> None:
+        """With a type filter the tag is dropped because the ref prefix says
+        it; a row without a ref still needs its tag."""
+        result = CliRunner().invoke(cli, ["search", "release", "nin"])
+        assert result.exit_code == 0, result.output
+        assert '@r847868 "Nine Inch Nails - The Downward Spiral"' in result.stdout
+        assert 'id 9001 [playlist] "Odd list"' in result.stdout
+
+    def test_json_rows(self) -> None:
+        result = CliRunner().invoke(cli, ["search", "--json", "nin"])
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.stdout)["results"]
+        assert [r.get("ref") for r in rows] == ["@r847868", None, None, "@a3857"]
+        assert rows[0]["master"] == "@m3719"
+        assert rows[1] == {"id": 9001, "type": "playlist", "title": "Odd list"}
+        assert rows[2] == {"id": 9002, "title": "Typeless"}
+
+        full = CliRunner().invoke(cli, ["search", "--json", "--full", "nin"])
+        assert full.exit_code == 0, full.output
+        types = [r["type"] for r in json.loads(full.stdout)["results"]]
+        assert types == ["release", "playlist", None, "artist"]
+
+    def test_rendering_failure_is_inside_the_boundary(self) -> None:
+        """A row the renderers cannot handle is a coded error, and `--json`
+        still gets an envelope on stdout."""
+
+        def _boom(*_a: object, **_kw: object) -> None:
+            raise RuntimeError("bad row")
+
+        self._monkeypatch.setattr(
+            "agent_discogs.commands.search.project_search_result", _boom
+        )
+        result = CliRunner().invoke(cli, ["search", "--json", "nin"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout) == {
+            "error": {"code": "unexpected", "message": "Unexpected error: bad row"}
+        }
+
+        self._monkeypatch.setattr(
+            "agent_discogs.commands.search.format_search_results", _boom
+        )
+        result = CliRunner().invoke(cli, ["search", "nin"])
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert "✗ Unexpected error: bad row" in result.stderr
 
 
 class TestJsonGet:

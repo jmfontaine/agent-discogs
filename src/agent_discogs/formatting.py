@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS
-from agent_discogs.refs import make_ref
+from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
 
 
 def _page_counts(
@@ -244,9 +244,13 @@ def _truncate(text: str | None, length: int = 300) -> str:
     return text[:length].rsplit(" ", 1)[0] + "..."
 
 
-def _search_result_type(result: Any) -> str:
-    """Determine entity type for a search result."""
-    return getattr(result, "type", "release") or "release"
+def _search_result_type(result: Any) -> str | None:
+    """The result's entity type if it has a ref prefix, else None.
+
+    Discogs may send any type string, or none. Only a known type says which
+    kind of ID `result.id` is, so any other result gets no ref.
+    """
+    return result.type if result.type in TYPE_TO_PREFIX else None
 
 
 def _community_have(obj: Any) -> int | None:
@@ -784,7 +788,8 @@ def format_search_results(
     The `[type]` tag is shown only for untyped searches; with a type filter the
     ref prefix already carries it. Release rows carry country, catalog number,
     community have-count, and the master ref so an agent can pick and navigate
-    without a detail call.
+    without a detail call. A result of an unknown or missing type has no ref:
+    its row starts with `id N` and always shows its tag.
     """
     subject = " ".join(
         p for p in (f'"{query}"' if query else "", _format_filters(filters)) if p
@@ -797,6 +802,15 @@ def format_search_results(
 
     for result in results:
         result_type = _search_result_type(result)
+        if result_type is None:
+            lines.append(
+                _release_row(
+                    ref=f"id {result.id}",
+                    type_=result.type or "no type",
+                    title=result.title,
+                )
+            )
+            continue
         ref = make_ref(result_type, result.id)
         show_type = None if type_filter else result_type
 

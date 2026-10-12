@@ -71,6 +71,8 @@ agent-discogs search release "When The Whip Comes Down" --release-type unofficia
 
 Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (default: 5) for page size. To continue, paste the `Next page:` command printed under the results: the default `--release-type official` filter is applied client-side, so continuation is a cursor (`--after`), not a page number. `--page` works only with `--release-type all` (server-side pages) or artist/label searches.
 
+Discogs occasionally returns a result whose type is not one of those four, or has none. Such a row has no ref, because nothing says what its ID refers to: it reads `id 9001 [playlist] "..."` in text (`[no type]` when Discogs sends none) and carries `id` instead of `ref` under `--json`. The rest of the page prints as usual.
+
 Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for JSON output (see [JSON output](#json-output)).
 
 ### get

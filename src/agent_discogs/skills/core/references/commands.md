@@ -68,6 +68,8 @@ agent-discogs search release "Pretty Hate Machine" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
 ```
 
+Each row starts with a ref. A result of any other type than the four above starts with `id N [type]` instead (`[no type]` when Discogs sends none) and has no ref (`id` instead of `ref` under `--json`); the rest of the page is unaffected.
+
 ## get
 
 Get entity details or paginated lists.

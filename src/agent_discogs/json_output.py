@@ -59,8 +59,3 @@ def page_document(
         pagination["next_cursor"] = result.next_cursor
     rows = [raw(item) if full else project(item) for item in result.items]
     return {"pagination": pagination, "results": rows}
-
-
-def dump_page(result: PageResult, project: Projector, *, full: bool) -> None:
-    """Print one page as JSON."""
-    _emit(page_document(result, project, full=full))

@@ -51,7 +51,8 @@ and free text in parentheses, e.g. 2\u00d7Vinyl (LP, Album, 180g, Gatefold); CD 
 
 Refs:
   Search results return typed refs: @a3857 (artist), @r847868 (release),
-  @m3719 (master), @l647 (label). Use refs with get commands.
+  @m3719 (master), @l647 (label). Use refs with get commands. A result of
+  any other type (or none) shows 'id N [type]' and has no ref.
 
 Unknown dates are left out: Discogs' year 0 is omitted, and a release date
 drops a zero month or day (1994-05-00 prints as 1994-05, 1994-00-00 as 1994).

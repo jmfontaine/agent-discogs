@@ -46,7 +46,7 @@ Check status: `agent-discogs status`
 
 ## Output Format
 
-- **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches.
+- **search** — one row per match: ref, title, year, country, label + catalog number, format, `have N` (how many collectors own it), and `→ @m...` (the release's master). The header echoes the filters you applied. The `[type]` tag appears only on untyped searches. A result whose type is not artist/label/master/release has no ref: its row reads `id 9001 [playlist] "..."` (`[no type]` when Discogs sends none), with `id` instead of `ref` under `--json`. Don't guess a prefix for it.
 - **get release** — title, artists `[@a...]`, label `[@l...]` + catalog number, format (one entry per physical format: `2×Vinyl (LP, Album, 180g); CD (Album)`), country, release date, `Added: YYYY-MM-DD` (the day it was added to Discogs; JSON `added` is the full RFC 3339 timestamp), community stats, market summary, master ref, full tracklist. Refs are always inline.
 - **get release --verbose** — the above plus notes, credits, and identifiers.
 - **get release --compact** — the above with the tracklist collapsed to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). A suite or medley split into parts counts as its parts, timed by their sum, or by the suite's own duration when a part is untimed. Combine with `-v` to compare pressings without paying for tracklists.

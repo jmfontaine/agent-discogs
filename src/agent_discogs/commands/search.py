@@ -10,7 +10,7 @@ from discogs_sdk import SearchResult
 from agent_discogs.client import get_client
 from agent_discogs.errors import fail
 from agent_discogs.formatting import format_search_results
-from agent_discogs.json_output import dump_page
+from agent_discogs.json_output import dump, page_document
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
     fetch_filtered_page,
@@ -234,8 +234,14 @@ def search(
     except Exception as e:  # noqa: BLE001
         fail(e, "Search", json_output=json_output)
 
+    # Rendering is inside the boundary too, so a row the renderers cannot
+    # handle is a coded error (an envelope under --json), not a traceback.
     if json_output:
-        dump_page(result, project_search_result, full=full)
+        try:
+            document = page_document(result, project_search_result, full=full)
+        except Exception as e:  # noqa: BLE001
+            fail(e, "Search", json_output=True)
+        dump(document)
         return
 
     footer_cmd = None
@@ -261,15 +267,18 @@ def search(
     filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}
     if release_type != "official" and type_filter in (None, "release", "master"):
         filters["release-type"] = release_type
-    output = format_search_results(
-        results=result.items,
-        query=query,
-        type_filter=type_filter,
-        page=result.page,
-        total_results=result.total_items,
-        next_page_cmd=footer_cmd,
-        filters=filters,
-        filtered=result.filtered,
-        capped=result.capped,
-    )
+    try:
+        output = format_search_results(
+            results=result.items,
+            query=query,
+            type_filter=type_filter,
+            page=result.page,
+            total_results=result.total_items,
+            next_page_cmd=footer_cmd,
+            filters=filters,
+            filtered=result.filtered,
+            capped=result.capped,
+        )
+    except Exception as e:  # noqa: BLE001
+        fail(e, "Search", json_output=False)
     print(output)

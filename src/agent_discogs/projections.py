@@ -81,6 +81,9 @@ def _tracks(tracklist: list[Any] | None) -> list[dict[str, Any]]:
 
 def project_search_result(r: Any) -> dict[str, Any]:
     entity_type = _search_result_type(r)
+    if entity_type is None:
+        # What the text row shows: no ref, since nothing says what the ID is.
+        return drop_empty({"id": r.id, "type": r.type, "title": r.title})
     label = getattr(r, "label", None)
     master_id = getattr(r, "master_id", None)
     return drop_empty(

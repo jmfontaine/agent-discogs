@@ -17,7 +17,6 @@ from agent_discogs.formatting import (
     _artist_string,
     _format_track_lines,
     _label_string,
-    _search_result_type,
     _track_artist_prefix,
     _truncate,
     _urls_short,
@@ -80,19 +79,6 @@ class TestTruncate:
 
     def test_empty_text(self) -> None:
         assert _truncate("") == ""
-
-
-class TestSearchResultType:
-    def test_empty_type(self) -> None:
-        r = _fake(type="")
-        assert _search_result_type(r) == "release"
-
-    def test_no_type_attr(self) -> None:
-        class NoType:
-            pass
-
-        r = NoType()
-        assert _search_result_type(r) == "release"
 
 
 class TestUrlsShort:
