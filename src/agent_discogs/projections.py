@@ -140,13 +140,13 @@ def project_credits(rel: Any) -> dict[str, list[dict[str, Any]]]:
         {
             role: [
                 {
-                    "ref": make_ref("artist", c.id) if getattr(c, "id", None) else None,
-                    "name": getattr(c, "name", None),
-                    "tracks": getattr(c, "tracks", None),
+                    "ref": make_ref("artist", c.id) if c.id else None,
+                    "name": c.name,
+                    "tracks": ", ".join(c.tracks),
                 }
-                for c in people
+                for c in entries
             ]
-            for role, people in credits_by_role(rel).items()
+            for role, entries in credits_by_role(rel).items()
         }
     )
 

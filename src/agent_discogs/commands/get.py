@@ -22,6 +22,7 @@ from agent_discogs.formatting import (
     format_price_guide,
     format_release,
     format_tracklist,
+    iter_tracks,
 )
 from agent_discogs.json_output import Mode, dump, raw
 from agent_discogs.pagination import (
@@ -113,7 +114,18 @@ def _get_artist(client: Discogs, entity_id: int, mode: Mode) -> Any:
 def _get_credits(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
-        return {"credits": [c.model_dump() for c in release.extra_artists or []]}
+        return {
+            "credits": [c.model_dump() for c in release.extra_artists or []],
+            "track_credits": [
+                {
+                    "position": track.position,
+                    "title": track.title,
+                    "extra_artists": [c.model_dump() for c in track.extra_artists],
+                }
+                for track in iter_tracks(release.tracklist)
+                if track.extra_artists
+            ],
+        }
     if mode.json:
         return drop_empty(
             {"ref": make_ref("release", entity_id), "credits": project_credits(release)}

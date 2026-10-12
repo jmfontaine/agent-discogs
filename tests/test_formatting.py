@@ -855,6 +855,19 @@ class TestFormatCredits:
         ) in output
         assert "Written-By: Trent Reznor [@a27457]" in output
 
+    def test_release_wide_entry_widens_a_scoped_one(self) -> None:
+        """The same person and role, once scoped and once release-wide: the
+        release-wide entry wins, whatever order Discogs lists them in."""
+        moulder = {"id": 2768, "name": "Alan Moulder", "role": "Engineer"}
+        for scopes in (["1, 3", ""], ["", "1, 3"]):
+            release = _fake(
+                id=1,
+                title="X",
+                tracklist=None,
+                extra_artists=[_fake(**moulder, tracks=s) for s in scopes],
+            )
+            assert format_credits(release).endswith("\nEngineer: Alan Moulder [@a2768]")
+
     def test_no_credits(self) -> None:
         output = format_credits(_fake(id=1, title="X", extra_artists=None))
         assert "(0)" in output

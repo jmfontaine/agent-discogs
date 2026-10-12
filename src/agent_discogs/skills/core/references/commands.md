@@ -83,7 +83,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | Noun | Expected Ref Type | Description |
 |------|-------------------|-------------|
 | `artist` | `@a` or numeric ID | Artist profile; `URLs:` lists linked sites by domain, omitting empty entries |
-| `credits` | `@r` or numeric ID | Credits grouped by role, each person with an artist ref and track scope |
+| `credits` | `@r` or numeric ID | Release, track, and sub-track credits grouped by role, each person once per role with an artist ref and track scope (none = whole release) |
 | `identifiers` (alias `ids`) | `@r` or numeric ID | Barcodes, matrix/runout, label codes, rights societies |
 | `label` | `@l` or numeric ID | Label profile; `URLs:` lists linked sites by domain, omitting empty entries |
 | `master` | `@m` or numeric ID | Master release details |

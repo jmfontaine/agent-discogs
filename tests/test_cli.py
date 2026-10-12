@@ -2190,7 +2190,9 @@ class TestJsonGet:
     def test_get_credits_and_identifiers_json(self) -> None:
         credit = _fake_model(id=20661, name="Flood", role="Producer", tracks="")
         ident = _fake_model(type="Barcode", value="765449234620", description=None)
-        release = _fake(id=123, extra_artists=[credit], identifiers=[ident])
+        release = _fake(
+            id=123, extra_artists=[credit], identifiers=[ident], tracklist=None
+        )
         self._set_client(_fake_client(releases_get=lambda _id: release))
 
         data = json.loads(
@@ -2216,7 +2218,7 @@ class TestJsonGet:
             .invoke(cli, ["get", "--json", "--full", "credits", "@r123"])
             .output
         )
-        assert full == {"credits": [credit.model_dump()]}
+        assert full == {"credits": [credit.model_dump()], "track_credits": []}
 
         empty = _fake(id=123, extra_artists=None, identifiers=None)
         self._set_client(_fake_client(releases_get=lambda _id: empty))
@@ -2641,6 +2643,155 @@ class TestIndexTracks:
             CliRunner().invoke(cli, ["get", "--json", "release", "-c", "@r1"]).stdout
         )
         assert data["tracks"] == "3 (12:00)"
+
+
+def _credited_release(release_credits: list[dict[str, object]]) -> Release:
+    """A real SDK release whose tracks and sub-tracks carry their own credits.
+
+    Track 1 credits Bob (Guitar) and Alan Moulder (Engineer); sub-track 2.a of
+    the index track "Suite" credits Bob (Guitar), Ann (Mixed By), and Flood
+    (Producer).
+    """
+
+    def credit(artist_id: int, name: str, role: str) -> dict[str, object]:
+        return {"id": artist_id, "name": name, "role": role, "tracks": ""}
+
+    return Release.model_validate(
+        {
+            "id": 1,
+            "title": "Session",
+            "extraartists": release_credits,
+            "tracklist": [
+                {
+                    "position": "1",
+                    "title": "One",
+                    "type_": "track",
+                    "extraartists": [
+                        credit(2, "Bob", "Guitar"),
+                        credit(2768, "Alan Moulder", "Engineer"),
+                    ],
+                },
+                {
+                    "position": "",
+                    "title": "Suite",
+                    "type_": "index",
+                    "sub_tracks": [
+                        {
+                            "position": "2.a",
+                            "title": "Part A",
+                            "type_": "track",
+                            "extraartists": [
+                                credit(2, "Bob", "Guitar"),
+                                credit(3, "Ann", "Mixed By"),
+                                credit(20661, "Flood", "Producer"),
+                            ],
+                        }
+                    ],
+                },
+            ],
+        }
+    )
+
+
+class TestTrackCredits:
+    """Credits on tracks and sub-tracks appear wherever release credits do."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._monkeypatch = monkeypatch
+
+    def _serve(self, release: object) -> None:
+        self._monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=lambda _id: release),
+        )
+
+    def _invoke(self, *args: str) -> str:
+        result = CliRunner().invoke(cli, list(args))
+        assert result.exit_code == 0, result.output
+        return result.stdout
+
+    def test_track_only_credits_in_every_mode(self) -> None:
+        release = _credited_release([])
+        self._serve(release)
+        roles = [
+            "Engineer: Alan Moulder [@a2768] (1)",
+            "Guitar: Bob [@a2] (1, 2.a)",
+            "Mixed By: Ann [@a3] (2.a)",
+            "Producer: Flood [@a20661] (2.a)",
+        ]
+        assert self._invoke("get", "credits", "@r1").splitlines() == [
+            'Credits: @r1 "Session" (4)',
+            "",
+            *roles,
+        ]
+        assert "\n".join(roles) in self._invoke("get", "release", "-v", "@r1")
+
+        by_role = {
+            "Engineer": [{"ref": "@a2768", "name": "Alan Moulder", "tracks": "1"}],
+            "Guitar": [{"ref": "@a2", "name": "Bob", "tracks": "1, 2.a"}],
+            "Mixed By": [{"ref": "@a3", "name": "Ann", "tracks": "2.a"}],
+            "Producer": [{"ref": "@a20661", "name": "Flood", "tracks": "2.a"}],
+        }
+        assert json.loads(self._invoke("get", "--json", "credits", "@r1")) == {
+            "ref": "@r1",
+            "credits": by_role,
+        }
+        verbose = json.loads(self._invoke("get", "--json", "release", "-v", "@r1"))
+        assert verbose["credits"] == by_role
+
+        one, suite = release.tracklist or []
+        part = (suite.sub_tracks or [])[0]
+        assert json.loads(
+            self._invoke("get", "--json", "--full", "credits", "@r1")
+        ) == {
+            "credits": [],
+            "track_credits": [
+                {
+                    "position": "1",
+                    "title": "One",
+                    "extra_artists": [c.model_dump() for c in one.extra_artists or []],
+                },
+                {
+                    "position": "2.a",
+                    "title": "Part A",
+                    "extra_artists": [c.model_dump() for c in part.extra_artists or []],
+                },
+            ],
+        }
+
+    def test_release_and_track_credits_each_shown_once_with_scope(self) -> None:
+        """A release-wide credit absorbs the same credit on a track; a scoped
+        one gains the tracks that repeat it, listing each track once."""
+        self._serve(
+            _credited_release(
+                [
+                    {"id": 20661, "name": "Flood", "role": "Producer", "tracks": ""},
+                    {
+                        "id": 2768,
+                        "name": "Alan Moulder",
+                        "role": "Engineer",
+                        "tracks": "1, 3",
+                    },
+                ]
+            )
+        )
+        assert self._invoke("get", "credits", "@r1").splitlines() == [
+            'Credits: @r1 "Session" (4)',
+            "",
+            "Engineer: Alan Moulder [@a2768] (1, 3)",
+            "Guitar: Bob [@a2] (1, 2.a)",
+            "Mixed By: Ann [@a3] (2.a)",
+            "Producer: Flood [@a20661]",
+        ]
+        assert json.loads(self._invoke("get", "--json", "credits", "@r1"))[
+            "credits"
+        ] == {
+            "Engineer": [{"ref": "@a2768", "name": "Alan Moulder", "tracks": "1, 3"}],
+            "Guitar": [{"ref": "@a2", "name": "Bob", "tracks": "1, 2.a"}],
+            "Mixed By": [{"ref": "@a3", "name": "Ann", "tracks": "2.a"}],
+            "Producer": [{"ref": "@a20661", "name": "Flood"}],
+        }
 
 
 class TestDebug:

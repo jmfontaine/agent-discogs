@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -85,40 +87,87 @@ def _label_string(labels: list[Any] | None) -> str:
 _ROLE_SPLIT = re.compile(r",\s*(?![^\[]*\])")  # commas outside [bracketed] notes
 
 
-def credits_by_role(release: Any) -> dict[str, list[Any]]:
-    """Invert Discogs credits from per-person to per-role.
+def iter_tracks(tracklist: list[Any] | None) -> Iterator[Any]:
+    """Every track in order, each index track followed by its sub-tracks."""
+    for track in tracklist or []:
+        yield track
+        yield from iter_tracks(getattr(track, "sub_tracks", None))
+
+
+@dataclass
+class Credit:
+    """One person under one role; empty `tracks` means the whole release."""
+
+    id: int | None
+    name: str | None
+    tracks: list[str]
+
+    @property
+    def person(self) -> int | str | None:
+        """Identity for merging: the artist ID, or the name when there is none."""
+        return self.id or self.name
+
+
+def _scoped_credits(release: Any) -> Iterator[tuple[Any, list[str]]]:
+    """Each credit with the tracks it covers: release credits first, then tracks.
+
+    A release credit's scope is its own `tracks` string, split on commas; a
+    track or sub-track credit covers that track, named by position or title.
+    """
+    for credit in getattr(release, "extra_artists", None) or []:
+        tracks = (getattr(credit, "tracks", None) or "").split(",")
+        yield credit, [t.strip() for t in tracks if t.strip()]
+    for track in iter_tracks(getattr(release, "tracklist", None)):
+        scope = getattr(track, "position", None) or getattr(track, "title", None)
+        for credit in getattr(track, "extra_artists", None) or []:
+            yield credit, [scope or "?"]
+
+
+def credits_by_role(release: Any) -> dict[str, list[Credit]]:
+    """Invert Discogs credits from per-person to per-role, across all tracks.
 
     Discogs stores one entry per person with a comma-joined role string such
-    as `Producer [Production], Written-By`; both the text and JSON views group
-    by role so "who produced this?" is one line or one key. Roles sort
-    alphabetically; people keep Discogs order within a role.
+    as `Producer [Production], Written-By`, on the release and on each track
+    and sub-track; both the text and JSON views group by role so "who
+    produced this?" is one line or one key. A person appears once per role,
+    with the union of the tracks credited; a release-wide credit absorbs the
+    same credit on a track. Roles sort alphabetically; people keep first-seen
+    order within a role.
     """
-    by_role: dict[str, list[Any]] = {}
-    for credit in getattr(release, "extra_artists", None) or []:
-        for role in _ROLE_SPLIT.split(getattr(credit, "role", None) or ""):
-            by_role.setdefault(role.strip() or "Other", []).append(credit)
-    return dict(sorted(by_role.items()))
+    by_role: dict[str, dict[int | str | None, Credit]] = {}
+    for source, scope in _scoped_credits(release):
+        credit_id = getattr(source, "id", None)
+        name = getattr(source, "name", None)
+        for role in _ROLE_SPLIT.split(getattr(source, "role", None) or ""):
+            people = by_role.setdefault(role.strip() or "Other", {})
+            fresh = Credit(credit_id, name, list(scope))
+            known = people.setdefault(fresh.person, fresh)
+            if known is fresh:
+                continue
+            if not scope:
+                known.tracks = []
+            elif known.tracks:
+                known.tracks += [t for t in scope if t not in known.tracks]
+    return {role: list(people.values()) for role, people in sorted(by_role.items())}
 
 
 def format_credits(release: Any) -> str:
-    """Release credits grouped by role, each person with an artist ref."""
+    """Release and track credits grouped by role, each person with an artist ref."""
     ref = make_ref("release", release.id)
-    entries = getattr(release, "extra_artists", None) or []
-    lines = [f'Credits: {ref} "{release.title}" ({len(entries)})', ""]
-    if not entries:
+    by_role = credits_by_role(release)
+    people = {c.person for entries in by_role.values() for c in entries}
+    lines = [f'Credits: {ref} "{release.title}" ({len(people)})', ""]
+    if not by_role:
         lines.append("  (no credits listed)")
         return "\n".join(lines)
 
-    for role, people_credits in credits_by_role(release).items():
-        people = []
-        for credit in people_credits:
-            name = getattr(credit, "name", None) or "Unknown"
-            artist_id = getattr(credit, "id", None)
-            tag = f" [{make_ref('artist', artist_id)}]" if artist_id else ""
-            tracks = getattr(credit, "tracks", None) or ""
-            scope = f" ({tracks})" if tracks else ""
-            people.append(f"{name}{tag}{scope}")
-        lines.append(f"{role}: {', '.join(people)}")
+    for role, entries in by_role.items():
+        names = []
+        for credit in entries:
+            tag = f" [{make_ref('artist', credit.id)}]" if credit.id else ""
+            scope = f" ({', '.join(credit.tracks)})" if credit.tracks else ""
+            names.append(f"{credit.name or 'Unknown'}{tag}{scope}")
+        lines.append(f"{role}: {', '.join(names)}")
     return "\n".join(lines)
 
 
