@@ -789,7 +789,7 @@ def _json_options(command: Any) -> Any:
 @click.option(
     "--sort",
     help=(
-        "Server-side order. releases: year|title|format; "
+        "Server-side order. releases @a: year|title|format; "
         "versions: released|title|format|label|catno|country"
     ),
 )
@@ -800,7 +800,11 @@ def _json_options(command: Any) -> Any:
     default=False,
     help="release: also print notes, credits, and identifiers",
 )
-@click.option("--year", help="Filter versions by release year")
+@click.option(
+    "--year",
+    help="versions: filter by release year; releases @l: keep that year "
+    "(client-side scan, continues via --after)",
+)
 def get(
     noun: str,
     refs: tuple[str, ...],

@@ -10,17 +10,18 @@ CLI for searching and exploring the Discogs music database. Returns compact text
 
 ## Setup
 
-Requires `DISCOGS_TOKEN` for full access (60 req/min, search, price data):
+Full access (60 req/min, search, price data) needs credentials; a personal access token is the simplest (OAuth also works, see `status` below):
 
 ```bash
 export DISCOGS_TOKEN=<your-token>  # discogs.com/settings/developers
 ```
 
-Without any credentials: 25 req/min, no search, no price suggestions.
+Without any credentials: 25 req/min and no price suggestions. Discogs documents search as needing credentials too: unauthenticated searches currently get answers, but Discogs may refuse one with `auth_required`.
 
-`price` additionally requires that the token's account has filled out its
-seller settings (discogs.com/settings/seller) — Discogs returns 404 for price
-suggestions otherwise. A token alone covers every other command.
+`price` additionally requires that the account behind the token (or OAuth
+credentials) has filled out its seller settings (discogs.com/settings/seller) —
+Discogs returns 404 for price suggestions otherwise. A token alone covers every
+other command.
 
 Check status: `agent-discogs status`. Its `Auth:` line names the credentials requests carry: `token` or `oauth` (authenticated), `consumer` (a `DISCOGS_CONSUMER_KEY`/`DISCOGS_CONSUMER_SECRET` app key: 60 req/min, but not a user, so no price suggestions), or `none` (25 req/min). `DISCOGS_TOKEN` wins when several are set. It sends no request.
 
@@ -99,6 +100,8 @@ Discogs text is user-generated and the text views never print it raw: line break
 
 `search`, `get`, `tracks`, and `price` support `--json`, and so does `cache clear` (`{"cleared":true}`, or the error envelope); `status` and `skills` are text-only. The JSON is a compact projection of what the text view shows, with refs as strings you can pass straight back: `{"ref":"@r847868","artists":[{"ref":"@a3857","name":"Nine Inch Nails"}],"labels":[{"ref":"@l647","name":"Nothing Records","catno":"92346-2"}],"master":"@m3719",...}`. Each release, master, artist, label, and search result also carries `url`, its absolute Discogs web page (`"url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral"`): use it when a person needs a link. Text output never prints it. `get versions` / `get releases` rows carry one only when Discogs includes a link (`uri`) in the row (it does not today), and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link. Empty fields are omitted: test for the key, not for null. `get credits --json` is grouped by role, `{"Producer":[{"ref":"@a...","name":"...","tracks":"1, 2"}],...}`, the same grouping as the text. Lists come wrapped in `{"pagination":{...},"results":[...]}`; `page`, `total_items` and `total_pages` are always present (totals `null` only when a scan stopped before reading any page), filtered lists always carry `filtered`, `capped` and `pagination.next_cursor` for `--after` (`null` when nothing remains), and a capped list adds `stop_reason` (`max_requests` or `rate_limited`) and, when Discogs sent one, `retry_after`.
 
+In a filtered list, `page` counts your pages of `--limit` matches, but `total_items` is the unfiltered total (the `≤N` in the text header) and `total_pages` counts the 100-row Discogs pages the scan reads (page 2 of a label's `--year` scan can report `"total_pages":28`). Neither says how many pages of matches remain: continue until `next_cursor` is `null`.
+
 ```bash
 agent-discogs search release "The Downward Spiral" --year 1994 --country US --json
 agent-discogs get release @r847868 --json
@@ -126,7 +129,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 ## Error Recovery
 
 - **0 results** — broaden filters (drop `--year`, `--country`), try a different type (`master` instead of `release`), or simplify the query.
-- **Auth required** (`auth_required`) — the message names the credentials that were sent (`DISCOGS_TOKEN`, the consumer key/secret, or OAuth, with their variables), or says none are set; the hint says what to check. Price suggestions need a user (`DISCOGS_TOKEN`, or OAuth), and search needs credentials. Relay the message to the user, who fixes the credentials; `agent-discogs status` shows which are in use. Per-mode wording: [references/commands.md](references/commands.md#global-flags).
+- **Auth required** (`auth_required`) — the message names the credentials that were sent (`DISCOGS_TOKEN`, the consumer key/secret, or OAuth, with their variables), or says none are set; the hint says what to check. Price suggestions need a user (`DISCOGS_TOKEN`, or OAuth), and Discogs documents search as needing credentials (it may refuse an unauthenticated one). Relay the message to the user, who fixes the credentials; `agent-discogs status` shows which are in use. Per-mode wording: [references/commands.md](references/commands.md#global-flags).
 - **"Price data requires seller settings"** — not a bad ref. The release exists, but Discogs only serves price suggestions to accounts with seller settings filled out. Nothing to retry: use `get release @r...` for the `num_for_sale`/`lowest_price` summary instead.
 - **Invalid ref** — refs are Discogs IDs and never expire; there is no session. Check the prefix matches the noun (`@r` release, `@m` master, `@a` artist, `@l` label). A bare `@123` is invalid: either add the type letter or pass the raw number `123`.
 - **"--x does not apply to 'get noun'"** — each `get` flag belongs to specific nouns (`--country`/`--format`/`--label` to `versions`, `--role` to `releases @a...`, `--limit`/`--page` to `releases` and `versions`, `-v`/`-c` to `release`); the error lists what the noun takes. Drop the flag. `--after` and `--max-requests` take one ref: continue each listing in its own command, and `--max-requests` only applies to a scan (`releases --role`, `releases @l... --year`). Table: [references/commands.md](references/commands.md#get).

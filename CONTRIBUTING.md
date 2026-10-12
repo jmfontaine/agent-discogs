@@ -43,7 +43,7 @@ from the dev group, and sets up the pre-commit hooks. No global pre-commit insta
 
 ## Authentication setup
 
-Some commands require a Discogs personal access token.
+Price lookups need a Discogs personal access token (or OAuth credentials), and the live test suite needs a token.
 
 1. Create a Discogs account (or use an existing one) at https://www.discogs.com
 2. Generate a personal access token at https://www.discogs.com/settings/developers
@@ -56,7 +56,9 @@ DISCOGS_TOKEN=your_token_here
 If you use [direnv](https://direnv.net/), the `.envrc` already loads `.env` automatically.
 
 > [!NOTE]
-> Tests never hit the network. You do not need a token to run the test suite.
+> `just test` never hits the network, so you do not need a token to run the test suite. The opt-in live suite
+> (`just test-live`, tests marked `live`) resolves the documentation's example refs against the real Discogs API and
+> needs `DISCOGS_TOKEN`.
 
 ## Development workflow
 
@@ -67,6 +69,7 @@ just format             # Auto-format code (ruff + pyproject-fmt)
 just lint-fix           # Auto-fix lint issues
 just qa                 # All checks (see PR checklist below)
 just test               # Unit tests with coverage (fast, no network)
+just test-live          # Live-API tests, opt-in (needs DISCOGS_TOKEN)
 just type-check         # Run type checker (ty)
 just verify-types       # Audit public API type annotation coverage (pyright)
 ```
@@ -81,7 +84,7 @@ just test tests/test_cli.py --cov-fail-under=0                 # Single file
 just test tests/test_cli.py -k test_version --cov-fail-under=0 # Single test
 ```
 
-Tests use `click.testing.CliRunner` for in-process CLI testing with `unittest.mock` and `SimpleNamespace` for mocking SDK responses. They never hit the network.
+Tests use `click.testing.CliRunner` for in-process CLI testing. They patch with pytest's `monkeypatch` and fake SDK responses with `SimpleNamespace` objects; tests that need the real SDK client run it over an `httpx2.MockTransport`. `just test` deselects the tests marked `live`, so it never hits the network; `just test-live` runs only those, against the real API.
 
 100% test coverage of `src/agent_discogs` is required and enforced: `[tool.coverage]` in `pyproject.toml` measures only the package and sets `fail_under = 100`, so `just test` and CI fail below it. `just test` reports uncovered lines with `--cov-report=term-missing`. A partial run (a single file or `-k`) cannot reach 100%, so pass `--cov-fail-under=0` to keep the report without the threshold.
 
@@ -92,12 +95,12 @@ Tests use `click.testing.CliRunner` for in-process CLI testing with `unittest.mo
 - Type checking with ty (`just type-check`)
 - Type completeness auditing with pyright (`just verify-types`)
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>: <description>`
-  (e.g., `feat: add list items resource`, `fix: handle rate limit retry`).
+  (e.g., `feat: add list items resource`, `fix: report the wait time on a rate limit`).
   See [`cliff.toml`](cliff.toml) for the configured commit types.
 
 ## Submitting a pull request
 
-1. Fork the repo and create a branch from `main` (e.g., `fix/rate-limit-retry`, `feat/add-list-items`)
+1. Fork the repo and create a branch from `main` (e.g., `fix/rate-limit-wait-time`, `feat/add-list-items`)
 2. Make your changes
 3. Add or update tests
 4. Run `just qa` to catch issues before CI does
@@ -114,7 +117,10 @@ Before opening a PR, make sure the following are done:
 ### What to expect
 
 A maintainer will review your PR, usually within a few days. Change requests are normal and collaborative.
-Push additional commits to the same branch — no need to force-push or squash until asked.
+Push additional commits to the same branch; no need to squash. Every commit on the branch must be signed and show as
+verified on GitHub: `main` requires signed commits, and an unsigned one blocks the merge until it is re-signed and
+force-pushed. Pull requests are squash-merged, so the pull request title becomes the commit subject on `main`, and
+git-cliff builds the changelog from it: write it as a Conventional Commit.
 
 ## License
 
