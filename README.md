@@ -67,6 +67,7 @@ agent-discogs search artist "Nine Inch Nails" --limit 10
 agent-discogs search label "Nothing Records"
 agent-discogs search release "The Downward Spiral" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
+agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc
 ```
 
 Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (1-100, default: 5) for page size. To continue, paste the `Next page:` command printed under the results: the default `--release-type official` filter is applied client-side, so continuation is a cursor (`--after`), not a page number. `--page` (from 1) works only with `--release-type all` (server-side pages) or artist/label searches. A search needs a query or at least one non-blank filter; an out-of-range `--limit`/`--page` or an empty search fails with `invalid_argument` before any request. A query starting with `-` goes after `--` (`agent-discogs search --release-type all -- -ambient`); the printed `Next page:` command always puts the type and query there, so it pastes back unchanged.
@@ -74,6 +75,8 @@ Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `-
 Discogs occasionally returns a result whose type is not one of those four, or has none. Such a row has no ref, because nothing says what its ID refers to: it reads `id 9001 [playlist] "..."` in text (`[no type]` when Discogs sends none) and carries `id` instead of `ref` under `--json`. The rest of the page prints as usual.
 
 Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for JSON output (see [JSON output](#json-output)).
+
+`search release ... --sort date_added` orders results by when they were added to Discogs; add `--desc` for newest first. The parameter is undocumented: Discogs lists no sort keys for search, and it has only been seen working on release searches, so `--sort` on any other search (or `--desc` without `--sort`) fails with `invalid_argument` before any request. If Discogs ever drops it, results will most likely come back in relevance order with no error. With the default `--release-type official` filter, the client-side scan keeps the server's order, and the printed `Next page:` command keeps `--sort` and `--desc`.
 
 ### get
 

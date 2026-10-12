@@ -722,6 +722,71 @@ class TestPagingBounds:
         assert "year" not in params
 
 
+class TestSearchSort:
+    """`search release --sort date_added [--desc]` asks Discogs for date order.
+    Discogs has only been seen honoring it on release searches, so anything
+    else fails before the first request."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.api = _FakeAPI(monkeypatch, _empty_listing)
+
+    @pytest.mark.parametrize(("desc", "order"), [(["--desc"], "desc"), ([], "asc")])
+    @pytest.mark.parametrize("release_type", ["all", "official"])
+    def test_sends_sort_and_order(
+        self, desc: list[str], order: str, release_type: str
+    ) -> None:
+        result = CliRunner().invoke(
+            cli,
+            [
+                "search",
+                "release",
+                "--artist",
+                "Nine Inch Nails",
+                "--release-type",
+                release_type,
+                "--sort",
+                "date_added",
+                *desc,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert len(self.api.sends) == 1
+        params = self.api.sends[0][1]
+        assert (params["sort"], params["sort_order"]) == ("date_added", order)
+
+    def test_unsorted_search_sends_no_sort(self) -> None:
+        result = CliRunner().invoke(cli, ["search", "release", "Closer"])
+        assert result.exit_code == 0, result.output
+        assert not {"sort", "sort_order"} & self.api.sends[0][1].keys()
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["search", "artist", "Nine Inch Nails", "--sort", "date_added"],
+            ["search", "Nine Inch Nails", "--sort", "date_added"],
+            ["search", "master", "Closer", "--sort", "date_added", "--desc"],
+            ["search", "label", "Nothing", "--sort", "date_added"],
+            ["search", "--catno", "INT-92346", "--sort", "date_added"],
+            ["search", "release", "Closer", "--desc"],
+            ["search", "Closer", "--desc"],
+        ],
+    )
+    def test_rejected_before_any_request(self, args: list[str]) -> None:
+        result = CliRunner().invoke(cli, [*args, "--json"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "invalid_argument"
+        assert self.api.sends == []
+
+    def test_header_shows_the_applied_sort(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["search", "release", "Closer", "--sort", "date_added", "--desc"]
+        )
+        header = result.stdout.splitlines()[0]
+        assert "sort=date_added" in header
+        assert "desc" in header
+
+
 class TestGetCommand:
     @pytest.fixture(autouse=True)
     def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3656,6 +3721,11 @@ _LISTINGS: dict[str, tuple[str, int, list[list[int]]]] = {
     ),
     "search, filtered by cursor": (
         "search --label 'R & S Records' --limit 2 -- release '-ambient \"dub\" $HOME'",
+        1,
+        _FILTERED_PAGES,
+    ),
+    "search, sorted by date added": (
+        "search --sort date_added --desc --limit 2 -- release -x",
         1,
         _FILTERED_PAGES,
     ),

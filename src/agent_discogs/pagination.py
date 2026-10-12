@@ -29,6 +29,13 @@ def paging_error(limit: int, page: int | None) -> str | None:
     return None
 
 
+def sort_params(sort: str | None, desc: bool) -> dict[str, str]:
+    """Server-side ordering; `--desc` only means something with `--sort`."""
+    if not sort:
+        return {}
+    return {"sort": sort, "sort_order": "desc" if desc else "asc"}
+
+
 @dataclass
 class PageResult:
     """A single page of results with pagination metadata.

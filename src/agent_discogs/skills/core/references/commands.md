@@ -40,6 +40,7 @@ agent-discogs search [type] <query> [--flags]
 | `--barcode` | Filter by barcode |
 | `--catno` | Filter by catalog number |
 | `--country` | Filter by country |
+| `--desc` | With `--sort`: descending (newest first) |
 | `--format` | Filter by format (e.g., "Vinyl", "CD") |
 | `--genre` | Filter by genre |
 | `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
@@ -49,6 +50,7 @@ agent-discogs search [type] <query> [--flags]
 | `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, or artist/label searches. Rejected on the default filtered path. |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (filtered searches only) |
 | `--release-type` | Filter by release type: `official` (default), `unofficial`, `all` |
+| `--sort` | `date_added` only, and only on `search release ...`: order by when releases were added to Discogs (ascending; add `--desc` for newest first). Undocumented by Discogs and only seen working on release searches, so any other search, or `--desc` without `--sort`, fails with `invalid_argument` before any request. If Discogs drops it, results most likely come back in relevance order with no error. The filtered (default) path keeps the server's order. |
 | `--style` | Filter by style |
 | `--year` | Filter by release year |
 
@@ -68,6 +70,7 @@ agent-discogs search release "The Downward Spiral" --release-type all --page 2 -
 agent-discogs search release "The Downward Spiral" --after 2:1.5   # cursor copied from the previous footer
 agent-discogs search release "Pretty Hate Machine" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
+agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc   # newest additions first
 ```
 
 Each row starts with a ref. A result of any other type than the four above starts with `id N [type]` instead (`[no type]` when Discogs sends none) and has no ref (`id` instead of `ref` under `--json`); the rest of the page is unaffected.

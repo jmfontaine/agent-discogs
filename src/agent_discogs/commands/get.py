@@ -33,6 +33,7 @@ from agent_discogs.pagination import (
     next_page_cmd,
     paging_error,
     parse_cursor,
+    sort_params,
 )
 from agent_discogs.projections import (
     drop_empty,
@@ -185,13 +186,6 @@ def _get_release(
     return format_release(release, verbose=verbose, compact=compact)
 
 
-def _sort_params(sort: str | None, desc: bool) -> dict[str, str]:
-    """Server-side ordering; `--desc` only means something with `--sort`."""
-    if not sort:
-        return {}
-    return {"sort": sort, "sort_order": "desc" if desc else "asc"}
-
-
 def _get_label_releases(
     client: Discogs,
     entity_id: int,
@@ -277,7 +271,7 @@ def _get_releases(
     artist_ref = make_ref("artist", entity_id)
 
     path = f"/artists/{entity_id}/releases"
-    params: dict[str, Any] = _sort_params(sort, desc)
+    params: dict[str, Any] = sort_params(sort, desc)
 
     # Flag validity is checked in _dispatch before any API call.
     if role:
@@ -376,7 +370,7 @@ def _get_versions(
         params["label"] = label
     if year:
         params["released"] = year  # the API calls the year filter `released`
-    params.update(_sort_params(sort, desc))
+    params.update(sort_params(sort, desc))
 
     result = fetch_page(
         client,

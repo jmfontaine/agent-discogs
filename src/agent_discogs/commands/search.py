@@ -18,6 +18,7 @@ from agent_discogs.pagination import (
     next_page_cmd,
     paging_error,
     parse_cursor,
+    sort_params,
 )
 from agent_discogs.projections import project_search_result
 
@@ -99,6 +100,9 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
 @click.option("--barcode", help="Filter by barcode")
 @click.option("--catno", help="Filter by catalog number")
 @click.option("--country", help="Filter by country")
+@click.option(
+    "--desc", is_flag=True, default=False, help="With --sort: descending order"
+)
 @click.option("--format", "format_", help="Filter by format")
 @click.option("--genre", help="Filter by genre")
 @click.option(
@@ -129,6 +133,11 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
     default="official",
     help="Filter by release type",
 )
+@click.option(
+    "--sort",
+    type=click.Choice(["date_added"]),
+    help="search release only: server-side order (undocumented by Discogs)",
+)
 @click.option("--style", help="Filter by style")
 @click.option("--year", help="Filter by year")
 def search(
@@ -140,12 +149,14 @@ def search(
     barcode: str | None,
     catno: str | None,
     country: str | None,
+    desc: bool,
     format_: str | None,
     genre: str | None,
     label: str | None,
     limit: int,
     page: int | None,
     release_type: str,
+    sort: str | None,
     style: str | None,
     year: str | None,
 ) -> None:
@@ -176,6 +187,20 @@ def search(
     bad_paging = paging_error(limit, page)
     if bad_paging:
         fail(ValueError(bad_paging), json_output=json_output)
+    if desc and not sort:
+        fail(ValueError("--desc needs --sort date_added."), json_output=json_output)
+    if sort and type_filter != "release":
+        fail(
+            ValueError(
+                "--sort works only on release searches: agent-discogs search "
+                "release ... --sort date_added. Discogs documents no sort for "
+                "search, and date order has only been seen on release results."
+            ),
+            json_output=json_output,
+        )
+    # Kept out of `params`, which doubles as the header filters and the
+    # footer's flags. A filtered scan keeps the server's order.
+    request = {**params, **sort_params(sort, desc)}
 
     # Release-type filtering only applies to release/master searches.
     # Artist and label results never have format metadata, so filtering
@@ -219,7 +244,7 @@ def search(
             result = fetch_filtered_page(
                 client,
                 "/database/search",
-                params,
+                request,
                 SearchResult,
                 "results",
                 limit=limit,
@@ -230,7 +255,7 @@ def search(
             result = fetch_page(
                 client,
                 "/database/search",
-                {**params, "page": page or 1, "per_page": limit},
+                {**request, "page": page or 1, "per_page": limit},
                 SearchResult,
                 "results",
             )
@@ -257,10 +282,15 @@ def search(
         positionals=args,  # as typed: re-parses to the same type and query
         **filters,
         release_type=release_type if release_type != "official" else None,
+        sort=sort,
+        desc=desc,
     )
 
     if release_type != "official" and type_filter in (None, "release", "master"):
         filters["release-type"] = release_type
+    if sort:
+        filters["sort"] = sort
+        filters["order"] = "desc" if desc else "asc"
     try:
         output = format_search_results(
             results=result.items,

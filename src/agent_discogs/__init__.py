@@ -83,7 +83,10 @@ Options:
                    (a suite counts as its parts, timed by their sum or else its
                    own duration; total omitted if any track lacks a duration)
   --sort KEY       Server-side order. get releases @a: year|title|format;
-                   get versions: released|title|format|label|catno|country
+                   get versions: released|title|format|label|catno|country;
+                   search release: date_added (undocumented by Discogs and only
+                   seen on release searches; if Discogs drops it, results most
+                   likely come back in relevance order with no error)
   --desc           With --sort: descending
   --year YEAR      get versions: filter by year (server-side); get releases @l:
                    filter by year (client-side scan, continues via --after)

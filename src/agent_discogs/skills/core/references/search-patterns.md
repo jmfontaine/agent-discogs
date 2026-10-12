@@ -27,6 +27,14 @@ agent-discogs search master "The Downward Spiral"
 agent-discogs get versions @m3719
 ```
 
+### Finding the newest additions
+```bash
+# Release searches only; newest-added first
+agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc
+```
+
+`date_added` is undocumented: Discogs lists no sort keys for search and has only been seen honoring it on release searches, so `--sort` on artist, label, master, or untyped searches is rejected before any request. If Discogs ever drops the parameter, results most likely come back in relevance order with no error, so check the dates before trusting the order.
+
 ## Filter Combinations
 
 Effective filter combinations for narrowing results:
