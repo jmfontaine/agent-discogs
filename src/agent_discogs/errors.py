@@ -6,7 +6,7 @@ import json
 import math
 import sys
 from dataclasses import asdict, dataclass
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 from urllib.parse import urlsplit
 
 import pydantic
@@ -23,7 +23,11 @@ from discogs_sdk import (
 )
 
 from agent_discogs import sanitize
+from agent_discogs.client import auth_mode
 from agent_discogs.json_output import dumps
+
+if TYPE_CHECKING:
+    from discogs_sdk import AuthMode, RateLimit
 
 
 @dataclass(frozen=True)
@@ -137,6 +141,66 @@ def _cache_error(exc: CacheError) -> ErrorInfo:
     )
 
 
+_SEE_STATUS = "agent-discogs status shows the credentials in use."
+
+# What a 401 says about each mode the SDK can authenticate with: the
+# credentials it sent, and what to check about them.
+_REJECTED: dict[AuthMode, tuple[str, str]] = {
+    "token": (
+        "DISCOGS_TOKEN",
+        "Check the token, or generate a new one at discogs.com/settings/developers.",
+    ),
+    "consumer": (
+        "the consumer key/secret (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET)",
+        (
+            "Check both at discogs.com/settings/developers. They identify an app, "
+            "not a user: price suggestions need DISCOGS_TOKEN or OAuth."
+        ),
+    ),
+    "oauth": (
+        (
+            "OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, "
+            "DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET)"
+        ),
+        "Check all four; the access token may have been revoked.",
+    ),
+}
+
+
+def _auth_failed() -> ErrorInfo:
+    """A 401, explained in terms of the credentials the client sent. The mode
+    comes from the same environment the client resolved, so it is the one
+    `status` reports."""
+    mode = auth_mode()
+    if mode == "none":
+        return ErrorInfo(
+            "auth_required",
+            "Authentication failed: no credentials are set.",
+            "Set token: export DISCOGS_TOKEN=<token> "
+            f"(discogs.com/settings/developers). {_SEE_STATUS}",
+            status=401,
+        )
+    sent, check = _REJECTED[mode]
+    return ErrorInfo(
+        "auth_required",
+        f"Authentication failed with {sent}.",
+        f"{check} {_SEE_STATUS}",
+        status=401,
+    )
+
+
+def _rate_budget(rl: RateLimit | None) -> str:
+    """The per-minute limit that applies. Unauthenticated, setting a token is
+    the fix; with credentials, it would change nothing, so the hint states
+    the limit Discogs reported (or the authenticated 60 when it sent none)."""
+    mode = auth_mode()
+    if mode == "none":
+        return "60 req/min with DISCOGS_TOKEN, 25 without."
+    if rl is None:
+        return f"Discogs allows 60 req/min for the credentials in use ({mode})."
+    return f"Discogs reported {rl.limit} req/min for the credentials in use ({mode})."
+
+
 def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
     """Map an exception to an ErrorInfo. `context` names the thing that
     failed, e.g. "Release @r847868", and is used in not-found messages."""
@@ -165,12 +229,7 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         )
 
     if isinstance(exc, AuthenticationError):
-        return ErrorInfo(
-            "auth_required",
-            "Authentication failed. Check your DISCOGS_TOKEN.",
-            "Set token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers)",
-            status=401,
-        )
+        return _auth_failed()
 
     if isinstance(exc, ForbiddenError):
         return ErrorInfo(
@@ -199,7 +258,7 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         return ErrorInfo(
             "rate_limited",
             message,
-            f"{wait} 60 req/min with DISCOGS_TOKEN, 25 without.",
+            f"{wait} {_rate_budget(rl)}",
             retry_after=retry_after,
             status=429,
             limit=None if rl is None else rl.limit,

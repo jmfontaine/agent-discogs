@@ -238,7 +238,7 @@ What commands cost (network requests; listing rows are per ref):
 
 A scan stops once the page is full, so a sparse filter costs the most.
 
-The CLI reports; it never retries, sleeps, or throttles on your behalf. Each request is sent once: a 429, a 5xx, or a connection failure is reported as that request's error without a retry, and retrying is the caller's call. With several refs, the failing ref gets its error block and the rest still run (exit 1). When Discogs answers 429, the error says how much of the minute is left (`Rate limited: 0/60 requests left this minute.`), and under `--json` the envelope carries `retry_after`, `limit`, and `remaining`.
+The CLI reports; it never retries, sleeps, or throttles on your behalf. Each request is sent once: a 429, a 5xx, or a connection failure is reported as that request's error without a retry, and retrying is the caller's call. With several refs, the failing ref gets its error block and the rest still run (exit 1). When Discogs answers 429, the error says how much of the minute is left (`Rate limited: 0/60 requests left this minute.`), and under `--json` the envelope carries `retry_after`, `limit`, and `remaining`. Without credentials, the hint adds `60 req/min with DISCOGS_TOKEN, 25 without.`; with any credentials it states the limit Discogs reported for them instead (`Discogs reported 60 req/min for the credentials in use (oauth).`), or the authenticated 60 req/min when the 429 carried no rate-limit headers.
 
 ## Debugging
 
@@ -261,8 +261,10 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
 
 ```
 ✗ Release 999999999 not found. Try: agent-discogs search "<title>"
-✗ Authentication failed. Check your DISCOGS_TOKEN.
-✗ Rate limited: 0/60 requests left this minute. Retry in 30s.
+✗ Authentication failed with DISCOGS_TOKEN.
+  Check the token, or generate a new one at discogs.com/settings/developers. agent-discogs status shows the credentials in use.
+✗ Rate limited: 0/60 requests left this minute.
+  Retry in 30s. Discogs reported 60 req/min for the credentials in use (token).
 ✗ Not cached: GET /marketplace/price_suggestions/352665 (only under --cached)
 ✗ Connection error: [Errno 61] Connection refused
   Check your network and retry.
@@ -270,6 +272,8 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
   Retrying will not help: check your proxy, protocol, or network configuration.
 ✗ Cache error at /home/me/.cache/agent-discogs/cache.db: could not vet the database file: PermissionError: … is not a regular file owned by the current user
 ```
+
+A 401 names the credentials that were sent, as `status` reports them: `DISCOGS_TOKEN`, the consumer key/secret, or OAuth (with the variables behind each), and says what to check. A consumer key and secret identify an app, not a user, so that hint also points at `DISCOGS_TOKEN` or OAuth for price suggestions. With no credentials set, the message reads `Authentication failed: no credentials are set.` and the hint says to export `DISCOGS_TOKEN`.
 
 An API error the CLI has no specific message for reads `API error (503): <summary>`: the status once, then what Discogs said, collapsed to one line and cut at 200 characters. Any other unexpected failure reads `Unexpected error: <exception class>: <message>`.
 

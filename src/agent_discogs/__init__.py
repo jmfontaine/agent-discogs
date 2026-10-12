@@ -132,13 +132,17 @@ Budget:
   remain in the moving 60s window: pause ~60s or stick to cached refs. Cache
   hits cost nothing ('api: 0 requests · cached'). Never inside --json output.
   A 429 names the wait Discogs asked for, rounded up: 'Retry in 2s.' (--json:
-  retry_after; 0 = retry now; omitted without a usable Retry-After).
+  retry_after; 0 = retry now; omitted without a usable Retry-After). With
+  credentials set, its hint states the limit Discogs reported for them (60/min
+  when it sent none); without any, it suggests DISCOGS_TOKEN for 60/min.
 
 Errors:
   With --json an error is {"error":{"code",...}} on stdout, exit 1; a malformed
   command line instead exits 2 with text on stderr.
   bad_response means Discogs sent something unreadable (not JSON, or the wrong
   shape). It is not your input: retry in a moment, with --fresh if it repeats.
+  auth_required names the credentials that were sent (DISCOGS_TOKEN, the
+  consumer key/secret, or OAuth), or says none are set, as 'status' reports.
 
 Price data also needs seller settings filled out on the Discogs account the
 token belongs to (discogs.com/settings/seller). Without them the API answers
