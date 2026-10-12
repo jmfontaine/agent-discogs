@@ -58,6 +58,12 @@ def _lookup(name: str) -> Traversable:
     return dirs[name]
 
 
+def _complete_name(
+    _ctx: click.Context, _param: click.Parameter, incomplete: str
+) -> list[str]:
+    return [name for name in _skill_dirs() if name.startswith(incomplete)]
+
+
 @click.group(invoke_without_command=True)
 @click.pass_context
 def skills(ctx: click.Context) -> None:
@@ -76,7 +82,7 @@ def list_skills() -> None:
 
 
 @skills.command("get")
-@click.argument("name")
+@click.argument("name", shell_complete=_complete_name)
 @click.option(
     "--full", is_flag=True, default=False, help="Append the skill's references/*.md"
 )
@@ -86,7 +92,7 @@ def get_skill(name: str, full: bool) -> None:
 
 
 @skills.command("path")
-@click.argument("name", required=False)
+@click.argument("name", required=False, shell_complete=_complete_name)
 def skill_path(name: str | None) -> None:
     """Print the directory holding bundled skills, or one skill."""
     print(_SKILLS_ROOT if name is None else _lookup(name))

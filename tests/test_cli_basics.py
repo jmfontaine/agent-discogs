@@ -42,6 +42,7 @@ class TestCLIBasics:
         assert "price <ref>" in result.stdout
         assert "cache clear" in result.stdout
         assert "status" in result.stdout
+        assert "completion bash|zsh|fish" in result.stdout
         # Aliases
         assert "aliases: find, query" in result.stdout
         assert "aliases: fetch, show" in result.stdout

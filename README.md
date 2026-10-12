@@ -83,6 +83,8 @@ Each command, its own flags and its text output are described in [Commands](http
 - `--debug`: [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md);
 - `--color`: [Color](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md#color); the default, `auto`, colors a terminal only, never a pipe.
 
+For Tab completion in an interactive bash, zsh or fish shell, add `eval "$(agent-discogs completion zsh)"` (or `bash`) to the shell's startup file; see [Shell completion](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md#shell-completion) for fish.
+
 ## Ref system
 
 Output includes typed refs that encode the entity type and Discogs ID. Copy them into subsequent commands.
@@ -100,7 +102,7 @@ Smart resolution: `get versions @r352665` auto-resolves the release to its maste
 
 ## Documentation
 
-- [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md): `search` (filters, sorting, client-side scans, `--added-since`), `get` and its nouns, `tracks` / `price`, `status`, `cache`, `skills`.
+- [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md): `search` (filters, sorting, client-side scans, `--added-since`), `get` and its nouns, `tracks` / `price`, `status`, `cache`, `skills`, shell completion.
 - [JSON output](https://github.com/jmfontaine/agent-discogs/blob/main/docs/json-output.md): projections, `--full`, the pagination envelope, non-ASCII and control-character escaping.
 - [Caching and request budget](https://github.com/jmfontaine/agent-discogs/blob/main/docs/caching-and-budget.md): `--cached` / `--fresh`, cache errors, rate limits, what each command costs, `--max-requests`.
 - [Errors](https://github.com/jmfontaine/agent-discogs/blob/main/docs/errors.md): the error layout, error codes, and the 401, 429 and connection-error hints.
