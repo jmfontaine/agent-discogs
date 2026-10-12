@@ -18,6 +18,20 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 
 **`bad_response` (exit 1):** Discogs answered with something the CLI cannot read: a non-JSON body (a gateway error page), a record that does not fit the SDK's models, or a malformed results page (`"results" is an object, expected an array`). The message names the problem (a validation failure names its first failing field, never the value), bounded to one line. It is never caused by your arguments, so do not change the command: retry in a moment. Such a response is not cached, so a plain retry asks Discogs again, with one exception: a price guide whose conditions are malformed is cached before they are read, so if the same error repeats, rerun with `--fresh`.
 
+**`auth_required` (401, exit 1):** the message names the credentials that were sent, in the mode `status` reports. The hint says what to check, then `agent-discogs status shows the credentials in use.` Relay it to the user, who fixes the credentials; retrying the same command will not help.
+
+| Mode | Message | Hint (before the `status` pointer) |
+|------|---------|------------------------------------|
+| `token` | `Authentication failed with DISCOGS_TOKEN.` | Check the token, or generate a new one at discogs.com/settings/developers. |
+| `consumer` | `Authentication failed with the consumer key/secret (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET).` | Check both at discogs.com/settings/developers. They identify an app, not a user: price suggestions need DISCOGS_TOKEN or OAuth. |
+| `oauth` | `Authentication failed with OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET).` | Check all four; the access token may have been revoked. |
+| `none` | `Authentication failed: no credentials are set.` | Set token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers). |
+
+**`rate_limited` (429, exit 1):** the message says what is left of the minute (`Rate limited: 0/60 requests left this minute.`; `Rate limit exceeded.` when Discogs sent no rate-limit headers), with `limit`/`remaining` in JSON when Discogs sends them. The hint starts with the wait (`Retry in 30s.`, `retry_after` in JSON; `Wait a moment and retry.` without a usable `Retry-After`), then the limit that applies:
+
+- With credentials, the limit Discogs reported for them, e.g. `Discogs reported 60 req/min for the credentials in use (oauth).`, or `Discogs allows 60 req/min for the credentials in use (oauth).` when the 429 carried no rate-limit headers. Setting `DISCOGS_TOKEN` is never suggested here: wait, or continue with `--cached`.
+- Without any credentials, `60 req/min with DISCOGS_TOKEN, 25 without.`
+
 
 ## search
 
