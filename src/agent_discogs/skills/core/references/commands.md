@@ -150,9 +150,9 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 
 | Flag | Description |
 |------|-------------|
-| `--role` | Filter by credit role (e.g., "Main", "Remix", "Producer"). Case-insensitive substring match, client-side. |
-| `--sort` | `year`, `title`, or `format` (server-side) |
-| `--desc` | With `--sort`: descending |
+| `--role` | Artist discographies (`releases @a...`) only: filter by credit role (e.g., "Main", "Remix", "Producer"). Case-insensitive substring match, client-side. |
+| `--sort` | Artist discographies (`releases @a...`) only: `year`, `title`, or `format` (server-side). Label catalogues have no sorting. |
+| `--desc` | With `--sort` (so `releases @a...` only): descending |
 | `--year` | Label catalogues only: keep releases from this year. Client-side scan (the API has no filters or sorting for `/labels/{id}/releases`), continues via `--after`. Artist discographies: use `--sort year` instead. |
 
 **Additional flags for `versions`:**
