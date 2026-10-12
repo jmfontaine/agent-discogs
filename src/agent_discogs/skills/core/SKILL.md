@@ -61,6 +61,8 @@ Check status: `agent-discogs status`
 - **get artist** — profile, `Members:` and `Former:` each with `[@a...]` refs. `Former:` lists only members Discogs marks inactive; a member with no recorded status is listed under `Members:` (JSON `members`/`former` match). **get label** — profile, `Parent:` and `Sub-labels:` with `[@l...]` refs.
 - **Dates** — unknown parts are left out in text and `--json`: Discogs' year `0` is omitted rather than printed, and a release date drops a zero month or day (`1994-05-00` → `1994-05`, `1994-00-00` → `1994`; the text view prints no `Released:` when that equals the header year).
 
+Text output is UTF-8 when the terminal or pipe is. On a stdout that is not (`PYTHONIOENCODING=ascii`, some Windows pipes), characters it cannot hold print as backslash escapes (`宇多田` → `\u5b87\u591a\u7530`) and the command still succeeds. A pasted `Next page:` command then carries the escapes too, so prefer UTF-8 for non-Latin queries.
+
 ## Common Patterns
 
 | Goal | Commands |

@@ -135,7 +135,9 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
             "Rerun without --cached to fetch it from the API.",
         )
 
-    if isinstance(exc, ValueError):
+    # UnicodeError is a ValueError too, but an encoding failure says nothing
+    # about the caller's arguments.
+    if isinstance(exc, ValueError) and not isinstance(exc, UnicodeError):
         return ErrorInfo("invalid_argument", str(exc))
 
     return ErrorInfo("unexpected", f"Unexpected error: {exc}")

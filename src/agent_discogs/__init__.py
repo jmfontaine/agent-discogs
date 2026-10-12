@@ -89,6 +89,8 @@ Environment:
   AGENT_DISCOGS_DEBUG  Same as --debug
   XDG_CACHE_HOME       Cache under $XDG_CACHE_HOME/agent-discogs when set to an
                        absolute path; otherwise ~/.cache/agent-discogs
+  PYTHONIOENCODING     Non-UTF-8 stdout (e.g. ascii) prints characters it
+                       cannot hold as backslash escapes (\\u5b87)
 
 Budget:
   After any command that talks to the API, stderr ends with a budget line, e.g.
@@ -149,6 +151,17 @@ class AliasGroup(click.Group):
         formatter: click.HelpFormatter,
     ) -> None:
         formatter.write(_HELP_TEXT)
+
+    def main(self, *args: Any, **kwargs: Any) -> Any:
+        # Text must print whatever the streams' encoding (PYTHONIOENCODING,
+        # a non-UTF-8 Windows pipe): a character the encoding cannot hold is
+        # written as a backslash escape (\u5b87) instead of failing the block.
+        # stdout defaults to errors="strict"; stderr already escapes.
+        for stream in (sys.stdout, sys.stderr):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure is not None:
+                reconfigure(errors="backslashreplace")
+        return super().main(*args, **kwargs)
 
     def invoke(self, ctx: click.Context) -> Any:
         try:

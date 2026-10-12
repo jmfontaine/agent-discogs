@@ -237,6 +237,10 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
 
 If the reader closes stdout early (`agent-discogs ... | head -1`), the CLI exits 1 without an error message. Under `set -o pipefail` that exit 1 is expected, not a failed lookup.
 
+## Output encoding
+
+Command output follows the encoding of stdout. When it is not UTF-8 (`PYTHONIOENCODING=ascii` or `latin-1`, some Windows pipes), a character the encoding cannot hold prints as a backslash escape (`宇多田` → `\u5b87\u591a\u7530`) and the command still succeeds; an encoding problem is never reported as an argument error. (click itself writes `--help` as UTF-8 when stdout is plain ASCII.)
+
 ## License
 
 agent-discogs is licensed under the [Apache License 2.0](LICENSE.txt).

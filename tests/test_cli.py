@@ -1998,6 +1998,54 @@ class TestUnknownSearchTypes:
         assert "✗ Unexpected error: bad row" in result.stderr
 
 
+class TestNonUtf8Stdout:
+    """An ASCII or Latin-1 stdout (`PYTHONIOENCODING`, older Windows consoles)
+    cannot hold every Discogs title; the text must still print."""
+
+    TITLE = "First Love · 宇多田ヒカル · Café"
+
+    @pytest.fixture(autouse=True)
+    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = {"id": 1, "title": self.TITLE}
+        page = {"page": 1, "pages": 1, "items": 1, "per_page": 50}
+        routes: dict[str, object] = {
+            "/releases/1": release,
+            "/releases/2": {**release, "id": 2},
+            "/database/search": {
+                "pagination": page,
+                "results": [{**release, "type": "release"}],
+            },
+        }
+        _mock_api(monkeypatch, "get", routes)
+        _mock_api(monkeypatch, "search", routes)
+
+    @pytest.mark.parametrize(
+        ("charset", "shown"),
+        [
+            ("ascii", "First Love \\xb7 \\u5b87\\u591a\\u7530"),
+            ("latin-1", "First Love · \\u5b87\\u591a\\u7530"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "argv", [["get", "release", "@r1"], ["search", "first love"]]
+    )
+    def test_text_prints_escaped(
+        self, charset: str, shown: str, argv: list[str]
+    ) -> None:
+        result = CliRunner(charset=charset).invoke(cli, argv)
+        assert result.exit_code == 0, result.output
+        assert shown in result.stdout
+
+    def test_every_block_of_a_multi_ref_run_prints(self) -> None:
+        result = CliRunner(charset="ascii").invoke(
+            cli, ["get", "release", "@r1", "@r2"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "@r1" in result.stdout
+        assert "@r2" in result.stdout
+        assert result.stdout.count("\\u5b87\\u591a\\u7530") == 2
+
+
 class TestJsonGet:
     @pytest.fixture(autouse=True)
     def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:

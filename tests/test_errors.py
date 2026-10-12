@@ -140,6 +140,14 @@ class TestFormatError:
         result = format_error(exc)
         assert result == "✗ bad input"
 
+    def test_encoding_error_is_not_an_invalid_argument(self) -> None:
+        """UnicodeError subclasses ValueError, but an output encoding failure
+        says nothing about the caller's arguments."""
+        exc = UnicodeEncodeError("ascii", "ヒ", 0, 1, "ordinal not in range(128)")
+        info = classify(exc)
+        assert info.code == "unexpected"
+        assert info.message.startswith("Unexpected error: 'ascii' codec")
+
     def test_fallback_exception(self) -> None:
         exc = RuntimeError("something broke")
         result = format_error(exc)
