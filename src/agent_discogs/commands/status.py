@@ -6,7 +6,7 @@ from importlib.metadata import version
 
 import click
 
-from agent_discogs.config import CACHE_DIR, has_token
+from agent_discogs.config import cache_dir, has_token
 from agent_discogs.formatting import format_status
 
 
@@ -16,7 +16,7 @@ def status() -> None:
     print(
         format_status(
             authenticated=has_token(),
-            cache_dir=CACHE_DIR,
+            cache_dir=cache_dir(),
             version=version("agent-discogs"),
         )
     )

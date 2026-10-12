@@ -72,6 +72,8 @@ Options:
 Environment:
   DISCOGS_TOKEN        Personal access token (60 req/min, required for price data)
   AGENT_DISCOGS_DEBUG  Same as --debug
+  XDG_CACHE_HOME       Cache under $XDG_CACHE_HOME/agent-discogs when set to an
+                       absolute path; otherwise ~/.cache/agent-discogs
 
 Budget:
   After any command that talks to the API, stderr ends with a budget line, e.g.

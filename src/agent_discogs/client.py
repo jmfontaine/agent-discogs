@@ -7,7 +7,7 @@ import os
 from discogs_sdk import Discogs
 
 from agent_discogs import trace
-from agent_discogs.config import CACHE_DIR, CACHE_TTL
+from agent_discogs.config import CACHE_TTL, cache_dir
 
 _client: Discogs | None = None
 
@@ -22,7 +22,7 @@ def get_client() -> Discogs:
     _client = Discogs(
         token=token,
         cache=True,
-        cache_dir=CACHE_DIR,
+        cache_dir=cache_dir(),
         cache_ttl=CACHE_TTL,
         on_request=trace.record,
     )

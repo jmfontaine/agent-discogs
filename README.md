@@ -167,7 +167,7 @@ Smart resolution: `get versions @r352665` auto-resolves the release to its maste
 
 ## Caching
 
-HTTP responses are cached automatically with a 1-hour TTL. The cache is stored at `~/.cache/agent-discogs/` (or `$XDG_CACHE_HOME/agent-discogs/`). Clear it with `agent-discogs cache clear`.
+HTTP responses are cached automatically with a 1-hour TTL. The cache is stored at `$XDG_CACHE_HOME/agent-discogs/` when `XDG_CACHE_HOME` is set to an absolute path, and at `~/.cache/agent-discogs/` otherwise. Clear it with `agent-discogs cache clear`.
 
 Two global flags control it for one command. They precede the subcommand and are mutually exclusive (exit code 2 otherwise):
 

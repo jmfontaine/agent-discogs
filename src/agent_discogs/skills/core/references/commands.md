@@ -163,7 +163,7 @@ agent-discogs status
 
 ## cache
 
-Manage the HTTP response cache.
+Manage the HTTP response cache. It lives at `$XDG_CACHE_HOME/agent-discogs` when `XDG_CACHE_HOME` is set to an absolute path, and at `~/.cache/agent-discogs` otherwise (an empty or relative value is ignored). `agent-discogs status` prints the path in use.
 
 ```bash
 agent-discogs cache clear

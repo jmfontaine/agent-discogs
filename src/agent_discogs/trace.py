@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-from agent_discogs.config import CACHE_DIR, CACHE_TTL, MAX_API_CALLS, has_token
+from agent_discogs.config import CACHE_TTL, MAX_API_CALLS, cache_dir, has_token
 
 if TYPE_CHECKING:
     import click
@@ -212,7 +212,7 @@ def finish() -> None:
         print(footer, file=sys.stderr)
     if _trace.debug:
         elapsed_ms = (time.perf_counter() - _trace.started) * 1000
-        panel = render_panel(_trace, cache_dir=CACHE_DIR, elapsed_ms=elapsed_ms)
+        panel = render_panel(_trace, cache_dir=cache_dir(), elapsed_ms=elapsed_ms)
         print(panel, file=sys.stderr)
     if _trace.log_handler is not None:
         logger = logging.getLogger(_SDK_LOGGER)
