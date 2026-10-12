@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from types import SimpleNamespace
 from typing import Any
 
@@ -220,7 +220,7 @@ class TestFetchFilteredPage:
 @contextlib.contextmanager
 def _search_client(
     respond: Callable[[httpx2.Request], httpx2.Response], sends: list[str]
-) -> Iterator[Discogs]:
+) -> Generator[Discogs]:
     """A real client whose every request gets `respond`'s answer, with an
     in-memory cache; `sends` records each request that reached the network."""
 
