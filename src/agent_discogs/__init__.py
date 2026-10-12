@@ -139,7 +139,8 @@ Get flags by noun (any other get flag fails with invalid_argument):
   one ref.
 
 Environment:
-  DISCOGS_TOKEN        Personal access token (60 req/min, required for price data)
+  DISCOGS_TOKEN        Personal access token (60 req/min; price data needs it
+                       or OAuth)
   DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET
                        Used when DISCOGS_TOKEN is unset: an app key/secret (60
                        req/min, not a user, no price data), or OAuth 1.0a with
@@ -185,8 +186,8 @@ Errors:
   consumer key/secret, or OAuth), or says none are set, as 'status' reports.
 
 Price data also needs seller settings filled out on the Discogs account the
-token belongs to (discogs.com/settings/seller). Without them the API answers
-404 and only 'price' is affected.
+token or OAuth credentials belong to (discogs.com/settings/seller). Without
+them the API answers 404 and only 'price' is affected.
 
 get artist groups members as Members: and Former: (JSON members/former).
 Only members Discogs marks inactive are Former; a member with no recorded

@@ -49,7 +49,7 @@ export DISCOGS_TOKEN="your-token-here"
 
 Credentials are required for price lookups, and Discogs' API documentation requires them for search too: unauthenticated searches currently get answers, but Discogs may refuse one with `auth_required`. Without any credentials the limit is 25 requests/minute; with a token, every command works at 60 requests/minute.
 
-`price` needs one thing more than a token: Discogs only returns price suggestions to accounts that have filled out their [seller settings](https://www.discogs.com/settings/seller). Until you do, the endpoint answers 404 and `price` tells you so; every other command is unaffected.
+`price` needs one thing more than a token or OAuth credentials: Discogs only returns price suggestions to accounts that have filled out their [seller settings](https://www.discogs.com/settings/seller). Until you do, the endpoint answers 404 and `price` tells you so; every other command is unaffected.
 
 The CLI sends whichever credentials discogs-sdk finds in the environment, in this order: `DISCOGS_TOKEN`; OAuth 1.0a (`DISCOGS_CONSUMER_KEY`, `DISCOGS_CONSUMER_SECRET`, `DISCOGS_ACCESS_TOKEN` and `DISCOGS_ACCESS_TOKEN_SECRET`, all four); a consumer key and secret alone (`DISCOGS_CONSUMER_KEY` and `DISCOGS_CONSUMER_SECRET`); otherwise none. A consumer key and secret get 60 requests/minute but identify an app, not a user, so `price` needs a token or OAuth. `agent-discogs status` reports the mode in use.
 

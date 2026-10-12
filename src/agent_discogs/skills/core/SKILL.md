@@ -18,9 +18,10 @@ export DISCOGS_TOKEN=<your-token>  # discogs.com/settings/developers
 
 Without any credentials: 25 req/min and no price suggestions. Discogs documents search as needing credentials too: unauthenticated searches currently get answers, but Discogs may refuse one with `auth_required`.
 
-`price` additionally requires that the token's account has filled out its
-seller settings (discogs.com/settings/seller) — Discogs returns 404 for price
-suggestions otherwise. A token alone covers every other command.
+`price` additionally requires that the account behind the token (or OAuth
+credentials) has filled out its seller settings (discogs.com/settings/seller) —
+Discogs returns 404 for price suggestions otherwise. A token alone covers every
+other command.
 
 Check status: `agent-discogs status`. Its `Auth:` line names the credentials requests carry: `token` or `oauth` (authenticated), `consumer` (a `DISCOGS_CONSUMER_KEY`/`DISCOGS_CONSUMER_SECRET` app key: 60 req/min, but not a user, so no price suggestions), or `none` (25 req/min). `DISCOGS_TOKEN` wins when several are set. It sends no request.
 
