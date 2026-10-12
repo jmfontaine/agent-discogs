@@ -46,17 +46,17 @@ jobs:
             exit 1
           fi
       - name: Check pyproject.toml
-        run: uv run pyproject-fmt --check pyproject.toml
+        run: uv run --locked pyproject-fmt --check pyproject.toml
       - name: Check formatting
-        run: uv run ruff format --check
+        run: uv run --locked ruff format --check
       - name: Lint
-        run: uv run ruff check
+        run: uv run --locked ruff check
       - name: Check types
-        run: uv run ty check
+        run: uv run --locked ty check
       - name: Check unused dependencies
-        run: uv run deptry src
+        run: uv run --locked deptry src
       - name: Verify type completeness
-        run: uv run pyright --ignoreexternal --verifytypes agent_discogs
+        run: uv run --locked pyright --ignoreexternal --verifytypes agent_discogs
 
   test:
     name: Test (Python ${{ matrix.python-version }})
@@ -76,7 +76,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-extras --all-groups
       - name: Run tests
-        run: uv run pytest --cov --cov-report=term-missing
+        run: uv run --locked pytest --cov --cov-report=term-missing
 
   build:
     name: Build
