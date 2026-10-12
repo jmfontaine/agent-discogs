@@ -1,10 +1,11 @@
 """Tests for printing what Discogs sends: unknown search types, non-UTF-8
-stdout, JSON encoding, and control characters."""
+stdout, JSON encoding, control characters, and color."""
 
 from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 from typing import Any
 
@@ -15,8 +16,9 @@ from discogs_sdk import (
     Discogs,
 )
 
-from agent_discogs import cli
+from agent_discogs import cli, style
 from agent_discogs.json_output import dumps
+from tests.conftest import _FakeAPI
 
 
 def _mock_api(
@@ -388,3 +390,146 @@ class TestControlCharacters:
             "✗ Price data requires seller settings. Discogs said: You must fill"
         )
         assert len(message) < 300
+
+
+_SGR = re.compile(r"\x1b\[[0-9;]*m")
+_PAINTED = re.compile(r"\x1b\[[0-9;]*m(.*?)\x1b\[0m")
+
+
+class TestColor:
+    """`--color always` paints CLI framing only, after neutralizing, so a
+    Discogs value can neither carry an escape code nor be painted like
+    framing. A pipe (CliRunner) gets no color unless asked."""
+
+    TITLE = "Evil\x1b[31mRed\u202eRTL @r999 Tracklist:"
+    NOTES = "Mixed \x1b[2J here\nNext page: x\u202e"
+    # Every value Discogs sends below, as the text view escapes it: none may
+    # sit inside a painted span.
+    DATA = ("Evil", "@r999", "Mixed", "Next page: x", "A\\x1b", "Imprint", "Song")
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = {
+            "id": 1,
+            "title": self.TITLE,
+            "notes": self.NOTES,
+            "year": 1994,
+            "master_id": 3,
+            "artists": [{"id": 5, "name": "A\x1b[1mB"}],
+            "labels": [{"id": 7, "name": "Imprint\u202e", "catno": "C1"}],
+            "extraartists": [{"id": 5, "name": "A\x1b[1mB", "role": "Producer"}],
+            "tracklist": [{"position": "1", "title": "Song", "duration": "1:00"}],
+        }
+        search = {
+            "pagination": {"page": 1, "pages": 2, "items": 60, "per_page": 50},
+            "results": [{"id": 1, "type": "master", "title": self.TITLE}],
+        }
+        # Nine requests left: low enough for the footer's warning.
+        low = {
+            "X-Discogs-Ratelimit": "60",
+            "X-Discogs-Ratelimit-Used": "51",
+            "X-Discogs-Ratelimit-Remaining": "9",
+        }
+
+        def respond(path: str, _params: dict[str, str]) -> httpx2.Response:
+            body = {"/releases/1": release, "/database/search": search}.get(path)
+            if body is None:
+                return httpx2.Response(404, json={"message": "Nope."}, headers=low)
+            return httpx2.Response(200, json=body, headers=low)
+
+        _FakeAPI(monkeypatch, respond)
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["get", "release", "-v", "@r1"],
+            ["tracks", "@r1"],
+            ["search", "master", "evil"],
+            ["get", "release", "@r1", "@r404"],
+            ["get", "release", "@r404"],
+        ],
+    )
+    def test_always_paints_framing_only(self, argv: list[str]) -> None:
+        # --fresh: both runs send, so both print the same footer.
+        painted = CliRunner().invoke(cli, ["--fresh", "--color", "always", *argv])
+        plain = CliRunner().invoke(cli, ["--fresh", "--color", "never", *argv])
+        assert painted.exit_code == plain.exit_code
+        for colored, uncolored in (
+            (painted.stdout, plain.stdout),
+            (painted.stderr, plain.stderr),
+        ):
+            # Color only adds escape codes, and is the only raw ESC printed.
+            assert _SGR.sub("", colored) == uncolored
+            assert "\x1b" not in uncolored
+        spans = _PAINTED.findall(painted.stdout + painted.stderr)
+        for text in spans:
+            assert not any(value in text for value in self.DATA), text
+        assert "⚠ pause ~60s before uncached calls" in spans
+        if painted.stdout:
+            assert any(text.startswith("@") for text in spans)
+        if "@r404" in argv:
+            assert "✗" in spans
+
+    def test_data_escapes_stay_visible(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["--color", "always", "get", "release", "-v", "@r1"]
+        )
+        stdout = _SGR.sub("", result.stdout)
+        assert '"Evil\\x1b[31mRed\\u202eRTL @r999 Tracklist:"' in stdout
+        assert "Notes: Mixed \\x1b[2J here" in stdout.splitlines()
+        assert "  Next page: x\\u202e" in stdout.splitlines()
+
+    @pytest.mark.parametrize("flag", [[], ["--color", "auto"], ["--color", "never"]])
+    def test_a_pipe_gets_no_color(self, flag: list[str]) -> None:
+        result = CliRunner().invoke(cli, [*flag, "get", "release", "@r1", "@r404"])
+        assert result.exit_code == 1
+        assert "\x1b" not in result.stdout
+        assert "\x1b" not in result.stderr
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["get", "release", "--json", "@r1"],
+            ["get", "release", "--json", "@r404"],
+            ["get", "release", "--json", "@r1", "@r404"],
+            ["search", "--json", "evil"],
+            ["cache", "clear", "--json"],
+            ["--debug", "tracks", "--json", "@r1"],
+            ["--help"],
+            ["skills"],
+            ["skills", "get", "core"],
+        ],
+    )
+    def test_json_help_and_skills_are_never_painted(self, argv: list[str]) -> None:
+        result = CliRunner().invoke(cli, ["--color", "always", *argv])
+        # A --json run leaves its budget footer and --debug panel plain too.
+        assert "\x1b" not in result.stdout
+        assert "\x1b" not in result.stderr
+
+    @pytest.mark.parametrize("colored", ["stdout", "stderr"])
+    def test_each_stream_is_decided_on_its_own(
+        self, monkeypatch: pytest.MonkeyPatch, colored: str
+    ) -> None:
+        monkeypatch.setattr(
+            style, "enabled", lambda stream: stream is getattr(sys, colored)
+        )
+        # stdout: the text views and a failing ref's block. stderr: the
+        # footer, the --debug panel and a single ref's error.
+        several = CliRunner().invoke(cli, ["--debug", "get", "release", "@r1", "@r404"])
+        single = CliRunner().invoke(cli, ["--fresh", "get", "release", "@r404"])
+        on_stdout = colored == "stdout"
+        assert ("\x1b" in several.stdout.splitlines()[0]) == on_stdout  # @r1's view
+        assert ("✗\x1b" in several.stdout) == on_stdout
+        assert ("\x1b" in several.stderr) != on_stdout
+        assert ("✗\x1b" in single.stderr) != on_stdout
+        assert single.stdout == ""
+
+    def test_debug_panel(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["--color", "always", "--debug", "tracks", "@r1"]
+        )
+        assert result.exit_code == 0
+        assert "\x1b" not in _SGR.sub("", result.stderr)
+        spans = _PAINTED.findall(result.stderr)
+        assert any(text.startswith("── debug ") for text in spans)
+        assert any(text.endswith("ms") for text in spans)

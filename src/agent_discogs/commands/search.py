@@ -26,6 +26,7 @@ from agent_discogs.pagination import (
     sort_params,
 )
 from agent_discogs.projections import project_added_release, project_search_result
+from agent_discogs.style import off_for_json
 
 if TYPE_CHECKING:
     from datetime import date, datetime
@@ -232,6 +233,7 @@ def _search_added_since(
     "json_output",
     is_flag=True,
     default=False,
+    callback=off_for_json,
     help="Output JSON (a compact projection of what the text view shows)",
 )
 @click.option(

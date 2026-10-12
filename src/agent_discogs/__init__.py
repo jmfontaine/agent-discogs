@@ -7,7 +7,7 @@ from typing import Any
 
 import click
 
-from agent_discogs import client, trace
+from agent_discogs import client, style, trace
 from agent_discogs.commands.cache import cache
 from agent_discogs.commands.get import get, price, tracks
 from agent_discogs.commands.search import search
@@ -68,6 +68,9 @@ Text output:
   Discogs text never prints raw: line breaks and tabs in a field become spaces,
   other control and bidi characters print as escapes (\\x1b, \\u202e). Notes
   keep their line breaks, indented under 'Notes:'. --json keeps values exact.
+  Color marks only the CLI's own framing (refs, labels, the error mark, the
+  budget warning, dimmed counts and prefixes), never Discogs text; by default
+  a pipe gets none (--color).
 
 Options:
   --cached         Serve only from the cache; a miss fails (cache_miss), spends
@@ -79,6 +82,12 @@ Options:
                    stderr, plus the SDK's own log lines. Never changes stdout
                    or the exit code; an unresolvable cache location shows as
                    'unknown (no home directory)'
+  --color WHEN     auto (default): color stdout and stderr each only when it
+                   is a terminal, NO_COLOR is unset or empty, and TERM is not
+                   dumb; always; never. Agents whose harness runs commands in
+                   a pseudo-terminal: set NO_COLOR=1 or pass --color never.
+                   A --json command is never colored, stderr included; nor
+                   are --help and skills
   --json           JSON output: a compact projection of the text view (search,
                    get, tracks, price); cache clear prints {"cleared":true}.
                    Non-ASCII is literal on a UTF-8 stdout, \\uXXXX escapes
@@ -147,6 +156,7 @@ Environment:
                        DISCOGS_ACCESS_TOKEN and DISCOGS_ACCESS_TOKEN_SECRET.
                        'status' shows the mode in use
   AGENT_DISCOGS_DEBUG  Same as --debug
+  NO_COLOR             Non-empty: no color under --color auto (no-color.org)
   XDG_CACHE_HOME       Cache under $XDG_CACHE_HOME/agent-discogs when set to an
                        absolute path; otherwise ~/.cache/agent-discogs
   PYTHONIOENCODING     Non-UTF-8 stdout (e.g. ascii) prints characters it
@@ -278,7 +288,7 @@ class AliasGroup(click.Group):
         # Last-resort boundary: any escaped exception becomes agent-readable text
         # instead of a traceback.
         except Exception as e:  # noqa: BLE001
-            print(format_error(e), file=sys.stderr)
+            print(format_error(e, color=style.enabled(sys.stderr)), file=sys.stderr)
             sys.exit(1)
 
 
@@ -292,9 +302,18 @@ class AliasGroup(click.Group):
 )
 @click.option("--cached", is_flag=True, help="Serve only from cache; fail on a miss.")
 @click.option("--fresh", is_flag=True, help="Bypass the cache for this command.")
+@click.option(
+    "--color",
+    type=click.Choice(style.MODES),
+    default="auto",
+    help="Color text for a person at a terminal: auto, always, never.",
+)
 @click.pass_context
-def cli(ctx: click.Context, debug: bool, cached: bool, fresh: bool) -> None:
+def cli(
+    ctx: click.Context, debug: bool, cached: bool, fresh: bool, color: style.Mode
+) -> None:
     """Token-efficient Discogs CLI for AI agents."""
+    style.configure(ctx, color)
     if cached and fresh:
         msg = "--cached and --fresh are mutually exclusive."
         raise click.UsageError(msg)

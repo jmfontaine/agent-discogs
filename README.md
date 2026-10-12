@@ -76,11 +76,12 @@ agent-discogs cache clear
 agent-discogs skills get core
 ```
 
-Each command, its own flags and its text output are described in [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md). The global flags (`--cached`, `--fresh`, `--debug`), the output modes (`--json`, `--full`) and the `--max-requests` cap have their own pages:
+Each command, its own flags and its text output are described in [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md). The global flags (`--cached`, `--fresh`, `--debug`, `--color`), the output modes (`--json`, `--full`) and the `--max-requests` cap have their own pages:
 
 - `--json` and `--full`: [JSON output](https://github.com/jmfontaine/agent-discogs/blob/main/docs/json-output.md);
 - `--cached`, `--fresh` and `--max-requests`: [Caching and request budget](https://github.com/jmfontaine/agent-discogs/blob/main/docs/caching-and-budget.md);
-- `--debug`: [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md).
+- `--debug`: [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md);
+- `--color`: [Color](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md#color); the default, `auto`, colors a terminal only, never a pipe.
 
 ## Ref system
 
@@ -103,7 +104,7 @@ Smart resolution: `get versions @r352665` auto-resolves the release to its maste
 - [JSON output](https://github.com/jmfontaine/agent-discogs/blob/main/docs/json-output.md): projections, `--full`, the pagination envelope, non-ASCII and control-character escaping.
 - [Caching and request budget](https://github.com/jmfontaine/agent-discogs/blob/main/docs/caching-and-budget.md): `--cached` / `--fresh`, cache errors, rate limits, what each command costs, `--max-requests`.
 - [Errors](https://github.com/jmfontaine/agent-discogs/blob/main/docs/errors.md): the error layout, error codes, and the 401, 429 and connection-error hints.
-- [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md): the `--debug` panel, output encoding, and how Discogs text is neutralized.
+- [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md): the `--debug` panel, output encoding, how Discogs text is neutralized, and `--color`.
 
 ## License
 

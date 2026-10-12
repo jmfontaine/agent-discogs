@@ -28,3 +28,21 @@ Command output follows the encoding of stdout. When it is not UTF-8 (`PYTHONIOEN
 Discogs text is user-generated, so the text views never print it raw. A line break or tab inside a field becomes a space; any other control or bidi character prints as a visible escape (`\x1b`, `\u202e`), so a title cannot clear the screen, reorder the line, or start a line that looks like `Next page:` or `✗`.
 
 Release notes (`get release -v`) keep their line breaks, with every continuation line indented under `Notes:`. Error messages on stderr get the same treatment. `--json` output keeps every value exact (see [JSON output](json-output.md)).
+
+## Color
+
+Text output is colored for a person at a terminal and never for an agent reading it through a pipe, where an escape sequence would only cost tokens. The global `--color` flag precedes the command:
+
+```bash
+agent-discogs --color never get release @r847868
+```
+
+- `auto` (the default) colors stdout and stderr separately, each only when all of these hold: it is a terminal, `NO_COLOR` is unset or empty ([no-color.org](https://no-color.org)), and `TERM` is not `dumb`. Piped output is never colored, so it is byte-identical to output without color.
+- `always` colors both streams even when piped, whatever `NO_COLOR` and `TERM` say.
+- `never` turns color off.
+
+Some agent harnesses run commands in a pseudo-terminal, which `auto` cannot tell from a person's terminal: set `NO_COLOR=1` there, or pass `--color never`. The same applies to a Windows console that does not interpret escape sequences (the legacy console host shows them as `←[36m`).
+
+Only the CLI's own framing is colored, never a Discogs value: refs (`@r847868`) in cyan, section labels (`Tracklist:`, `Members:`, `Format:`) in bold, the `✗` of an error in red, the `⚠` budget warning in yellow, and secondary detail dimmed (page counts, the `Next page:` / `Continue scan:` prefix, the budget line, `--debug` timings). Color is applied after Discogs text is neutralized, so a title can neither carry a color code (it still prints as `\x1b`) nor be colored as framing: a ref or label inside a title stays plain.
+
+A `--json` command is never colored, on either stream: its stdout, the JSON error envelope, and the budget line and `--debug` panel on stderr stay plain even with `--color always`. `--help` and `skills` are never colored either.
