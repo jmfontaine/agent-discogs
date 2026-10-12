@@ -214,7 +214,7 @@ api: 0 requests · cached
 api: 4 requests · 6/60 left this minute ⚠ pause ~60s before uncached calls
 ```
 
-The count is what this command spent; `43/60` is what Discogs reported after the last request. `⚠` appears when 10 or fewer requests remain: pause about a minute, or keep to refs that are already cached (`--cached` guarantees zero spend). Without a token the warning suggests setting `DISCOGS_TOKEN` instead. The line is on stderr and never inside `--json` output; commands that make no request (`status`, `skills`, `cache clear`) print nothing.
+The count is what this command spent: every HTTP request sent, including one whose connection failed; a `--cached` miss sends nothing. `43/60` is what Discogs reported after the last request. `⚠` appears when 10 or fewer requests remain: pause about a minute, or keep to refs that are already cached (`--cached` guarantees zero spend). Without a token the warning suggests setting `DISCOGS_TOKEN` instead. The line is on stderr and never inside `--json` output; commands that make no request (`status`, `skills`, `cache clear`) print nothing.
 
 What commands cost (network requests; listing rows are per ref):
 
@@ -231,11 +231,11 @@ What commands cost (network requests; listing rows are per ref):
 
 A scan stops once the page is full, so a sparse filter costs the most.
 
-The CLI reports; it never sleeps or throttles on your behalf. When Discogs answers 429, the error says how much of the minute is left (`Rate limited: 0/60 requests left this minute.`), and under `--json` the envelope carries `retry_after`, `limit`, and `remaining`.
+The CLI reports; it never retries, sleeps, or throttles on your behalf. Each request is sent once: a 429, a 5xx, or a connection failure is reported as that request's error without a retry, and retrying is the caller's call. With several refs, the failing ref gets its error block and the rest still run (exit 1). When Discogs answers 429, the error says how much of the minute is left (`Rate limited: 0/60 requests left this minute.`), and under `--json` the envelope carries `retry_after`, `limit`, and `remaining`.
 
 ## Debugging
 
-`--debug` (or `AGENT_DISCOGS_DEBUG=1`) prints a trace panel to stderr after the budget line: one row per request with status and timing (`cache` for cache hits, `×N attempts` when the SDK retried), scan statistics for client-side filters, cache size, and output size with a rough token estimate. The SDK's own log lines (`[sdk] HTTP request ...`, `[sdk] Retrying ... waiting 30s`) stream to stderr in real time, which is the only way to see a rate-limit retry while it is happening. stdout is byte-identical with and without the flag, and so is the exit code: when the cache location cannot be resolved (no home directory and no absolute `XDG_CACHE_HOME`), the cache row reads `unknown (no home directory)` and the panel still prints.
+`--debug` (or `AGENT_DISCOGS_DEBUG=1`) prints a trace panel to stderr after the budget line: one row per response with status and timing (`cache` for cache hits; a `--cached` miss or a failed connection has no response and no row), scan statistics for client-side filters, cache size, and output size with a rough token estimate. The SDK's own log lines (`[sdk] HTTP request ...`, `[sdk] Cache hit ...`) stream to stderr in real time. stdout is byte-identical with and without the flag, and so is the exit code: when the cache location cannot be resolved (no home directory and no absolute `XDG_CACHE_HOME`), the cache row reads `unknown (no home directory)` and the panel still prints.
 
 ```
 api: 2 requests · 58/60 left this minute

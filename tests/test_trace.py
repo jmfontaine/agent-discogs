@@ -21,10 +21,10 @@ from agent_discogs.trace import (
 
 def _event(
     *,
-    source: Literal["network", "cache"] = "network",
+    source: Literal["network", "cache", "miss"] = "network",
     ratelimit: RateLimit | None = None,
     url: str = "https://api.discogs.com/releases/847868",
-    status_code: int = 200,
+    status_code: int | None = 200,
     elapsed_ms: float = 12.0,
     attempts: int = 1,
 ) -> RequestEvent:
@@ -48,11 +48,16 @@ class TestRenderFooter:
         events = [_event(source="cache"), _event(source="cache")]
         assert render_footer(events, authenticated=True) == "api: 0 requests · cached"
 
-    def test_cache_miss_without_events_reports_zero_spend(self) -> None:
-        # A `--cached` miss on the first lookup leaves no recorded event.
+    def test_cache_miss_reports_zero_spend(self) -> None:
+        miss = _event(source="miss", status_code=None, attempts=0, elapsed_ms=0.0)
+        assert render_footer([miss], authenticated=True) == "api: 0 requests · cached"
+
+    def test_transport_failure_counts_as_a_send(self) -> None:
+        failed = _event(status_code=None)
+        ok = _event(ratelimit=RateLimit(60, 2, 58))
         assert (
-            render_footer([], authenticated=True, cache_misses=1)
-            == "api: 0 requests · cached"
+            render_footer([ok, failed], authenticated=True)
+            == "api: 2 requests · 58/60 left this minute"
         )
 
     def test_singular_and_plural(self) -> None:
@@ -137,7 +142,17 @@ class TestRenderPanel:
                     url="https://api.discogs.com/masters/3719/versions",
                     status_code=503,
                     elapsed_ms=8.0,
-                    attempts=2,
+                ),
+                # No response, so no row, and their paths do not widen the rest.
+                _event(
+                    url="https://api.discogs.com/artists/3857/releases?sort=year&page=2",
+                    status_code=None,
+                ),
+                _event(
+                    url="https://api.discogs.com/labels/647/releases?per_page=100&page=2",
+                    source="miss",
+                    status_code=None,
+                    attempts=0,
                 ),
             ],
             scans=[ScanNote(2, 30, 5, capped=False), ScanNote(5, 75, 1, capped=True)],
@@ -149,7 +164,7 @@ class TestRenderPanel:
             "total     413ms",
             "GET /database/search?q=nin&type=artist   200   190ms",
             "GET /masters/3719                        200   cache",
-            "GET /masters/3719/versions               503   8ms  ×2 attempts",  # noqa: RUF001
+            "GET /masters/3719/versions               503   8ms",
             "scan      2 API calls, 30 rows fetched, 5 kept, not capped",
             "scan      5 API calls, 75 rows fetched, 1 kept, capped at 5 API calls",
             "cache     ~/.cache/agent-discogs  3.0 KB  ttl 1h",

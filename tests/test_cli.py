@@ -3267,32 +3267,6 @@ class TestCacheFlags:
         assert items[1]["error"]["code"] == "cache_miss"
         assert items[1]["error"]["message"] == "Not cached: GET /releases/1"
 
-    def test_first_request_miss_still_reports_zero_spend(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """`trace.record()` keeps no event for a `CacheMissError`, so a run whose
-        very first lookup misses has an empty trace; the footer must still say so."""
-
-        def _miss(release_id: int) -> object:
-            raise CacheMissError(
-                "GET", f"https://api.discogs.com/releases/{release_id}?curr_abbr=USD"
-            )
-
-        monkeypatch.setattr(self.scoped.releases, "get", _miss)
-        result = CliRunner().invoke(cli, ["--cached", "price", "@r847868"])
-        assert result.exit_code == 1
-        assert result.stdout == ""
-        assert result.stderr == (
-            "✗ Not cached: GET /releases/847868?curr_abbr=USD\n"
-            "  Rerun without --cached to fetch it from the API.\n"
-            "api: 0 requests · cached\n"
-        )
-
-        result = CliRunner().invoke(cli, ["--cached", "price", "--json", "@r847868"])
-        assert result.exit_code == 1
-        assert json.loads(result.stdout)["error"]["code"] == "cache_miss"
-        assert result.stderr == "api: 0 requests · cached\n"
-
 
 def _suite_release() -> Release:
     """The #29 probe as a real SDK model: index track "Suite" with two parts."""
@@ -3929,7 +3903,8 @@ class TestRealSdk:
 
         http = httpx2.Client(transport=httpx2.MockTransport(_transport))
         monkeypatch.setenv("DISCOGS_TOKEN", "test-token")
-        monkeypatch.setattr("time.sleep", lambda _seconds: None)  # SDK retries
+        self.sleeps: list[float] = []
+        monkeypatch.setattr("time.sleep", self.sleeps.append)
         monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
         self.cache_home = tmp_path
         monkeypatch.setattr(client_module, "_client", None)
@@ -3943,6 +3918,7 @@ class TestRealSdk:
             if client._cache is not None:  # injected, so close() left it open
                 client._cache.close()
         http.close()
+        assert self.sleeps == []  # the CLI never sleeps on the caller's behalf
 
     def test_repeat_lookup_is_served_from_cache(self) -> None:
         first = CliRunner().invoke(cli, ["tracks", "@r1"])
@@ -3982,18 +3958,48 @@ class TestRealSdk:
         assert result.stderr == "api: 0 requests · cached\n"
         assert self.sends == []
 
-    def test_connection_failure_reports_no_request(self) -> None:
+    def _respond_in_turn(self, *responses: httpx2.Response) -> None:
+        replies = iter(responses)
+        self.respond = lambda _request: next(replies)
+
+    def test_server_error_is_sent_once(self) -> None:
+        self._respond_in_turn(
+            httpx2.Response(503, text="unavailable"),
+            httpx2.Response(200, json=_RELEASE_WITH_HEADINGS),
+        )
+        result = CliRunner().invoke(cli, ["tracks", "--json", "@r1"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "api_error"
+        assert result.stderr == "api: 1 request\n"
+        assert self.sends == ["/releases/1"]
+        assert self.sleeps == []
+
+    def test_rate_limit_is_reported_without_sleeping(self) -> None:
+        self._respond_in_turn(
+            httpx2.Response(429, json={}, headers={"Retry-After": "60"}),
+            httpx2.Response(200, json=_RELEASE_WITH_HEADINGS),
+        )
+        result = CliRunner().invoke(cli, ["tracks", "--json", "@r1"])
+        assert result.exit_code == 1
+        error = json.loads(result.stdout)["error"]
+        assert (error["code"], error["retry_after"]) == ("rate_limited", 60)
+        assert self.sends == ["/releases/1"]
+        assert self.sleeps == []
+
+    def test_connection_failure_is_one_counted_send(self) -> None:
         def _refuse(request: httpx2.Request) -> httpx2.Response:
             raise httpx2.ConnectError("Connection refused", request=request)
 
         self.respond = _refuse
-        result = CliRunner().invoke(cli, ["--debug", "tracks", "@r1"])
+        result = CliRunner().invoke(cli, ["tracks", "@r1"])
         assert result.exit_code == 1
-        lines = result.stderr.splitlines()
-        assert "✗ Connection error." in lines
-        assert not [line for line in lines if line.startswith(("api:", "GET "))]
-        assert len(self.sends) > 1  # the SDK retried; no attempt was counted
-        assert set(self.sends) == {"/releases/1"}
+        assert result.stderr.splitlines() == [
+            "✗ Connection error.",
+            "  Check your network and retry.",
+            "api: 1 request",
+        ]
+        assert self.sends == ["/releases/1"]
+        assert self.sleeps == []
 
     def _full_release(self, **fields: object) -> dict[str, Any]:
         release = {**_RELEASE_WITH_HEADINGS, **fields}

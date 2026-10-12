@@ -17,7 +17,7 @@ from discogs_sdk import (
     RateLimitError,
 )
 
-from agent_discogs import sanitize, trace
+from agent_discogs import sanitize
 from agent_discogs.json_output import dumps
 
 
@@ -131,9 +131,6 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         )
 
     if isinstance(exc, CacheMissError):
-        # `trace.record()` drops the SDK's event for a miss, so the footer learns
-        # about it here: every miss an agent sees passes through classify().
-        trace.note_cache_miss()
         split = urlsplit(exc.url)
         where = split.path + (f"?{split.query}" if split.query else "")
         return ErrorInfo(

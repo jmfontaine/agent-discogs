@@ -127,7 +127,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 - **Invalid ref** — refs are Discogs IDs and never expire; there is no session. Check the prefix matches the noun (`@r` release, `@m` master, `@a` artist, `@l` label). A bare `@123` is invalid: either add the type letter or pass the raw number `123`.
 - **"--x does not apply to 'get noun'"** — each `get` flag belongs to specific nouns (`--country`/`--format`/`--label` to `versions`, `--role` to `releases @a...`, `--limit`/`--page` to `releases` and `versions`, `-v`/`-c` to `release`); the error lists what the noun takes. Drop the flag. `--after` takes one ref: continue each listing in its own command. Table: [references/commands.md](references/commands.md#get).
 - **Rate limited** — the error says what is left (`Rate limited: 0/60 requests left this minute.`, `remaining`/`limit` in JSON). Pause ~60s, or continue with `--cached` on refs you already fetched. Authenticated requests get 60/min; unauthenticated get 25/min.
-- **Unexpected cost or a stall?** Re-run once with `--debug` to see each request, retries and cache hits on stderr. Do not leave it on.
+- **Unexpected cost?** Re-run once with `--debug` to see each request and cache hit on stderr. Do not leave it on.
 - **"Continue scan:" instead of "Next page:"** — the filter was sparse and the scan stopped at 5 API calls before filling the page. The next window may also be short or empty; keep pasting the printed command until it disappears (no footer = nothing left to scan). Counts shown as `≤N` are the unfiltered upper bound.
 - **Exit 1 with no message after `| head`** — the reader closed the pipe early; the CLI stops quietly. Nothing failed: rerun without the pipe, or with `--limit`, if you need the full output.
 - **Out-of-range `--limit`/`--page`, or an empty search** — `--limit` takes 1-100, `--page` starts at 1, and a search needs a query or at least one non-blank search filter (`--year`, `--catno`, ...; a type prefix or `--release-type` alone is not enough). These fail with `invalid_argument` before any request, so a rejected command spent nothing.
@@ -158,7 +158,7 @@ api: 0 requests · cached
 api: 4 requests · 6/60 left this minute ⚠ pause ~60s before uncached calls
 ```
 
-The count is what this command spent; `43/60` is what Discogs reported after its last request. It is never part of `--json` output. Commands that make no request print nothing.
+The count is what this command spent: every request sent, a failed connection included. The CLI never retries or sleeps: a 429, a 5xx or a connection failure is reported as that request's error without a retry (with several refs, the other refs still run), and whether to retry is your call. `43/60` is what Discogs reported after its last request. It is never part of `--json` output. Commands that make no request print nothing.
 
 | Command | Requests |
 |---|---|

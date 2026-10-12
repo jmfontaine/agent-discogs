@@ -67,7 +67,6 @@ class Trace:
     scans: list[ScanNote] = field(default_factory=list)
     started: float = 0.0
     debug: bool = False
-    cache_misses: int = 0
     stdout: _CountingWriter | None = None
     log_handler: logging.Handler | None = None
     log_level: int = logging.NOTSET
@@ -96,15 +95,11 @@ def begin(ctx: click.Context, *, debug: bool) -> None:
 
 
 def record(event: RequestEvent) -> None:
-    """SDK `on_request` hook: one event per request that got a response, from
-    the cache or the network.
-
-    The SDK also reports calls that ended without one, a `cache_only()` miss
-    and a transport failure, with no status code. They are dropped: neither
-    counts as a request in the footer, nor gets a `--debug` row.
-    """
-    if event.status_code is not None:
-        _trace.events.append(event)
+    """SDK `on_request` hook: one event per logical request, whether it was
+    served from the cache, answered by the network, failed in transport
+    (`status_code` None, `source == "network"`), or refused by `cache_only()`
+    (`source == "miss"`)."""
+    _trace.events.append(event)
 
 
 def note_scan(note: ScanNote) -> None:
@@ -112,25 +107,18 @@ def note_scan(note: ScanNote) -> None:
     _trace.scans.append(note)
 
 
-def note_cache_miss() -> None:
-    """Record a `--cached` lookup the cache could not serve. `record()` drops
-    the SDK's event for it, so this is the only trace such a request leaves."""
-    _trace.cache_misses += 1
-
-
-def render_footer(
-    events: Sequence[RequestEvent], *, authenticated: bool, cache_misses: int = 0
-) -> str | None:
+def render_footer(events: Sequence[RequestEvent], *, authenticated: bool) -> str | None:
     """The budget line, or None when nothing was requested.
 
-    Counts network requests only; the budget comes from the last network
+    Counts HTTP sends, failed transport sends included: each network event
+    carries its `attempts`. Cache hits and `--cached` misses send nothing, so
+    a run of only those reports zero. The budget comes from the last network
     response that reported rate-limit headers, so cache hits never move it.
-    A `--cached` miss counts as a request that cost nothing.
     """
-    if not events and not cache_misses:
+    if not events:
         return None
     network = [e for e in events if e.source == "network"]
-    n = len(network)
+    n = sum(e.attempts for e in network)
     if n == 0:
         return "api: 0 requests · cached"
     line = f"api: {n} request" + ("" if n == 1 else "s")
@@ -189,19 +177,17 @@ def _cache_line(cache_dir: Path | None) -> str:
 
 
 def render_panel(trace: Trace, *, cache_dir: Path | None, elapsed_ms: float) -> str:
-    """The `--debug` panel: one row per request, then scan, cache and output
-    statistics. Takes plain values; never touches the client or the network.
-    `cache_dir` is None when it could not be resolved."""
+    """The `--debug` panel: one row per response, from the cache or the
+    network, then scan, cache and output statistics. A `--cached` miss and a
+    transport failure have no response and get no row. Takes plain values;
+    never touches the client or the network. `cache_dir` is None when it
+    could not be resolved."""
     lines = ["── debug ".ljust(56, "─"), f"total     {elapsed_ms:.0f}ms"]
-    paths = [_request_path(e.url) for e in trace.events]
+    responses = [e for e in trace.events if e.status_code is not None]
+    paths = [_request_path(e.url) for e in responses]
     width = max((len(p) for p in paths), default=0)
-    for event, path in zip(trace.events, paths, strict=True):
-        if event.source == "cache":
-            cost = "cache"
-        else:
-            cost = f"{event.elapsed_ms:.0f}ms"
-            if event.attempts > 1:
-                cost += f"  \u00d7{event.attempts} attempts"  # multiplication sign
+    for event, path in zip(responses, paths, strict=True):
+        cost = "cache" if event.source == "cache" else f"{event.elapsed_ms:.0f}ms"
         lines.append(f"{event.method} {path:<{width}}   {event.status_code}   {cost}")
     for scan in trace.scans:
         capped = (
@@ -234,9 +220,7 @@ def finish() -> None:
     try:
         if _trace.stdout is not None:
             sys.stdout = _trace.stdout.target
-        footer = render_footer(
-            _trace.events, authenticated=has_token(), cache_misses=_trace.cache_misses
-        )
+        footer = render_footer(_trace.events, authenticated=has_token())
         if footer:
             print(footer, file=sys.stderr)
         if _trace.debug:

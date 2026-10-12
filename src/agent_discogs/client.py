@@ -52,7 +52,12 @@ def get_client() -> Discogs:
     if _client is None:
         token = os.environ.get("DISCOGS_TOKEN")
         cache = SQLiteCache(ttl=CACHE_TTL, cache_dir=cache_dir())
-        client = Discogs(token=token, cache=cache, on_request=trace.record)
+        # The CLI never retries or sleeps on the caller's behalf: a 429, a
+        # 5xx or a transport failure is reported at once, so one request is
+        # one send and the footer counts what was spent.
+        client = Discogs(
+            token=token, cache=cache, max_retries=0, on_request=trace.record
+        )
         try:
             cache.open()
         except CacheError as exc:
