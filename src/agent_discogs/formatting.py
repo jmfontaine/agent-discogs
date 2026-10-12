@@ -3,26 +3,80 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+import sys
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from agent_discogs import sanitize
+from agent_discogs import sanitize, style
 from agent_discogs.config import CACHE_TTL_LABEL
 from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
+from agent_discogs.style import Span
 
 if TYPE_CHECKING:
     from discogs_sdk import AuthMode
 
     from agent_discogs.pagination import ScanStop
 
+# A view line is plain text, or a list of parts: text (which may hold Discogs
+# values) and `Span`s, the CLI framing color may paint.
+Part = str | Span
+Line = str | list[Part]
 
-def _text(lines: list[str]) -> str:
+
+def _text(lines: list[Line]) -> str:
     """Join a view's lines. Each line is neutralized here, so a line break or
-    escape sequence inside a Discogs field cannot leave its line."""
-    return "\n".join(sanitize.line(text) for text in lines)
+    escape sequence inside a Discogs field cannot leave its line. When stdout
+    takes color, each `Span` is painted after that."""
+    color = style.enabled(sys.stdout)
+    return "\n".join(_line(line, color=color) for line in lines)
+
+
+def _plain(parts: list[Part]) -> str:
+    return "".join(p.text if isinstance(p, Span) else p for p in parts)
+
+
+def _line(line: Line, *, color: bool) -> str:
+    """One neutralized line. Without color it is the plain text, neutralized
+    as one string. With color, each run of text is neutralized on its own
+    and each span painted around its neutralized text, so an escape code
+    only ever comes from a span."""
+    if isinstance(line, str):
+        return sanitize.line(line)
+    if not color:
+        return sanitize.line(_plain(line))
+    out: list[str] = []
+    run: list[str] = []
+    for part in line:
+        if isinstance(part, Span):
+            out.append(sanitize.line("".join(run)))
+            run.clear()
+            out.append(style.paint(sanitize.line(part.text), part.style, color=True))
+        else:
+            run.append(part)
+    out.append(sanitize.line("".join(run)))
+    return "".join(out)
+
+
+def _ref(entity_type: str, entity_id: int) -> Span:
+    return Span(make_ref(entity_type, entity_id), "ref")
+
+
+def _label(name: str) -> Span:
+    """A section label such as `Tracklist:`; never a name Discogs sent."""
+    return Span(f"{name}:", "label")
+
+
+def _joined(groups: Iterable[list[Part]], sep: str) -> list[Part]:
+    """`sep.join()` for part lists."""
+    parts: list[Part] = []
+    for i, group in enumerate(groups):
+        if i:
+            parts.append(sep)
+        parts.extend(group)
+    return parts
 
 
 def _scan_note(stop: ScanStop) -> str:
@@ -66,33 +120,32 @@ def _page_counts(
     return f"(page {page}, {shown} of {bound}{total:,} {noun}{note})"
 
 
-def _footer(next_page_cmd: str | None, *, capped: bool) -> list[str]:
+def _footer(next_page_cmd: str | None, *, capped: bool) -> list[Line]:
     """Continuation footer. `Continue scan:` warns the next window may be short."""
     if not next_page_cmd:
         return []
     label = "Continue scan" if capped else "Next page"
-    return ["", f"{label}: {next_page_cmd}"]
+    return ["", [Span(f"{label}:", "dim"), f" {next_page_cmd}"]]
 
 
-def _artist_string(artists: list[Any] | None) -> str:
-    """Join artist credits into a display string, each with its ref.
+def _artist_parts(artists: list[Any] | None) -> list[Part]:
+    """Join artist credits into display parts, each with its ref.
 
     Refs are always shown: the artist is the most common next hop from a
     release, and `[@a3857]` costs three tokens.
     """
     if not artists:
-        return "Unknown Artist"
-    parts = []
+        return ["Unknown Artist"]
+    words: list[list[Part]] = []
     for a in artists:
-        name = getattr(a, "name", None) or "Unknown"
-        parts.append(name)
+        words.append([getattr(a, "name", None) or "Unknown"])
         artist_id = getattr(a, "id", None)
         if artist_id is not None:
-            parts.append(f"[{make_ref('artist', artist_id)}]")
+            words.append(["[", _ref("artist", artist_id), "]"])
         join = getattr(a, "join", None)
         if join:
-            parts.append(join)
-    return " ".join(parts)
+            words.append([join])
+    return _joined(words, " ")
 
 
 def _format_string(formats: list[Any] | None) -> str:
@@ -120,19 +173,18 @@ def _format_string(formats: list[Any] | None) -> str:
     return "; ".join(entries)
 
 
-def _label_string(labels: list[Any] | None) -> str:
+def _label_parts(labels: list[Any] | None) -> list[Part]:
     """First label name with its ref and catalog number."""
     if not labels:
-        return ""
+        return []
     lbl = labels[0]
-    name = getattr(lbl, "name", None) or ""
-    ref_suffix = ""
+    parts: list[Part] = [getattr(lbl, "name", None) or ""]
     label_id = getattr(lbl, "id", None)
     if label_id is not None:
-        ref_suffix = f" [{make_ref('label', label_id)}]"
+        parts += [" [", _ref("label", label_id), "]"]
     if catno := getattr(lbl, "catalog_number", None) or "":
-        return f"{name}{ref_suffix} ({catno})"
-    return f"{name}{ref_suffix}"
+        parts.append(f" ({catno})")
+    return parts
 
 
 _ROLE_SPLIT = re.compile(r",\s*(?![^\[]*\])")  # commas outside [bracketed] notes
@@ -204,32 +256,59 @@ def credits_by_role(release: Any) -> dict[str, list[Credit]]:
 
 def format_credits(release: Any) -> str:
     """Release and track credits grouped by role, each person with an artist ref."""
-    ref = make_ref("release", release.id)
+    return _text(_credit_lines(release))
+
+
+def _credit_lines(release: Any) -> list[Line]:
     by_role = credits_by_role(release)
     people = {c.person for entries in by_role.values() for c in entries}
-    lines = [f'Credits: {ref} "{release.title}" ({len(people)})', ""]
+    lines: list[Line] = [
+        [
+            _label("Credits"),
+            " ",
+            _ref("release", release.id),
+            f' "{release.title}" ',
+            Span(f"({len(people)})", "dim"),
+        ],
+        "",
+    ]
     if not by_role:
         lines.append("  (no credits listed)")
-        return _text(lines)
+        return lines
 
     for role, entries in by_role.items():
-        names = []
+        names: list[list[Part]] = []
         for credit in entries:
-            tag = f" [{make_ref('artist', credit.id)}]" if credit.id else ""
-            scope = f" ({', '.join(credit.tracks)})" if credit.tracks else ""
-            names.append(f"{credit.name or 'Unknown'}{tag}{scope}")
-        lines.append(f"{role}: {', '.join(names)}")
-    return _text(lines)
+            name: list[Part] = [credit.name or "Unknown"]
+            if credit.id:
+                name += [" [", _ref("artist", credit.id), "]"]
+            if credit.tracks:
+                name.append(f" ({', '.join(credit.tracks)})")
+            names.append(name)
+        # The role is a Discogs value, so it is not painted as a label.
+        lines.append([f"{role}: ", *_joined(names, ", ")])
+    return lines
 
 
 def format_identifiers(release: Any) -> str:
     """Barcodes, matrix/runout, and other identifiers: what tells pressings apart."""
-    ref = make_ref("release", release.id)
+    return _text(_identifier_lines(release))
+
+
+def _identifier_lines(release: Any) -> list[Line]:
     identifiers = getattr(release, "identifiers", None) or []
-    lines = [f'Identifiers: {ref} "{release.title}"', ""]
+    lines: list[Line] = [
+        [
+            _label("Identifiers"),
+            " ",
+            _ref("release", release.id),
+            f' "{release.title}"',
+        ],
+        "",
+    ]
     if not identifiers:
         lines.append("  (no identifiers listed)")
-        return _text(lines)
+        return lines
     for ident in identifiers:
         desc = getattr(ident, "description", None)
         suffix = f" ({desc})" if desc else ""
@@ -237,24 +316,24 @@ def format_identifiers(release: Any) -> str:
             f"{getattr(ident, 'type', None) or 'Other'}: "
             f"{getattr(ident, 'value', None) or ''}{suffix}"
         )
-    return _text(lines)
+    return lines
 
 
-def _track_artist_prefix(track: Any) -> str:
-    """Return 'Artist - ' prefix for a track, or '' if no track-level artists."""
+def _track_artist_prefix(track: Any) -> list[Part]:
+    """Return 'Artist - ' prefix for a track, or nothing if no track-level artists."""
     artists = getattr(track, "artists", None)
     if not artists:
-        return ""
-    return _artist_string(artists) + " - "
+        return []
+    return [*_artist_parts(artists), " - "]
 
 
-def _format_track_lines(tracklist: list[Any], depth: int = 1) -> list[str]:
+def _format_track_lines(tracklist: list[Any], depth: int = 1) -> list[Line]:
     """Format a tracklist into display lines with optional per-track artists.
 
     An index track (a suite or medley) lists its parts one level deeper.
     """
     indent = "  " * depth
-    lines: list[str] = []
+    lines: list[Line] = []
     for track in tracklist:
         pos = getattr(track, "position", "") or ""
         title = getattr(track, "title", "") or ""
@@ -262,12 +341,11 @@ def _format_track_lines(tracklist: list[Any], depth: int = 1) -> list[str]:
         if getattr(track, "type", None) == "heading":
             lines.append(f"{indent}{title}")
             continue
-        artist_prefix = _track_artist_prefix(track)
         dur_str = f" ({dur})" if dur else ""
-        if pos:
-            lines.append(f"{indent}{pos}. {artist_prefix}{title}{dur_str}")
-        else:
-            lines.append(f"{indent}{artist_prefix}{title}{dur_str}")
+        number = f"{pos}. " if pos else ""
+        lines.append(
+            [f"{indent}{number}", *_track_artist_prefix(track), f"{title}{dur_str}"]
+        )
         sub_tracks = getattr(track, "sub_tracks", None) or []
         lines.extend(_format_track_lines(sub_tracks, depth + 1))
     return lines
@@ -328,7 +406,7 @@ def release_date(released: str | None) -> str | None:
 
 def _release_row(
     *,
-    ref: str,
+    ref: Part,
     type_: str | None = None,
     title: str | None = None,
     artist: str | None = None,
@@ -340,36 +418,36 @@ def _release_row(
     role: str | None = None,
     have: int | None = None,
     added: str | None = None,
-    master_ref: str | None = None,
-) -> str:
+    master_ref: Span | None = None,
+) -> list[Part]:
     """One list row: everything an agent needs to pick or navigate, nothing else.
 
     Shared by search, versions, and discography views so a release looks the
     same wherever it appears. Every part is optional and omitted when empty.
     """
-    parts = [ref]
+    words: list[list[Part]] = [[ref]]
     if type_:
-        parts.append(f"[{type_}]")
+        words.append([f"[{type_}]"])
     if title:
-        parts.append(f'"{title}"')
+        words.append([f'"{title}"'])
     if artist:
-        parts.append(f"by {artist}")
+        words.append([f"by {artist}"])
     meta = " ".join(str(p) for p in (known_year(year), country) if p)
     if meta:
-        parts.append(meta)
+        words.append([meta])
     if label or catno:
-        parts.append("· " + " ".join(p for p in (label, catno) if p))
+        words.append(["· " + " ".join(p for p in (label, catno) if p)])
     if fmt:
-        parts.append(f"· {fmt}")
+        words.append([f"· {fmt}"])
     if role:
-        parts.append(f"· {role}")
+        words.append([f"· {role}"])
     if have is not None:
-        parts.append(f"· have {have:,}")
+        words.append([f"· have {have:,}"])
     if added:
-        parts.append(f"· added {added}")
+        words.append([f"· added {added}"])
     if master_ref:
-        parts.append(f"→ {master_ref}")
-    return " ".join(parts)
+        words.append(["→ ", master_ref])
+    return _joined(words, " ")
 
 
 def _format_filters(filters: dict[str, str] | None) -> str:
@@ -407,22 +485,23 @@ def split_members(artist: Any) -> tuple[list[Any], list[Any]]:
 
 def format_artist(artist: Any) -> str:
     """Format an artist profile view."""
-    ref = make_ref("artist", artist.id)
-    lines = [f'{ref} [artist] "{artist.name}"']
+    lines: list[Line] = [
+        [_ref("artist", artist.id), f' [artist] "{artist.name}"'],
+    ]
 
     profile = _truncate(getattr(artist, "profile", None))
     if profile:
-        lines.append(f"Profile: {profile}")
+        lines.append([_label("Profile"), f" {profile}"])
 
     urls = _urls_short(getattr(artist, "urls", None))
     if urls:
-        lines.append(f"URLs: {urls}")
+        lines.append([_label("URLs"), f" {urls}"])
 
     current, former = split_members(artist)
     if current:
-        lines.append(f"Members: {named_refs(current, 'artist')}")
+        lines.append([_label("Members"), " ", *named_refs(current, "artist")])
     if former:
-        lines.append(f"Former: {named_refs(former, 'artist')}")
+        lines.append([_label("Former"), " ", *named_refs(former, "artist")])
 
     return _text(lines)
 
@@ -434,14 +513,16 @@ def field(obj: Any, name: str) -> Any:
     return getattr(obj, name, None)
 
 
-def named_refs(items: list[Any], entity_type: str) -> str:
+def named_refs(items: list[Any], entity_type: str) -> list[Part]:
     """`Name [@a123], Other [@a456]`: every navigable name carries its ref."""
-    parts = []
+    names: list[list[Part]] = []
     for item in items:
         name = field(item, "name") or "Unknown"
         item_id = field(item, "id")
-        parts.append(f"{name} [{make_ref(entity_type, item_id)}]" if item_id else name)
-    return ", ".join(parts)
+        names.append(
+            [name, " [", _ref(entity_type, item_id), "]"] if item_id else [name]
+        )
+    return _joined(names, ", ")
 
 
 def format_label_releases(
@@ -466,10 +547,18 @@ def format_label_releases(
         stop=stop,
         header_resent=header_resent,
     )
-    lines = [f'Releases on {label_ref} "{label_name}" {counts}', ""]
+    lines: list[Line] = [
+        [
+            "Releases on ",
+            Span(label_ref, "ref"),
+            f' "{label_name}" ',
+            Span(counts, "dim"),
+        ],
+        "",
+    ]
     lines.extend(
         _release_row(
-            ref=make_ref("release", rel.id),
+            ref=_ref("release", rel.id),
             title=rel.title,
             artist=getattr(rel, "artist", None),
             year=getattr(rel, "year", None),
@@ -504,11 +593,19 @@ def format_artist_releases(
         stop=stop,
         header_resent=header_resent,
     )
-    lines = [f'Releases by {artist_ref} "{artist_name}" {counts}', ""]
+    lines: list[Line] = [
+        [
+            "Releases by ",
+            Span(artist_ref, "ref"),
+            f' "{artist_name}" ',
+            Span(counts, "dim"),
+        ],
+        "",
+    ]
 
     lines.extend(
         _release_row(
-            ref=make_ref(getattr(rel, "type", "release"), rel.id),
+            ref=_ref(getattr(rel, "type", "release"), rel.id),
             type_=getattr(rel, "type", "release"),
             title=rel.title,
             year=getattr(rel, "year", None),
@@ -524,61 +621,70 @@ def format_artist_releases(
 
 def format_label(label: Any) -> str:
     """Format a label profile view."""
-    ref = make_ref("label", label.id)
-    lines = [f'{ref} [label] "{label.name}"']
+    lines: list[Line] = [[_ref("label", label.id), f' [label] "{label.name}"']]
 
     profile = _truncate(getattr(label, "profile", None))
     if profile:
-        lines.append(f"Profile: {profile}")
+        lines.append([_label("Profile"), f" {profile}"])
 
     urls = _urls_short(getattr(label, "urls", None))
     if urls:
-        lines.append(f"URLs: {urls}")
+        lines.append([_label("URLs"), f" {urls}"])
 
     parent = getattr(label, "parent_label", None)
     if parent:
-        lines.append(f"Parent: {named_refs([parent], 'label')}")
+        lines.append([_label("Parent"), " ", *named_refs([parent], "label")])
 
     sub_labels = getattr(label, "sub_labels", None)
     if sub_labels:
-        lines.append(f"Sub-labels: {named_refs(sub_labels, 'label')}")
+        lines.append([_label("Sub-labels"), " ", *named_refs(sub_labels, "label")])
 
     return _text(lines)
 
 
+def _market(num_for_sale: int, lowest_price: float | None) -> list[Part]:
+    """`Market: 9 for sale from 9.36`, a bare amount in the buyer currency."""
+    sale = f" {num_for_sale:,} for sale"
+    if lowest_price is not None:
+        sale += f" from {lowest_price:.2f}"
+    return [_label("Market"), sale]
+
+
 def format_master(master: Any) -> str:
     """Format a master release detail view."""
-    ref = make_ref("master", master.id)
-    artists = _artist_string(getattr(master, "artists", None))
+    artists = _artist_parts(getattr(master, "artists", None))
     year = known_year(getattr(master, "year", None)) or ""
     year_str = f" ({year})" if year else ""
 
-    lines = [f'{ref} [master] "{master.title}" by {artists}{year_str}']
+    lines: list[Line] = [
+        [
+            _ref("master", master.id),
+            f' [master] "{master.title}" by ',
+            *artists,
+            year_str,
+        ]
+    ]
 
     genres = getattr(master, "genres", None)
     if genres:
-        lines.append(f"Genres: {', '.join(genres)}")
+        lines.append([_label("Genres"), f" {', '.join(genres)}"])
 
     styles = getattr(master, "styles", None)
     if styles:
-        lines.append(f"Styles: {', '.join(styles)}")
+        lines.append([_label("Styles"), f" {', '.join(styles)}"])
 
     main_release = getattr(master, "main_release", None)
     if main_release:
-        lines.append(f"Main release: {make_ref('release', main_release)}")
+        lines.append([_label("Main release"), " ", _ref("release", main_release)])
 
     num_for_sale = getattr(master, "num_for_sale", None)
-    lowest_price = getattr(master, "lowest_price", None)
     if num_for_sale is not None:
-        sale_str = f"Market: {num_for_sale:,} for sale"
-        if lowest_price is not None:
-            sale_str += f" from {lowest_price:.2f}"
-        lines.append(sale_str)
+        lines.append(_market(num_for_sale, getattr(master, "lowest_price", None)))
 
     tracklist = getattr(master, "tracklist", None)
     if tracklist:
         lines.append("")
-        lines.append("Tracklist:")
+        lines.append([_label("Tracklist")])
         lines.extend(_format_track_lines(tracklist))
 
     return _text(lines)
@@ -596,11 +702,19 @@ def format_master_versions(
     counts = _page_counts(
         page, len(versions), total_results, "versions", filtered=False
     )
-    lines = [f'Versions of {master_ref} "{master_title}" {counts}', ""]
+    lines: list[Line] = [
+        [
+            "Versions of ",
+            Span(master_ref, "ref"),
+            f' "{master_title}" ',
+            Span(counts, "dim"),
+        ],
+        "",
+    ]
 
     lines.extend(
         _release_row(
-            ref=make_ref("release", ver.id),
+            ref=_ref("release", ver.id),
             year=release_date(getattr(ver, "released", None)),
             country=getattr(ver, "country", None),
             label=getattr(ver, "label", None),
@@ -634,13 +748,19 @@ def format_price_guide(
     marketplace_stats: Any,
 ) -> str:
     """Format price guide for a release."""
-    ref = make_ref("release", release.id)
-    artists = _artist_string(getattr(release, "artists", None))
+    artists = _artist_parts(getattr(release, "artists", None))
     year = getattr(release, "year", None) or ""
     year_str = f" ({year})" if year else ""
 
-    lines = [
-        f'Price Guide: {ref} "{release.title}" by {artists}{year_str}',
+    lines: list[Line] = [
+        [
+            _label("Price Guide"),
+            " ",
+            _ref("release", release.id),
+            f' "{release.title}" by ',
+            *artists,
+            year_str,
+        ],
         "",
     ]
 
@@ -662,7 +782,9 @@ def format_price_guide(
             if cond in conditions:
                 amount = _price(conditions[cond])
                 if amount is not None:
-                    lines.append(f"{cond + ':':30s} {amount}")
+                    name = f"{cond}:"  # one of the names above, never Discogs'
+                    pad = " " * (30 - len(name))
+                    lines.append([Span(name, "label"), f"{pad} {amount}"])
     else:
         lines.append("  No price suggestions available")
 
@@ -670,13 +792,13 @@ def format_price_guide(
 
     num_for_sale = getattr(marketplace_stats, "num_for_sale", None)
     lowest = _price(getattr(marketplace_stats, "lowest_price", None))
-    parts = []
+    market: list[list[Part]] = []
     if num_for_sale is not None:
-        parts.append(f"For sale: {num_for_sale:,}")
+        market.append([_label("For sale"), f" {num_for_sale:,}"])
     if lowest is not None:
-        parts.append(f"Lowest: {lowest}")
-    if parts:
-        lines.append(" · ".join(parts))
+        market.append([_label("Lowest"), f" {lowest}"])
+    if market:
+        lines.append(_joined(market, " · "))
 
     return _text(lines)
 
@@ -743,41 +865,49 @@ def format_release(
     the tracklist with a one-line `Tracks:` summary; `tracks @r...` is the
     dedicated tracklist view.
     """
-    ref = make_ref("release", release.id)
-    artists = _artist_string(getattr(release, "artists", None))
+    artists = _artist_parts(getattr(release, "artists", None))
     year = known_year(getattr(release, "year", None)) or ""
     year_str = f" ({year})" if year else ""
 
-    lines = [f'{ref} [release] "{release.title}" by {artists}{year_str}']
+    lines: list[Line] = [
+        [
+            _ref("release", release.id),
+            f' [release] "{release.title}" by ',
+            *artists,
+            year_str,
+        ]
+    ]
 
-    label = _label_string(getattr(release, "labels", None))
-    if label:
-        lines.append(f"Label: {label}")
+    label = _label_parts(getattr(release, "labels", None))
+    if _plain(label):
+        lines.append([_label("Label"), " ", *label])
 
     fmt = _format_string(getattr(release, "formats", None))
     if fmt:
-        lines.append(f"Format: {fmt}")
+        lines.append([_label("Format"), f" {fmt}"])
 
     country = getattr(release, "country", None)
     released = release_date(getattr(release, "released", None))
     # `released` repeats the header year unless it carries a month/day.
-    origin = [f"Country: {country}" if country else ""]
+    origin: list[list[Part]] = []
+    if country:
+        origin.append([_label("Country"), f" {country}"])
     if released and released != str(year):
-        origin.append(f"Released: {released}")
+        origin.append([_label("Released"), f" {released}"])
     added = getattr(release, "date_added", None)
     if added:
         # The day in the timestamp's own offset, not converted to UTC or local.
-        origin.append(f"Added: {added.date().isoformat()}")
-    if any(origin):
-        lines.append(" · ".join(p for p in origin if p))
+        origin.append([_label("Added"), f" {added.date().isoformat()}"])
+    if origin:
+        lines.append(_joined(origin, " · "))
 
     genres = getattr(release, "genres", None)
     if genres:
-        lines.append(f"Genres: {', '.join(genres)}")
+        lines.append([_label("Genres"), f" {', '.join(genres)}"])
 
     styles = getattr(release, "styles", None)
     if styles:
-        lines.append(f"Styles: {', '.join(styles)}")
+        lines.append([_label("Styles"), f" {', '.join(styles)}"])
 
     community = getattr(release, "community", None)
     if community:
@@ -786,25 +916,22 @@ def format_release(
             avg = getattr(rating, "average", None)
             count = getattr(rating, "count", None)
             if avg is not None and count is not None:
-                lines.append(f"Rating: {avg:.2f}/5 ({count:,} votes)")
+                lines.append([_label("Rating"), f" {avg:.2f}/5 ({count:,} votes)"])
 
         have = getattr(community, "have", None)
         want = getattr(community, "want", None)
         if have is not None and want is not None:
-            lines.append(f"Have: {have:,} · Want: {want:,}")
+            lines.append(
+                [_label("Have"), f" {have:,} · ", _label("Want"), f" {want:,}"]
+            )
 
     num_for_sale = getattr(release, "num_for_sale", None)
-    lowest_price = getattr(release, "lowest_price", None)
     if num_for_sale is not None:
-        sale_str = f"Market: {num_for_sale:,} for sale"
-        if lowest_price is not None:
-            sale_str += f" from {lowest_price:.2f}"
-        lines.append(sale_str)
+        lines.append(_market(num_for_sale, getattr(release, "lowest_price", None)))
 
     master_id = getattr(release, "master_id", None)
     if master_id:
-        master_ref = make_ref("master", master_id)
-        lines.append(f"Master: {master_ref}")
+        lines.append([_label("Master"), " ", _ref("master", master_id)])
 
     if verbose:
         notes = (getattr(release, "notes", None) or "").strip()
@@ -812,21 +939,21 @@ def format_release(
             # Continuation lines are indented: nothing in the notes may start
             # a line at column 0, where it could pass for CLI framing.
             first, *rest = notes.splitlines()
-            lines.append(f"Notes: {first}")
+            lines.append([_label("Notes"), f" {first}"])
             lines.extend(f"  {part}" if part.strip() else "" for part in rest)
 
     tracklist = getattr(release, "tracklist", None) or []
     if tracklist and compact:
-        lines.append(f"Tracks: {track_summary(tracklist)}")
+        lines.append([_label("Tracks"), f" {track_summary(tracklist)}"])
     elif tracklist:
         lines.append("")
-        lines.append("Tracklist:")
+        lines.append([_label("Tracklist")])
         lines.extend(_format_track_lines(tracklist))
 
     if verbose:
-        for section in (format_credits(release), format_identifiers(release)):
+        for section in (_credit_lines(release), _identifier_lines(release)):
             lines.append("")
-            lines.extend(section.split("\n"))
+            lines.extend(section)
 
     return _text(lines)
 
@@ -855,7 +982,7 @@ def format_search_results(
     counts = _page_counts(
         page, len(results), total_results, "results", filtered=filtered, stop=stop
     )
-    lines = [f"{head} {counts}", ""]
+    lines: list[Line] = [[*head, " ", Span(counts, "dim")], ""]
 
     for result in results:
         result_type = _search_result_type(result)
@@ -868,7 +995,7 @@ def format_search_results(
                 )
             )
             continue
-        ref = make_ref(result_type, result.id)
+        ref = _ref(result_type, result.id)
         show_type = None if type_filter else result_type
 
         if result_type in ("release", "master"):
@@ -876,7 +1003,7 @@ def format_search_results(
             fmt_list = getattr(result, "format", None)
             master_id = getattr(result, "master_id", None)
             master_ref = (
-                make_ref("master", master_id)
+                _ref("master", master_id)
                 if result_type == "release" and master_id
                 else None
             )
@@ -903,12 +1030,13 @@ def format_search_results(
 
 def _search_head(
     query: str, type_filter: str | None, filters: dict[str, str] | None
-) -> str:
+) -> list[Part]:
     """`Search: release "query" artist="Nine Inch Nails"`: what was searched."""
     subject = " ".join(
         p for p in (f'"{query}"' if query else "", _format_filters(filters)) if p
     )
-    return " ".join(p for p in ("Search:", type_filter or "all", subject) if p)
+    searched = " ".join(p for p in (type_filter or "all", subject) if p)
+    return [_label("Search"), f" {searched}"]
 
 
 def artist_title(release: Any) -> str | None:
@@ -949,13 +1077,20 @@ def format_added_releases(
     shown = len(releases)
     count = f"{total:,}" if shown == total else f"{shown} of {total:,}"
     head = _search_head(query, "release", filters)
-    lines = [f"{head} added since {since} ({count} results, newest first)", ""]
+    lines: list[Line] = [
+        [
+            *head,
+            f" added since {since} ",
+            Span(f"({count} results, newest first)", "dim"),
+        ],
+        "",
+    ]
     for rel in releases:
         labels = getattr(rel, "labels", None) or []
         master_id = getattr(rel, "master_id", None)
         lines.append(
             _release_row(
-                ref=make_ref("release", rel.id),
+                ref=_ref("release", rel.id),
                 title=artist_title(rel),
                 year=getattr(rel, "year", None),
                 country=getattr(rel, "country", None),
@@ -963,7 +1098,7 @@ def format_added_releases(
                 catno=getattr(labels[0], "catalog_number", None) if labels else None,
                 fmt=_format_string(getattr(rel, "formats", None)) or None,
                 added=added_day(rel),
-                master_ref=make_ref("master", master_id) if master_id else None,
+                master_ref=_ref("master", master_id) if master_id else None,
             )
         )
     if not complete:
@@ -995,20 +1130,33 @@ def format_status(version: str, auth_mode: AuthMode, cache_dir: Path) -> str:
     return _text(
         [
             f"agent-discogs v{version}",
-            f"Auth: {auth_str}",
-            f"Cache: {cache_dir} ({CACHE_TTL_LABEL} TTL)",
+            [_label("Auth"), f" {auth_str}"],
+            [
+                _label("Cache"),
+                f" {cache_dir} ",
+                Span(f"({CACHE_TTL_LABEL} TTL)", "dim"),
+            ],
         ]
     )
 
 
 def format_tracklist(release: Any) -> str:
     """Format just the tracklist from a release."""
-    ref = make_ref("release", release.id)
-    artists = _artist_string(getattr(release, "artists", None))
+    artists = _artist_parts(getattr(release, "artists", None))
     year = getattr(release, "year", None) or ""
     year_str = f" ({year})" if year else ""
 
-    lines = [f'Tracklist: {ref} "{release.title}" by {artists}{year_str}', ""]
+    lines: list[Line] = [
+        [
+            _label("Tracklist"),
+            " ",
+            _ref("release", release.id),
+            f' "{release.title}" by ',
+            *artists,
+            year_str,
+        ],
+        "",
+    ]
 
     tracklist = getattr(release, "tracklist", None) or []
     if not tracklist:

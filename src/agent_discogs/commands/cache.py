@@ -7,12 +7,15 @@ import click
 from agent_discogs.client import get_client
 from agent_discogs.errors import fail
 from agent_discogs.json_output import dump
+from agent_discogs.style import off_for_json
 
 
 @click.command()
 # `clear` is the only action, so the handler needs no branch on it.
 @click.argument("action", type=click.Choice(["clear"]), expose_value=False)
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--json", "json_output", is_flag=True, callback=off_for_json, help="Output as JSON."
+)
 def cache(json_output: bool) -> None:
     """Manage cache."""
     try:

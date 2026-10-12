@@ -10,6 +10,7 @@ import click
 from click.core import ParameterSource
 from discogs_sdk import Discogs
 
+from agent_discogs import style
 from agent_discogs.client import get_client
 from agent_discogs.errors import error_document, fail, format_error
 from agent_discogs.formatting import (
@@ -722,7 +723,8 @@ def _dispatch(
             if mode.json:
                 blocks.append({"ref": ref, "error": error_document(e, context)})
             else:
-                blocks.append(format_error(e, context))
+                # The block goes to stdout with the others.
+                blocks.append(format_error(e, context, color=style.enabled(sys.stdout)))
 
     if mode.json:
         dump(blocks[0] if single else blocks)
@@ -738,6 +740,7 @@ _JSON_OPTIONS = [
         "json_output",
         is_flag=True,
         default=False,
+        callback=style.off_for_json,
         help="Output JSON (a compact projection of what the text view shows)",
     ),
     click.option(

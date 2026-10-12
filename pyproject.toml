@@ -129,6 +129,7 @@ report.fail_under = 100
 
 [tool.deadcode]
 ignore-names = [
+  "_color_terminal",
   "_fake_api",
   "_isolate_env",
   "_patch_clients",

@@ -14,9 +14,11 @@ from discogs_sdk import (
 )
 
 from agent_discogs.formatting import (
-    _artist_string,
+    _artist_parts,
     _format_track_lines,
-    _label_string,
+    _label_parts,
+    _plain,
+    _text,
     _track_artist_prefix,
     _truncate,
     _urls_short,
@@ -59,26 +61,26 @@ class TestArtistTitle:
         assert artist_title(fake(title="Untitled", artists=None)) == "Untitled"
 
 
-class TestArtistString:
+class TestArtistParts:
     def test_artist_with_join(self) -> None:
         a1 = fake(name="Trent Reznor", join="&")
         a2 = fake(name="Atticus Ross", join=None)
-        result = _artist_string([a1, a2])
+        result = _plain(_artist_parts([a1, a2]))
         assert result == "Trent Reznor & Atticus Ross"
 
     def test_empty_artists(self) -> None:
-        assert _artist_string(None) == "Unknown Artist"
-        assert _artist_string([]) == "Unknown Artist"
+        assert _plain(_artist_parts(None)) == "Unknown Artist"
+        assert _plain(_artist_parts([])) == "Unknown Artist"
 
 
-class TestLabelString:
+class TestLabelParts:
     def test_no_catno(self) -> None:
         lbl = fake(name="Nothing Records", catalog_number=None)
-        assert _label_string([lbl]) == "Nothing Records"
+        assert _plain(_label_parts([lbl])) == "Nothing Records"
 
     def test_empty_labels(self) -> None:
-        assert _label_string(None) == ""
-        assert _label_string([]) == ""
+        assert _plain(_label_parts(None)) == ""
+        assert _plain(_label_parts([])) == ""
 
 
 class TestTruncate:
@@ -1227,7 +1229,7 @@ class TestTrackArtistPrefix:
         track = fake(
             artists=[fake(name="Throbbing Gristle", join=None)],
         )
-        assert _track_artist_prefix(track) == "Throbbing Gristle - "
+        assert _plain(_track_artist_prefix(track)) == "Throbbing Gristle - "
 
     def test_track_with_multiple_artists(self) -> None:
         track = fake(
@@ -1236,15 +1238,15 @@ class TestTrackArtistPrefix:
                 fake(name="Atticus Ross", join=None),
             ],
         )
-        assert _track_artist_prefix(track) == "Trent Reznor & Atticus Ross - "
+        assert _plain(_track_artist_prefix(track)) == "Trent Reznor & Atticus Ross - "
 
     def test_track_without_artists(self) -> None:
         track = fake(position="A1", title="Song", duration="3:00", type=None)
-        assert _track_artist_prefix(track) == ""
+        assert _plain(_track_artist_prefix(track)) == ""
 
     def test_track_with_empty_artists(self) -> None:
         track = fake(artists=[])
-        assert _track_artist_prefix(track) == ""
+        assert _plain(_track_artist_prefix(track)) == ""
 
 
 class TestFormatTrackLines:
@@ -1265,7 +1267,7 @@ class TestFormatTrackLines:
                 artists=[fake(name="New Order", join=None)],
             ),
         ]
-        lines = _format_track_lines(tracks)
+        lines = _text(_format_track_lines(tracks)).split("\n")
         assert lines == [
             "  A1. Throbbing Gristle - Hamburger Lady (4:12)",
             "  A2. New Order - Blue Monday (7:29)",
@@ -1275,7 +1277,7 @@ class TestFormatTrackLines:
         tracks = [
             fake(position="A1", title="Song", duration="3:00", type=None),
         ]
-        lines = _format_track_lines(tracks)
+        lines = _text(_format_track_lines(tracks)).split("\n")
         assert lines == ["  A1. Song (3:00)"]
 
     def test_heading_ignores_artists(self) -> None:
@@ -1288,7 +1290,7 @@ class TestFormatTrackLines:
                 artists=[fake(name="Ignored", join=None)],
             ),
         ]
-        lines = _format_track_lines(tracks)
+        lines = _text(_format_track_lines(tracks)).split("\n")
         assert lines == ["  Side A"]
 
 

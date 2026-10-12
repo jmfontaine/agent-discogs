@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
+from agent_discogs import style
 from agent_discogs.config import CACHE_TTL_LABEL, cache_dir
 
 if TYPE_CHECKING:
@@ -124,7 +125,7 @@ def sends() -> int:
     return _count_sends(_trace.events)
 
 
-def render_footer(events: Sequence[RequestEvent]) -> str | None:
+def render_footer(events: Sequence[RequestEvent], *, color: bool = False) -> str | None:
     """The budget line, or None when nothing was requested.
 
     Counts HTTP sends, failed transport sends included: each network event
@@ -133,25 +134,27 @@ def render_footer(events: Sequence[RequestEvent]) -> str | None:
     response that reported rate-limit headers, so cache hits never move it,
     and so does the warning: a token is suggested only when the limit Discogs
     reported is below the authenticated one, whatever credentials are set.
+    `color` dims the line and paints the warning.
     """
     if not events:
         return None
     network = [e for e in events if e.source == "network"]
     n = _count_sends(network)
     if n == 0:
-        return "api: 0 requests · cached"
+        return style.paint("api: 0 requests · cached", "dim", color=color)
     line = f"api: {n} request" + ("" if n == 1 else "s")
     rl = next((e.ratelimit for e in reversed(network) if e.ratelimit), None)
-    if rl is None:
+    if rl is not None:
+        line += f" · {rl.remaining}/{rl.limit} left this minute"
+    line = style.paint(line, "dim", color=color)
+    if rl is None or rl.remaining > LOW_BUDGET:
         return line
-    line += f" · {rl.remaining}/{rl.limit} left this minute"
-    if rl.remaining <= LOW_BUDGET:
-        line += (
-            " ⚠ pause ~60s before uncached calls"
-            if rl.limit >= _AUTHENTICATED_LIMIT
-            else f" ⚠ set DISCOGS_TOKEN for {_AUTHENTICATED_LIMIT}/min, or pause ~60s"
-        )
-    return line
+    warning = (
+        "⚠ pause ~60s before uncached calls"
+        if rl.limit >= _AUTHENTICATED_LIMIT
+        else f"⚠ set DISCOGS_TOKEN for {_AUTHENTICATED_LIMIT}/min, or pause ~60s"
+    )
+    return f"{line} {style.paint(warning, 'warning', color=color)}"
 
 
 def _request_path(url: str) -> str:
@@ -202,18 +205,22 @@ _SCAN_ENDS = {
 }
 
 
-def render_panel(trace: Trace, *, cache_dir: Path | None, elapsed_ms: float) -> str:
+def render_panel(
+    trace: Trace, *, cache_dir: Path | None, elapsed_ms: float, color: bool = False
+) -> str:
     """The `--debug` panel: one row per response, from the cache or the
     network, then scan, cache and output statistics. A `--cached` miss and a
     transport failure have no response and get no row. Takes plain values;
     never touches the client or the network. `cache_dir` is None when it
-    could not be resolved."""
-    lines = ["── debug ".ljust(56, "─"), f"total     {elapsed_ms:.0f}ms"]
+    could not be resolved. `color` dims the rule and each row's timing."""
+    rule = style.paint("── debug ".ljust(56, "─"), "dim", color=color)
+    lines = [rule, f"total     {elapsed_ms:.0f}ms"]
     responses = [e for e in trace.events if e.status_code is not None]
     paths = [_request_path(e.url) for e in responses]
     width = max((len(p) for p in paths), default=0)
     for event, path in zip(responses, paths, strict=True):
         cost = "cache" if event.source == "cache" else f"{event.elapsed_ms:.0f}ms"
+        cost = style.paint(cost, "dim", color=color)
         lines.append(f"{event.method} {path:<{width}}   {event.status_code}   {cost}")
     for scan in trace.scans:
         end = "not capped" if scan.stop is None else _SCAN_ENDS[scan.stop]
@@ -244,13 +251,16 @@ def finish() -> None:
     try:
         if _trace.stdout is not None:
             sys.stdout = _trace.stdout.target
-        footer = render_footer(_trace.events)
+        footer = render_footer(_trace.events, color=style.enabled(sys.stderr))
         if footer:
             print(footer, file=sys.stderr)
         if _trace.debug:
             elapsed_ms = (time.perf_counter() - _trace.started) * 1000
             panel = render_panel(
-                _trace, cache_dir=_resolve_cache_dir(), elapsed_ms=elapsed_ms
+                _trace,
+                cache_dir=_resolve_cache_dir(),
+                elapsed_ms=elapsed_ms,
+                color=style.enabled(sys.stderr),
             )
             print(panel, file=sys.stderr)
     finally:

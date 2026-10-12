@@ -22,7 +22,7 @@ from discogs_sdk import (
     RateLimitError,
 )
 
-from agent_discogs import sanitize
+from agent_discogs import sanitize, style
 from agent_discogs.client import auth_mode
 from agent_discogs.json_output import dumps
 
@@ -322,11 +322,15 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
     return ErrorInfo("unexpected", f"Unexpected error: {_describe(exc)}")
 
 
-def format_error(exc: Exception, context: str | None = None) -> str:
+def format_error(
+    exc: Exception, context: str | None = None, *, color: bool = False
+) -> str:
     """Text rendering: `✗ message`, hint indented on the next line. Both are
-    neutralized: a message can quote a ref, a URL, or other outside text."""
+    neutralized: a message can quote a ref, a URL, or other outside text.
+    `color` paints the `✗` only; the message can quote Discogs text."""
     info = classify(exc, context)
-    text = f"✗ {sanitize.line(info.message)}"
+    mark = style.paint("✗", "error", color=color)
+    text = f"{mark} {sanitize.line(info.message)}"
     if info.hint:
         text += f"\n  {sanitize.line(info.hint)}"
     return text
@@ -353,5 +357,7 @@ def fail(exc: Exception, context: str | None = None, *, json_output: bool) -> No
     if json_output:
         print(format_error_json(exc, context))
     else:
-        print(format_error(exc, context), file=sys.stderr)
+        print(
+            format_error(exc, context, color=style.enabled(sys.stderr)), file=sys.stderr
+        )
     sys.exit(1)
