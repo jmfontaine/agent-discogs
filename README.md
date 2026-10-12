@@ -264,11 +264,16 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
 ✗ Authentication failed. Check your DISCOGS_TOKEN.
 ✗ Rate limited: 0/60 requests left this minute. Retry in 30s.
 ✗ Not cached: GET /marketplace/price_suggestions/352665 (only under --cached)
-✗ Connection error. Check your network and retry.
+✗ Connection error: [Errno 61] Connection refused
+  Check your network and retry.
+✗ Connection error: 407 Proxy Authentication Required
+  Retrying will not help: check your proxy, protocol, or network configuration.
 ✗ Cache error at /home/me/.cache/agent-discogs/cache.db: could not vet the database file: PermissionError: … is not a regular file owned by the current user
 ```
 
 An API error the CLI has no specific message for reads `API error (503): <summary>`: the status once, then what Discogs said, collapsed to one line and cut at 200 characters. Any other unexpected failure reads `Unexpected error: <exception class>: <message>`.
+
+A connection failure reads `Connection error: <cause>`, the cause summarized like an API error's: one line, cut at 200 characters. The hint says to retry only when the failure is transient (a refused or dropped connection, a timeout); a proxy error or an unsupported URL scheme fails the same way every time, so the hint points at the proxy, protocol, or network configuration instead.
 
 If the reader closes stdout early (`agent-discogs ... | head -1`), the CLI exits 1 without an error message. Under `set -o pipefail` that exit 1 is expected, not a failed lookup.
 

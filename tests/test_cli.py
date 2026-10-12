@@ -4062,7 +4062,7 @@ class TestRealSdk:
         result = CliRunner().invoke(cli, ["tracks", "@r1"])
         assert result.exit_code == 1
         assert result.stderr.splitlines() == [
-            "✗ Connection error.",
+            "✗ Connection error: Connection refused",
             "  Check your network and retry.",
             "api: 1 request",
         ]

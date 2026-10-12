@@ -195,8 +195,16 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         )
 
     if isinstance(exc, DiscogsConnectionError):
+        # The SDK's message is the transport error's; `transient` says whether
+        # its own retry policy would try again, so advice needs no httpx2.
+        detail = sanitize.summary(str(exc.args[0])) if exc.args else ""
         return ErrorInfo(
-            "connection_error", "Connection error.", "Check your network and retry."
+            "connection_error",
+            f"Connection error: {detail}" if detail else "Connection error.",
+            "Check your network and retry."
+            if exc.transient
+            else "Retrying will not help: check your proxy, protocol, or network "
+            "configuration.",
         )
 
     if isinstance(exc, CacheMissError):

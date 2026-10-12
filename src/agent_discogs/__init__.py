@@ -151,6 +151,10 @@ Discogs (--json: 'added', an RFC 3339 timestamp), at no extra request.
 
 Piping into a reader that closes early (| head -1) exits 1 with no message.
 
+A connection error names its cause ('Connection error: <cause>'). Its hint
+says to retry only for a transient failure (refused or dropped connection,
+timeout); for a proxy or protocol failure, fix the configuration instead.
+
 Examples:
   agent-discogs search "The Downward Spiral"
   agent-discogs search artist "Nine Inch Nails"

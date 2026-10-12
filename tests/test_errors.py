@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
+from typing import TypeVar
 
 import httpx2
 import pytest
@@ -34,6 +36,25 @@ from agent_discogs.errors import (
 _BUDGET = "60 req/min with DISCOGS_TOKEN, 25 without."
 
 
+_E = TypeVar("_E", bound=Exception)
+
+
+def _raised_by_sdk(
+    handler: Callable[[httpx2.Request], httpx2.Response], error: type[_E]
+) -> _E:
+    """The `error` the real SDK raises for one read whose transport answers
+    with `handler`, so the SDK builds the exception itself."""
+    transport = httpx2.MockTransport(handler)
+    with (
+        Discogs(
+            max_retries=0, http_client=httpx2.Client(transport=transport)
+        ) as client,
+        pytest.raises(error) as caught,
+    ):
+        _ = client.releases.get(1).title
+    return caught.value
+
+
 def _rate_limited(retry_after: str | None) -> RateLimitError:
     """The RateLimitError the real SDK raises for a 429 carrying `retry_after`
     as its `Retry-After` header (none when None), so the header goes through
@@ -43,15 +64,25 @@ def _rate_limited(retry_after: str | None) -> RateLimitError:
     def handler(_request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(429, json={"message": "slow down"}, headers=headers)
 
-    transport = httpx2.MockTransport(handler)
-    with (
-        Discogs(
-            max_retries=0, http_client=httpx2.Client(transport=transport)
-        ) as client,
-        pytest.raises(RateLimitError) as caught,
-    ):
-        _ = client.releases.get(1).title
-    return caught.value
+    return _raised_by_sdk(handler, RateLimitError)
+
+
+def _connection_failure(
+    cause: type[httpx2.RequestError], message: str
+) -> DiscogsConnectionError:
+    """The DiscogsConnectionError the real SDK raises when its transport fails
+    with `cause(message)`."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise cause(message, request=request)
+
+    return _raised_by_sdk(handler, DiscogsConnectionError)
+
+
+_RETRY = "Check your network and retry."
+_CONFIGURATION = (
+    "Retrying will not help: check your proxy, protocol, or network configuration."
+)
 
 
 class TestFormatError:
@@ -111,10 +142,47 @@ class TestFormatError:
         message = classify(exc).message
         assert message == "API error (500): " + "x" * 199 + "…"
 
-    def test_connection_error(self) -> None:
-        exc = DiscogsConnectionError("timeout")
-        result = format_error(exc)
-        assert "Connection error" in result
+    @pytest.mark.parametrize(
+        ("cause", "detail", "hint"),
+        [
+            (httpx2.ConnectError, "[Errno 61] Connection refused", _RETRY),
+            (httpx2.ReadTimeout, "The read operation timed out", _RETRY),
+            (
+                httpx2.ProxyError,
+                "407 Proxy Authentication Required",
+                _CONFIGURATION,
+            ),
+            (
+                httpx2.UnsupportedProtocol,
+                "Request URL has an unsupported protocol 'ftp://'.",
+                _CONFIGURATION,
+            ),
+        ],
+    )
+    def test_connection_error_shows_the_cause(
+        self, cause: type[httpx2.RequestError], detail: str, hint: str
+    ) -> None:
+        exc = _connection_failure(cause, detail)
+        assert format_error(exc) == f"✗ Connection error: {detail}\n  {hint}"
+        assert json.loads(format_error_json(exc)) == {
+            "error": {
+                "code": "connection_error",
+                "message": f"Connection error: {detail}",
+                "hint": hint,
+            }
+        }
+
+    def test_connection_error_detail_is_bounded(self) -> None:
+        exc = _connection_failure(httpx2.ProxyError, "\x1b[31mproxy\nsaid " + "x" * 300)
+        message = classify(exc).message
+        assert message.startswith("Connection error: \\x1b[31mproxy said xxx")
+        assert message.endswith("x…")
+        assert len(message) == len("Connection error: ") + 200
+
+    def test_connection_error_without_a_message(self) -> None:
+        info = classify(_connection_failure(httpx2.ReadTimeout, ""))
+        assert info.message == "Connection error."
+        assert info.hint == _RETRY
 
     def test_forbidden_error(self) -> None:
         exc = ForbiddenError("forbidden", status_code=403, response_body={})
