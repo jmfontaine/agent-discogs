@@ -57,6 +57,11 @@ Refs:
 Unknown dates are left out: Discogs' year 0 is omitted, and a release date
 drops a zero month or day (1994-05-00 prints as 1994-05, 1994-00-00 as 1994).
 
+Text output:
+  Discogs text never prints raw: line breaks and tabs in a field become spaces,
+  other control and bidi characters print as escapes (\\x1b, \\u202e). Notes
+  keep their line breaks, indented under 'Notes:'. --json keeps values exact.
+
 Options:
   --cached         Serve only from the cache; a miss fails (cache_miss), spends
                    nothing. Precedes the command: agent-discogs --cached price @r...

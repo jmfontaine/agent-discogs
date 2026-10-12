@@ -8,8 +8,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent_discogs import sanitize
 from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS
 from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
+
+
+def _text(lines: list[str]) -> str:
+    """Join a view's lines. Each line is neutralized here, so a line break or
+    escape sequence inside a Discogs field cannot leave its line."""
+    return "\n".join(sanitize.line(text) for text in lines)
 
 
 def _page_counts(
@@ -170,7 +177,7 @@ def format_credits(release: Any) -> str:
     lines = [f'Credits: {ref} "{release.title}" ({len(people)})', ""]
     if not by_role:
         lines.append("  (no credits listed)")
-        return "\n".join(lines)
+        return _text(lines)
 
     for role, entries in by_role.items():
         names = []
@@ -179,7 +186,7 @@ def format_credits(release: Any) -> str:
             scope = f" ({', '.join(credit.tracks)})" if credit.tracks else ""
             names.append(f"{credit.name or 'Unknown'}{tag}{scope}")
         lines.append(f"{role}: {', '.join(names)}")
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def format_identifiers(release: Any) -> str:
@@ -189,7 +196,7 @@ def format_identifiers(release: Any) -> str:
     lines = [f'Identifiers: {ref} "{release.title}"', ""]
     if not identifiers:
         lines.append("  (no identifiers listed)")
-        return "\n".join(lines)
+        return _text(lines)
     for ident in identifiers:
         desc = getattr(ident, "description", None)
         suffix = f" ({desc})" if desc else ""
@@ -197,7 +204,7 @@ def format_identifiers(release: Any) -> str:
             f"{getattr(ident, 'type', None) or 'Other'}: "
             f"{getattr(ident, 'value', None) or ''}{suffix}"
         )
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def _track_artist_prefix(track: Any) -> str:
@@ -382,7 +389,7 @@ def format_artist(artist: Any) -> str:
     if former:
         lines.append(f"Former: {named_refs(former, 'artist')}")
 
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def field(obj: Any, name: str) -> Any:
@@ -430,7 +437,7 @@ def format_label_releases(
         for rel in releases
     )
     lines.extend(_footer(next_page_cmd, capped=capped))
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def format_artist_releases(
@@ -463,7 +470,7 @@ def format_artist_releases(
         for rel in releases
     )
     lines.extend(_footer(next_page_cmd, capped=capped))
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def format_label(label: Any) -> str:
@@ -487,7 +494,7 @@ def format_label(label: Any) -> str:
     if sub_labels:
         lines.append(f"Sub-labels: {named_refs(sub_labels, 'label')}")
 
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def format_master(master: Any) -> str:
@@ -525,7 +532,7 @@ def format_master(master: Any) -> str:
         lines.append("Tracklist:")
         lines.extend(_format_track_lines(tracklist))
 
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def format_master_versions(
@@ -556,7 +563,7 @@ def format_master_versions(
     )
 
     lines.extend(_footer(next_page_cmd, capped=False))
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def _price(price: Any) -> str | None:
@@ -622,7 +629,7 @@ def format_price_guide(
     if parts:
         lines.append(" · ".join(parts))
 
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def _duration_seconds(duration: str | None) -> int | None:
@@ -753,7 +760,11 @@ def format_release(
     if verbose:
         notes = (getattr(release, "notes", None) or "").strip()
         if notes:
-            lines.append(f"Notes: {notes}")
+            # Continuation lines are indented: nothing in the notes may start
+            # a line at column 0, where it could pass for CLI framing.
+            first, *rest = notes.splitlines()
+            lines.append(f"Notes: {first}")
+            lines.extend(f"  {part}" if part.strip() else "" for part in rest)
 
     tracklist = getattr(release, "tracklist", None) or []
     if tracklist and compact:
@@ -768,7 +779,7 @@ def format_release(
             lines.append("")
             lines.extend(section.split("\n"))
 
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def format_search_results(
@@ -841,7 +852,7 @@ def format_search_results(
             lines.append(_release_row(ref=ref, type_=show_type, title=result.title))
 
     lines.extend(_footer(next_page_cmd, capped=capped))
-    return "\n".join(lines)
+    return _text(lines)
 
 
 def format_status(version: str, authenticated: bool, cache_dir: Path) -> str:
@@ -851,7 +862,7 @@ def format_status(version: str, authenticated: bool, cache_dir: Path) -> str:
         if authenticated
         else "none (unauthenticated, 25 req/min)"
     )
-    return "\n".join(
+    return _text(
         [
             f"agent-discogs v{version}",
             f"Auth: {auth_str}",
@@ -872,8 +883,8 @@ def format_tracklist(release: Any) -> str:
     tracklist = getattr(release, "tracklist", None) or []
     if not tracklist:
         lines.append("  (no tracklist available)")
-        return "\n".join(lines)
+        return _text(lines)
 
     lines.extend(_format_track_lines(tracklist))
 
-    return "\n".join(lines)
+    return _text(lines)

@@ -237,11 +237,15 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
 ✗ Connection error. Check your network and retry.
 ```
 
+An API error the CLI has no specific message for reads `API error (503): <summary>`: the status once, then what Discogs said, collapsed to one line and cut at 200 characters.
+
 If the reader closes stdout early (`agent-discogs ... | head -1`), the CLI exits 1 without an error message. Under `set -o pipefail` that exit 1 is expected, not a failed lookup.
 
 ## Output encoding
 
 Command output follows the encoding of stdout. When it is not UTF-8 (`PYTHONIOENCODING=ascii` or `latin-1`, some Windows pipes), a character the encoding cannot hold prints as a backslash escape (`宇多田` → `\u5b87\u591a\u7530`) and the command still succeeds; an encoding problem is never reported as an argument error. (click itself writes `--help` as UTF-8 when stdout is plain ASCII.)
+
+Discogs text is user-generated, so the text views never print it raw. A line break or tab inside a field becomes a space; any other control or bidi character prints as a visible escape (`\x1b`, `\u202e`), so a title cannot clear the screen, reorder the line, or start a line that looks like `Next page:` or `✗`. Release notes (`get release -v`) keep their line breaks, with every continuation line indented under `Notes:`. Error messages on stderr get the same treatment. `--json` output keeps every value exact (see [JSON output](#json-output)).
 
 ## License
 

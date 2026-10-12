@@ -70,8 +70,16 @@ class TestFormatError:
 
     def test_api_error(self) -> None:
         exc = DiscogsAPIError("server error", status_code=500, response_body={})
-        result = format_error(exc)
-        assert "API error (500)" in result
+        assert format_error(exc) == "✗ API error (500): server error"
+
+    def test_api_error_without_a_message(self) -> None:
+        exc = DiscogsAPIError("", status_code=502, response_body="")
+        assert classify(exc).message == "API error (502)."
+
+    def test_api_error_detail_is_bounded(self) -> None:
+        exc = DiscogsAPIError("x" * 500, status_code=500, response_body="x" * 3000)
+        message = classify(exc).message
+        assert message == "API error (500): " + "x" * 199 + "…"
 
     def test_connection_error(self) -> None:
         exc = DiscogsConnectionError("timeout")

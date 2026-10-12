@@ -17,7 +17,7 @@ from discogs_sdk import (
     RateLimitError,
 )
 
-from agent_discogs import trace
+from agent_discogs import sanitize, trace
 from agent_discogs.json_output import dumps
 
 
@@ -63,7 +63,8 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         if "seller settings" in message.lower():
             return ErrorInfo(
                 "seller_settings_required",
-                f"Price data requires seller settings. Discogs said: {message}",
+                "Price data requires seller settings. "
+                f"Discogs said: {sanitize.summary(message)}",
                 "Fill them out at discogs.com/settings/seller, then retry. "
                 "Other commands work without them; `get release` shows "
                 "num_for_sale/lowest_price.",
@@ -114,8 +115,14 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         )
 
     if isinstance(exc, DiscogsAPIError):
+        # str(exc) is "<status>: <message>"; show the status once, and the
+        # body-derived message only as a bounded, control-safe summary.
+        detail = sanitize.summary(str(exc.args[0])) if exc.args else ""
+        status = exc.status_code
         return ErrorInfo(
-            "api_error", f"API error ({exc.status_code}): {exc}", status=exc.status_code
+            "api_error",
+            f"API error ({status}): {detail}" if detail else f"API error ({status}).",
+            status=status,
         )
 
     if isinstance(exc, DiscogsConnectionError):
@@ -144,11 +151,12 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
 
 
 def format_error(exc: Exception, context: str | None = None) -> str:
-    """Text rendering: `✗ message`, hint indented on the next line."""
+    """Text rendering: `✗ message`, hint indented on the next line. Both are
+    neutralized: a message can quote a ref, a URL, or other outside text."""
     info = classify(exc, context)
-    text = f"✗ {info.message}"
+    text = f"✗ {sanitize.line(info.message)}"
     if info.hint:
-        text += f"\n  {info.hint}"
+        text += f"\n  {sanitize.line(info.hint)}"
     return text
 
 
