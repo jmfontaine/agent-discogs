@@ -39,10 +39,12 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 
 With a tool-call time limit, pass `--max-requests`.
 
+In a filtered list's JSON `pagination`, `page` counts your pages of `--limit` matches, but `total_items` is the unfiltered total (the text header's `≤N`) and `total_pages` counts the 100-row Discogs pages the scan reads, so page 2 can report `"total_pages":28`. Neither says how many pages of matches remain: continue until `next_cursor` is `null` (in text, until no `Next page:` / `Continue scan:` is printed).
+
 
 ## search
 
-Search the Discogs database.
+Search the Discogs database. Discogs documents search as needing credentials (`DISCOGS_TOKEN`, OAuth, or a consumer key and secret); unauthenticated searches currently get answers, but Discogs may refuse one with `auth_required`.
 
 ```
 agent-discogs search [type] <query> [--flags]
@@ -221,6 +223,20 @@ agent-discogs cache clear --json   # prints {"cleared":true}
 ```
 
 It reports success only when every entry was purged. A cache that cannot be opened, or a purge that fails (the database is locked by another process, read-only, or damaged), exits 1 with `cache_error`: text on stderr, or the JSON error envelope on stdout under `--json`. The database is left exactly as it was; nothing is deleted. The hint says what to do: retry once the other process is done, fix the permissions, or delete the file by hand.
+
+## skills
+
+Print the agent guide bundled with the installed package, so it always matches the version you run. No API call.
+
+```bash
+agent-discogs skills                   # list bundled skills, tagged with the installed version (same as `skills list`)
+agent-discogs skills get core          # this guide's SKILL.md
+agent-discogs skills get core --full   # SKILL.md followed by every references/*.md
+agent-discogs skills path              # directory holding the bundled skills
+agent-discogs skills path core         # directory of one skill
+```
+
+An unknown skill name prints `✗ Unknown skill '<name>'. Available: core` on stderr and exits 1.
 
 ## Aliases
 

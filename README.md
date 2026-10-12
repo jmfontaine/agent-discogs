@@ -47,7 +47,7 @@ Set your personal access token from [your Discogs developer settings](https://ww
 export DISCOGS_TOKEN="your-token-here"
 ```
 
-Credentials are required for search and price lookups. Without any, only direct entity lookups work (25 requests/minute). With a token, every command except `price` is available at 60 requests/minute.
+Credentials are required for price lookups, and Discogs' API documentation requires them for search too: unauthenticated searches currently get answers, but Discogs may refuse one with `auth_required`. Without any credentials the limit is 25 requests/minute; with a token, every command works at 60 requests/minute.
 
 `price` needs one thing more than a token: Discogs only returns price suggestions to accounts that have filled out their [seller settings](https://www.discogs.com/settings/seller). Until you do, the endpoint answers 404 and `price` tells you so; every other command is unaffected.
 
@@ -153,7 +153,7 @@ agent-discogs cache clear --json   # {"cleared":true}
 Print the bundled agent guide. The content ships in the package, so it always matches the installed version:
 
 ```bash
-agent-discogs skills                   # list bundled skills with the installed version
+agent-discogs skills                   # list bundled skills with the installed version (same as skills list)
 agent-discogs skills get core          # workflows, output format, common patterns, troubleshooting
 agent-discogs skills get core --full   # plus references: command reference, search patterns, pressings guide, Discogs data model
 agent-discogs skills path [core]       # directory holding the bundled skill files
@@ -162,6 +162,8 @@ agent-discogs skills path [core]       # directory holding the bundled skill fil
 ## JSON output
 
 `search`, `get`, `tracks`, and `price` accept `--json` (as does `cache clear`, which prints `{"cleared":true}` or the error envelope). The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping. Empty fields are omitted, so test for a key rather than for null (the `pagination` envelope is the exception: `page`, `total_items` and `total_pages` are always present, with `null` totals only when a scan stopped before reading any page; a filtered list always adds `filtered`, `capped` and `next_cursor`, `null` when nothing remains; a capped one adds `stop_reason`, plus `retry_after` when Discogs sent one). Each release, master, artist, label, and search result also carries `url`, its page on the Discogs website, always absolute: `"url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral"`. Use it to hand a person a link; text output leaves it out to save tokens. Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link. `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`. Lists are wrapped as `{"pagination":{...},"results":[...]}`.
+
+In a filtered list, the totals describe the listing before the filter, not your pages: `page` counts pages of `--limit` matching rows, while `total_items` is the unfiltered total (the `≤N` of the text header) and `total_pages` counts the 100-row pages the scan reads from Discogs. For example, the second page of `get releases @l647 --year 1994 --limit 2 --json` reported `"page":2,"total_items":2723,"total_pages":28`: 28 is the number of Discogs pages a full scan reads, not the number of pages of matches, which nothing tells in advance. Continue with `next_cursor` until it is `null`.
 
 ```bash
 agent-discogs get release @r352665 --json            # projection
@@ -270,18 +272,23 @@ output    494 chars, 9 lines, ≈123 tokens
 The CLI maps API errors to recovery-oriented messages with suggested next steps:
 
 ```
-✗ Release 999999999 not found. Try: agent-discogs search "<title>"
+✗ Release 999999999 not found.
+  Try: agent-discogs search "<title>"
 ✗ Authentication failed with DISCOGS_TOKEN.
   Check the token, or generate a new one at discogs.com/settings/developers. agent-discogs status shows the credentials in use.
 ✗ Rate limited: 0/60 requests left this minute.
   Retry in 30s. Discogs reported 60 req/min for the credentials in use (token).
-✗ Not cached: GET /marketplace/price_suggestions/352665 (only under --cached)
+✗ Not cached: GET /releases/352665
+  Rerun without --cached to fetch it from the API.
 ✗ Connection error: [Errno 61] Connection refused
   Check your network and retry.
 ✗ Connection error: 407 Proxy Authentication Required
   Retrying will not help: check your proxy, protocol, or network configuration.
-✗ Cache error at /home/me/.cache/agent-discogs/cache.db: could not vet the database file: PermissionError: … is not a regular file owned by the current user
+✗ Cache error at /home/me/.cache/agent-discogs/cache.db: could not vet the database file: PermissionError: /home/me/.cache/agent-discogs/cache.db is not a regular file owned by the current user
+  Fix the permissions or ownership of /home/me/.cache/agent-discogs and the files in it, or delete /home/me/.cache/agent-discogs/cache.db and any cache.db-wal or cache.db-shm beside it by hand. --fresh skips the cache.
 ```
+
+Each error is a `✗` line with the message, then the hint, when there is one, on the next line, indented by two spaces. The same message and hint are `message` and `hint` in the `--json` envelope.
 
 A 401 names the credentials that were sent, as `status` reports them: `DISCOGS_TOKEN`, the consumer key/secret, or OAuth (with the variables behind each), and says what to check. A consumer key and secret identify an app, not a user, so that hint also points at `DISCOGS_TOKEN` or OAuth for price suggestions. With no credentials set, the message reads `Authentication failed: no credentials are set.` and the hint says to export `DISCOGS_TOKEN`.
 

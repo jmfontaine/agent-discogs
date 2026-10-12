@@ -34,10 +34,17 @@ Commands:
   tracks <ref>...             Shortcut: get tracklist <ref>...
   price <ref>...              Shortcut: get price <ref>...
   cache clear [--json]        Clear HTTP cache; a failed purge exits 1 (cache_error)
-  skills [get <name>]         Print the bundled agent guide (start: skills get core)
+  skills [list|get|path]      Print the bundled agent guide (start: skills get core)
   status                      Show version, auth mode, and cache location
 
 Search Types:  artist, label, master, release
+Search Flags:  --artist, --barcode, --catno, --country, --format, --genre,
+               --label, --style, --year; --release-type official (default;
+               a client-side scan on release, master and untyped searches) |
+               unofficial | all
+Search Auth:   Discogs documents search as needing credentials (see
+               Environment); unauthenticated searches currently get answers,
+               but Discogs may refuse one with auth_required
 Get Nouns:     artist, credits, identifiers (ids), label, master, price, release,
                releases, tracklist, versions
                (artist/label 'URLs:' lists site domains, empty entries omitted)
@@ -72,9 +79,10 @@ Options:
                    stderr, plus the SDK's own log lines. Never changes stdout
                    or the exit code; an unresolvable cache location shows as
                    'unknown (no home directory)'
-  --json           JSON output: a compact projection of the text view (search, get);
-                   cache clear prints {"cleared":true}. Non-ASCII is literal on a
-                   UTF-8 stdout, \\uXXXX escapes otherwise
+  --json           JSON output: a compact projection of the text view (search,
+                   get, tracks, price); cache clear prints {"cleared":true}.
+                   Non-ASCII is literal on a UTF-8 stdout, \\uXXXX escapes
+                   otherwise
   --full           With --json: the complete record instead of the projection,
                    normalized: consistent field names, RFC 3339 timestamps (null when
                    absent or unparseable), unmodeled fields as Discogs sends them
@@ -112,8 +120,9 @@ Options:
                    seen on release searches; if Discogs drops it, results most
                    likely come back in relevance order with no error)
   --desc           With --sort: descending
-  --year YEAR      get versions: filter by year (server-side); get releases @l:
-                   filter by year (client-side scan, continues via --after)
+  --year YEAR      search: filter by release year (server-side); get versions:
+                   filter by year (server-side); get releases @l: filter by
+                   year (client-side scan, continues via --after)
   --version        Show version and exit
   --help           Show this message and exit
 
@@ -152,6 +161,10 @@ Paging:
   totals are null), or Discogs answered 429 partway, in which case the rows read
   so far are kept (JSON: capped, stop_reason "max_requests" or "rate_limited",
   retry_after). A 429 on the first page is an error.
+  In a filtered list, page counts pages of --limit matches, but JSON
+  total_items is the unfiltered total (the ≤N in the header) and total_pages
+  counts Discogs' 100-row pages, so neither tells how many pages of matches
+  remain. Continue until no command is printed (JSON: next_cursor null).
 
 Budget:
   After any command that talks to the API, stderr ends with a budget line, e.g.
