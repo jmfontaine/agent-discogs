@@ -29,6 +29,14 @@ just setup
 This installs dependencies with [uv](https://docs.astral.sh/uv/), including [pre-commit](https://pre-commit.com/)
 from the dev group, and sets up the pre-commit hooks. No global pre-commit install is needed.
 
+> [!IMPORTANT]
+> If you work in [git worktrees](https://git-scm.com/docs/git-worktree), run `just setup` in the main checkout only.
+> Every linked worktree shares the main checkout's `.git/hooks`, so installing hooks from one replaces the hook all of
+> them use and points it at that worktree's `.venv`, which disappears when the worktree is removed. In a linked
+> worktree, install the dependencies with `uv sync --all-extras --all-groups` and do not run `just pre-commit-install`,
+> `pre-commit install`, or any other hook installer. `just setup` skips the hook in a linked worktree, and
+> `just pre-commit-install` refuses to run there.
+
 > [!TIP]
 > The task runner is [just](https://github.com/casey/just). If you don't have it installed, you can run the underlying
 > commands directly. Check [`justfile`](justfile) to see what each recipe runs — most are one-line `uv run` commands.
