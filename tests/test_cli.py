@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import importlib
 import importlib.metadata
+import io
 import json
 import logging
 import sys
@@ -1698,6 +1700,24 @@ class TestExceptionHandling:
         result = CliRunner().invoke(cli, ["status"])
         assert result.exit_code == 1
         assert "✗ Unexpected error: kaboom" in result.output
+
+    def test_broken_stdout_pipe_exits_quietly(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`agent-discogs ... | head -1`: the reader closed the pipe, which is
+        not an error to report. click's EPIPE handling exits 1 silently."""
+
+        class _ClosedPipe(io.StringIO):
+            def write(self, _s: str) -> int:
+                raise BrokenPipeError(errno.EPIPE, "Broken pipe")
+
+        stderr = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", _ClosedPipe())
+        monkeypatch.setattr(sys, "stderr", stderr)
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["status"], prog_name="agent-discogs")
+        assert exc.value.code == 1
+        assert stderr.getvalue() == ""
 
     def test_client_failure_is_inside_the_json_boundary(
         self, monkeypatch: pytest.MonkeyPatch

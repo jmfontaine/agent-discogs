@@ -158,6 +158,10 @@ class AliasGroup(click.Group):
             raise
         except click.exceptions.UsageError:
             raise
+        # The reader closed stdout (`| head -1`). click's EPIPE handling exits 1
+        # without a message; reporting it would blame the command.
+        except BrokenPipeError:
+            raise
         # Last-resort boundary: any escaped exception becomes agent-readable text
         # instead of a traceback.
         except Exception as e:  # noqa: BLE001
