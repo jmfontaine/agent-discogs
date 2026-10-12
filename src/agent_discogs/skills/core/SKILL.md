@@ -110,7 +110,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 - **Don't search without a type filter** when you know the entity type.
 - **Don't fetch full release details just to check price.** Use `price @r...` directly.
 - **Don't paginate through all results.** Narrow with filters first.
-- **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list. Filtered lists (the default search, `releases --role`, `releases @l... --year`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
+- **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list, unchanged: it repeats `--cached`/`--fresh` and puts a search's type and query after `--`. Filtered lists (the default search, `releases --role`, `releases @l... --year`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
 - **Don't guess IDs.** Always search first to find the right entity.
 - **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref. Smart resolution fetches the release first, so `@r...` costs 2 requests; `@m...` costs 1 with `--json` (2 as text, for the header title).
 - **Don't use `--fresh` by default.** Catalogue data an hour old is fine; reserve `--fresh` for `price` when you need current market numbers.

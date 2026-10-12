@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+import click
 from discogs_sdk import Discogs
 from pydantic import BaseModel
 
@@ -76,21 +77,53 @@ def parse_cursor(cursor: str | None) -> tuple[int, int, int]:
     return page, api_page, offset
 
 
-def next_page_cmd(argv: list[str], **flags: object) -> str:
-    """Build a shell-safe continuation command from argv and CLI flags.
+def next_page_cmd(
+    argv: list[str],
+    result: PageResult,
+    *,
+    limit: int,
+    positionals: tuple[str, ...] = (),
+    **flags: object,
+) -> str | None:
+    """The shell-safe command that continues `result`, or None at the end.
+
+    It continues by cursor (`--after`) after a client-side filtered page and
+    by `--page N+1` otherwise, keeps a non-default `--limit`, and repeats this
+    invocation's global `--cached`/`--fresh` before the subcommand, so the
+    next page is read under the same cache policy. `positionals` (user text,
+    such as a search query) follow an explicit `--`, so a query starting with
+    `-` is never parsed as an option.
 
     Flags whose value is None/""/False are omitted; `True` renders as a bare
     switch; underscores become dashes. Every token is quoted by `shlex.join`,
     so titles with quotes and labels like `R & S Records` paste back unchanged.
     """
-    parts = ["agent-discogs", *argv]
+    if not result.has_next:
+        return None
+    flags.update(
+        limit=limit if limit != DEFAULT_LIMIT else None,
+        after=result.next_cursor,
+        page=None if result.filtered else result.page + 1,
+    )
+    parts = ["agent-discogs", *_cache_flags(), *argv]
     for flag, value in flags.items():
         if value in (None, "", False):
             continue
         parts.append(f"--{flag.replace('_', '-')}")
         if value is not True:
             parts.append(str(value))
+    if positionals:
+        parts += ["--", *positionals]
     return shlex.join(parts)
+
+
+def _cache_flags() -> list[str]:
+    """The global cache flag (`--cached`/`--fresh`) this invocation runs under."""
+    ctx = click.get_current_context(silent=True)
+    if ctx is None:
+        return []
+    params = ctx.find_root().params
+    return [f"--{name}" for name in ("cached", "fresh") if params.get(name)]
 
 
 def fetch_page(

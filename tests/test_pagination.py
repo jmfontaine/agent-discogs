@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shlex
 from collections.abc import Callable, Mapping
 from types import SimpleNamespace
 from typing import Any
@@ -16,7 +15,6 @@ from agent_discogs.pagination import (
     PageResult,
     fetch_filtered_page,
     fetch_page,
-    next_page_cmd,
     parse_cursor,
 )
 
@@ -67,32 +65,6 @@ class TestParseCursor:
     def test_invalid(self, bad: str) -> None:
         with pytest.raises(ValueError, match="Invalid --after cursor"):
             parse_cursor(bad)
-
-
-class TestNextPageCmd:
-    def test_quotes_and_orders_flags(self) -> None:
-        cmd = next_page_cmd(
-            ["search", "release", "Plastic Dreams"],
-            label="R & S Records",
-            year=None,
-            release_type="",
-            limit=10,
-            after="2:1.5",
-        )
-        assert cmd == (
-            "agent-discogs search release 'Plastic Dreams' "
-            "--label 'R & S Records' --limit 10 --after 2:1.5"
-        )
-
-    def test_quotes_survive_a_shell_round_trip(self) -> None:
-        cmd = next_page_cmd(["search", 'He said "hi" $HOME'], label="R & S")
-        assert shlex.split(cmd) == [
-            "agent-discogs",
-            "search",
-            'He said "hi" $HOME',
-            "--label",
-            "R & S",
-        ]
 
 
 class _FakeModel(BaseModel):

@@ -8,6 +8,8 @@ import importlib.metadata
 import io
 import json
 import logging
+import re
+import shlex
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -17,7 +19,7 @@ from typing import Any
 import click
 import httpx2
 import pytest
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 from discogs_sdk import (
     Artist,
     CacheMissError,
@@ -98,6 +100,40 @@ def _empty_listing(path: str, params: dict[str, str]) -> object:
         return {"id": 1, "name": "Entity", "title": "Entity"}
     page = {"page": int(params.get("page", 1)), "pages": 1, "items": 0}
     return {"pagination": page, key: []}
+
+
+class _Catalogue:
+    """`rows` rows (default 18) behind every listing, titled `Row<id>e<edition>`.
+    Only rows with `id % 6 >= 4` pass the client-side filters (official
+    format, role Main, year 1999), so a `--limit 2` filtered page fills on the
+    last row of each 6-row API page and every continuation needs a new
+    request; with `sparse`, no row passes. Bumping `edition` stands in for
+    Discogs changing data after a page was cached."""
+
+    def __init__(self, rows: int = 18, *, sparse: bool = False) -> None:
+        self.rows, self.sparse = rows, sparse
+        self.edition = 1
+
+    def __call__(self, path: str, params: dict[str, str]) -> object:
+        key = _LISTING_KEYS.get(path.rsplit("/", 1)[-1])
+        if key is None:
+            return {"id": 1, "name": "Entity", "title": "Entity"}
+        page, per = int(params["page"]), int(params["per_page"])
+        rows = []
+        for i in range((page - 1) * per, min(page * per, self.rows)):
+            match = not self.sparse and i % 6 >= 4
+            title = f"Row{i}e{self.edition}"
+            row: dict[str, object] = {"id": i, "title": title, "type": "release"}
+            if key == "results":
+                row["format"] = ["Vinyl"] if match else ["Unofficial Release"]
+            elif key == "releases":
+                row["role"] = "Main" if match else "Remix"
+                row["year"] = 1999 if match else 2000
+            else:  # version rows print the label, not the title
+                row["label"] = title
+            rows.append(row)
+        pagination = {"page": page, "pages": -(-self.rows // per), "items": self.rows}
+        return {"pagination": pagination, key: rows}
 
 
 class TestCacheCommand:
@@ -307,8 +343,8 @@ class TestSearchCommand:
         assert result.exit_code == 1
         assert "error" in result.output.lower()
 
-    def test_search_pagination_next_uses_cursor(self) -> None:
-        """Default (official) search pages by cursor; header marks the bound."""
+    def test_search_header_marks_the_filtered_bound(self) -> None:
+        """Default (official) search filters client-side; the total is a bound."""
         result_item = _fake(
             id=1, type="release", title="Test", year=None, label=None, format=None
         )
@@ -318,8 +354,6 @@ class TestSearchCommand:
         result = CliRunner().invoke(cli, ["search", "test"])
         assert result.exit_code == 0
         assert "of ≤50 results" in result.output
-        assert "Next page: agent-discogs search test --after 2:6.0" in result.output
-        assert "--page" not in result.output
 
     def _forbid_fetch(self) -> None:
         def _boom(*_a: object, **_kw: object) -> None:
@@ -361,31 +395,6 @@ class TestSearchCommand:
         assert "(page 3, 0 of 15 results)" in result.output
         assert "Next page:" not in result.output
 
-    def test_search_footer_is_shell_safe_and_keeps_limit(self) -> None:
-        result_item = _fake(
-            id=1, type="release", title="Test", year=None, label=None, format=None
-        )
-        self._set_fetch_result(
-            PageResult(items=[result_item], page=1, total_items=50, total_pages=10)
-        )
-        result = CliRunner().invoke(
-            cli,
-            [
-                "search",
-                "release",
-                "Plastic Dreams",
-                "--label",
-                "R & S Records",
-                "--limit",
-                "1",
-            ],
-        )
-        assert result.exit_code == 0
-        assert (
-            "Next page: agent-discogs search release 'Plastic Dreams' "
-            "--label 'R & S Records' --limit 1 --after 2:2.0"
-        ) in result.output
-
     def test_search_capped_scan_footer(self) -> None:
         """Sparse filter: 5 API calls, no match, Continue scan footer."""
         bootleg = _fake(
@@ -404,18 +413,7 @@ class TestSearchCommand:
         assert (
             "(page 1, 0 of ≤500 results; scan capped at 5 API calls)" in result.output
         )
-        assert "Continue scan: agent-discogs search test --after 2:6.0" in result.output
-
-    def test_search_with_type_in_next_page(self) -> None:
-        result_item = _fake(
-            id=1, type="artist", title="Test", year=None, label=None, format=None
-        )
-        self._set_fetch_result(
-            PageResult(items=[result_item], page=1, total_items=20, total_pages=4)
-        )
-        result = CliRunner().invoke(cli, ["search", "artist", "test"])
-        assert result.exit_code == 0
-        assert "agent-discogs search artist" in result.output
+        assert "\nContinue scan: " in result.output
 
     def test_search_all_filters(self) -> None:
         self._set_fetch_result(
@@ -530,70 +528,6 @@ class TestSearchCommand:
         assert "Official" in result.output
         assert "Bootleg" in result.output
 
-    def test_release_type_next_page_includes_flag(self) -> None:
-        """Next page command includes --release-type when not default."""
-        item = _fake(
-            id=1,
-            type="release",
-            title="Boot",
-            year=None,
-            label=None,
-            format=["Unofficial Release"],
-        )
-        self._set_fetch_result(
-            PageResult(items=[item], page=1, total_items=50, total_pages=10)
-        )
-        result = CliRunner().invoke(
-            cli, ["search", "test", "--release-type", "unofficial"]
-        )
-        assert result.exit_code == 0
-        assert "--release-type unofficial" in result.output
-
-    def test_search_filters_in_next_page(self) -> None:
-        """Next page command includes all active filters."""
-        item = _fake(
-            id=1, type="release", title="Test", year=None, label=None, format=["Vinyl"]
-        )
-        self._set_fetch_result(
-            PageResult(items=[item], page=1, total_items=50, total_pages=10)
-        )
-        result = CliRunner().invoke(
-            cli,
-            [
-                "search",
-                "test",
-                "--artist",
-                "Nine Inch Nails",
-                "--genre",
-                "Rock",
-                "--year",
-                "1994",
-                "--country",
-                "US",
-                "--format",
-                "Vinyl",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "--artist 'Nine Inch Nails'" in result.output
-        assert "--genre Rock" in result.output
-        assert "--year 1994" in result.output
-        assert "--country US" in result.output
-        assert "--format Vinyl" in result.output
-        assert "--after 2:6.0" in result.output
-
-    def test_release_type_default_next_page_omits_flag(self) -> None:
-        """Next page command omits --release-type when official (default)."""
-        item = _fake(
-            id=1, type="release", title="Test", year=None, label=None, format=["Vinyl"]
-        )
-        self._set_fetch_result(
-            PageResult(items=[item], page=1, total_items=50, total_pages=10)
-        )
-        result = CliRunner().invoke(cli, ["search", "test"])
-        assert result.exit_code == 0
-        assert "--release-type" not in result.output
-
     def test_release_type_header_echo_only_when_it_applies(self) -> None:
         """Header shows release-type when non-default on release/master searches,
         never on artist/label searches where the option is a no-op."""
@@ -676,7 +610,6 @@ class TestSearchCommand:
         assert "Official 1-3" in result.output
         assert "Official 1-5" in result.output
         assert "Official 1-2" not in result.output
-        assert "--limit 3 --after 3:1.6" in result.output
 
     def test_filtered_search_multi_page(self) -> None:
         """Filtering consumes multiple API pages to fill the limit."""
@@ -1195,8 +1128,8 @@ class TestGetCommand:
         assert result.exit_code == 0
         assert "TDS" not in result.output
 
-    def test_get_releases_role_next_page(self) -> None:
-        """Next page command includes --role when active."""
+    def test_get_releases_role_header_marks_the_filtered_bound(self) -> None:
+        """--role filters client-side, so the total is an upper bound."""
         artist = _fake(id=3857, name="Nine Inch Nails")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
 
@@ -1213,10 +1146,6 @@ class TestGetCommand:
         )
         assert result.exit_code == 0
         assert "of ≤50 results" in result.output
-        assert (
-            "Next page: agent-discogs get releases @a3857 --role Main --after 2:6.0"
-            in result.output
-        )
 
     def _set_exploding_client(self) -> None:
         """Any resource access proves validation ran after I/O started."""
@@ -1265,46 +1194,6 @@ class TestGetCommand:
         )
         assert result.exit_code == 1
         assert "Invalid --after cursor" in result.output
-
-    def test_get_versions_filters_in_next_page(self) -> None:
-        """Next page command includes --country, --format, --label when active."""
-        master = _fake(id=4917, title="TDS")
-        self._set_client(_fake_client(masters_get=lambda _id: master))
-
-        ver = _fake(
-            id=367113,
-            released="1994",
-            country="US",
-            label="Nothing",
-            catalog_number="INT-92346",
-            format="Vinyl",
-        )
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[ver], page=1, total_items=50, total_pages=10
-            ),
-        )
-
-        result = CliRunner().invoke(
-            cli,
-            [
-                "get",
-                "versions",
-                "@m4917",
-                "--country",
-                "US",
-                "--format",
-                "Vinyl",
-                "--label",
-                "Nothing",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "--country US" in result.output
-        assert "--format Vinyl" in result.output
-        assert "--label Nothing" in result.output
-        assert "--page 2" in result.output
 
     def test_get_versions_with_filters(self) -> None:
         master = _fake(id=4917, title="TDS")
@@ -1377,7 +1266,6 @@ class TestGetCommand:
             '@r4401 "Pretty Hate Machine" by Nine Inch Nails · 0694903742 · CD, Album'
             in result.output
         )
-        assert "Next page: agent-discogs get releases @l647 --page 2" in result.output
 
         data = json.loads(
             CliRunner().invoke(cli, ["get", "--json", "releases", "@l647"]).output
@@ -1392,7 +1280,7 @@ class TestGetCommand:
             }
         ]  # year 0 is "unknown" on Discogs and is dropped
 
-    def test_get_releases_sort_reaches_api_and_footer(self) -> None:
+    def test_get_releases_sort_reaches_api(self) -> None:
         artist = _fake(id=3857, name="NIN")
         self._set_client(_fake_client(artists_get=lambda _id: artist))
         seen = self._capture_fetch()
@@ -1406,18 +1294,6 @@ class TestGetCommand:
             "page": 1,
             "per_page": 5,
         }
-
-        def _fetch(*_a: object, **_kw: object) -> PageResult:
-            return PageResult(items=[], page=1, total_items=50, total_pages=10)
-
-        self._monkeypatch.setattr("agent_discogs.commands.get.fetch_page", _fetch)
-        result = CliRunner().invoke(
-            cli, ["get", "releases", "@a3857", "--sort", "year", "--desc"]
-        )
-        assert (
-            "Next page: agent-discogs get releases @a3857 --sort year --desc --page 2"
-            in result.output
-        )
 
     def test_get_releases_role_with_sort_passes_sort_to_scan(self) -> None:
         artist = _fake(id=3857, name="NIN")
@@ -1638,10 +1514,6 @@ class TestGetCommand:
         assert '@r100 "T1-0" by A 1999 · CD' in result.output
         assert '@r103 "T1-3" by A 1999 · CD' in result.output
         assert "2001" not in result.output
-        assert (
-            "Next page: agent-discogs get releases @l647 --year 1999 --limit 2 "
-            "--after 2:1.4"
-        ) in result.output
 
         data = json.loads(
             CliRunner()
@@ -3758,3 +3630,146 @@ class TestRequestCost:
         result = CliRunner().invoke(cli, ["get", "versions", "@r1", "--json"])
         assert result.exit_code == 0, result.output
         assert self.sent == ["/releases/1", "/masters/3719/versions"]
+
+
+_FOOTER = re.compile(r"^(?:Next page|Continue scan): (.+)$", re.MULTILINE)
+_ROW = re.compile(r"Row(\d+)e(\d+)")
+_SERVER_PAGES = [[0, 1], [2, 3], [4, 5]]
+_FILTERED_PAGES = [[4, 5], [10, 11], [16, 17]]
+
+
+def _continuation(result: Result) -> list[str]:
+    """The arguments of the emitted "Next page" / "Continue scan" command."""
+    match = _FOOTER.search(result.stdout)
+    assert match, result.output
+    emitted = shlex.split(match.group(1))
+    assert emitted[0] == "agent-discogs"
+    return emitted[1:]
+
+
+# listing -> (command, requests one uncached run makes, row ids on pages 1-3)
+_LISTINGS: dict[str, tuple[str, int, list[list[int]]]] = {
+    "search, server-side pages": (
+        "search --release-type all --artist 'Nine Inch Nails' --limit 2 -- -ambient",
+        1,
+        _SERVER_PAGES,
+    ),
+    "search, filtered by cursor": (
+        "search --label 'R & S Records' --limit 2 -- release '-ambient \"dub\" $HOME'",
+        1,
+        _FILTERED_PAGES,
+    ),
+    "search, a query that reads like a type": (
+        "search --release-type all --catno ABC --limit 2 -- ' release'",
+        1,
+        _SERVER_PAGES,
+    ),
+    "artist releases": (
+        "get releases @a1 --sort year --desc --limit 2",
+        2,
+        _SERVER_PAGES,
+    ),
+    "artist releases, --role": (
+        "get releases @a1 --role Main --limit 2",
+        2,
+        _FILTERED_PAGES,
+    ),
+    "label releases": ("get releases @l1 --limit 2", 2, _SERVER_PAGES),
+    "label releases, --year": (
+        "get releases @l1 --year 1999 --limit 2",
+        2,
+        _FILTERED_PAGES,
+    ),
+    "versions": (
+        "get versions @m1 --country US --format Vinyl --sort released --limit 2",
+        2,
+        _SERVER_PAGES,
+    ),
+}
+
+
+class TestContinuation:
+    """Running an emitted "Next page" / "Continue scan" command again
+    continues the same listing under the same cache policy."""
+
+    @pytest.mark.parametrize("policy", [None, "--cached", "--fresh"])
+    @pytest.mark.parametrize("listing", list(_LISTINGS))
+    def test_rerun_continues_under_the_same_cache_policy(
+        self, monkeypatch: pytest.MonkeyPatch, listing: str, policy: str | None
+    ) -> None:
+        command, per_run, pages = _LISTINGS[listing]
+        argv = shlex.split(command)
+        catalogue = _Catalogue()
+        api = _FakeAPI(monkeypatch, catalogue)
+
+        def run(args: list[str]) -> tuple[Result, list[tuple[str, dict[str, str]]]]:
+            start = len(api.sends)
+            result = CliRunner().invoke(cli, args)
+            return result, list(api.sends[start:])
+
+        def rows(result: Result) -> list[tuple[int, int]]:
+            return [(int(i), int(e)) for i, e in _ROW.findall(result.stdout)]
+
+        # An earlier session cached pages 1 and 2.
+        warm, _ = run(argv)
+        run(_continuation(warm))
+        if policy == "--fresh":
+            catalogue.edition = 2  # what is cached is now stale
+        expected_sends = per_run if policy == "--fresh" else 0
+
+        first, sent = run([*([policy] if policy else []), *argv])
+        assert first.exit_code == 0, first.output
+        assert rows(first) == [(i, catalogue.edition) for i in pages[0]]
+        assert len(sent) == expected_sends
+
+        second, sent = run(_continuation(first))
+        assert second.exit_code == 0, second.output
+        assert rows(second) == [(i, catalogue.edition) for i in pages[1]]
+        assert len(sent) == expected_sends
+
+        third, sent = run(_continuation(second))  # page 3 was never fetched
+        if policy == "--cached":
+            assert third.exit_code == 1
+            assert "Not cached" in third.stderr
+            assert sent == []
+        else:
+            assert third.exit_code == 0, third.output
+            assert rows(third) == [(i, catalogue.edition) for i in pages[2]]
+            assert len(sent) == (per_run if policy == "--fresh" else 1)
+
+        # Every request for the listing asked for the same thing; only the
+        # page moved.
+        listing_params: dict[str, set[str]] = {}
+        for path, params in api.sends:
+            same = {k: v for k, v in params.items() if k != "page"}
+            listing_params.setdefault(path, set()).add(json.dumps(same, sort_keys=True))
+        assert all(len(variants) == 1 for variants in listing_params.values())
+
+    def test_continue_scan_resumes_under_the_same_cache_policy(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A filter that matches nothing caps every scan at 5 requests; each
+        "Continue scan" command resumes at the next unscanned API page."""
+        api = _FakeAPI(monkeypatch, _Catalogue(90, sparse=True))  # 15 API pages
+        argv = shlex.split("search --limit 2 -- release -x")
+
+        def pages_sent(args: list[str]) -> tuple[Result, list[int]]:
+            start = len(api.sends)
+            result = CliRunner().invoke(cli, args)
+            return result, [int(p["page"]) for _, p in api.sends[start:]]
+
+        warm, sent = pages_sent(argv)
+        assert sent == [1, 2, 3, 4, 5]
+        _, sent = pages_sent(_continuation(warm))
+        assert sent == [6, 7, 8, 9, 10]
+
+        first, sent = pages_sent(["--cached", *argv])
+        assert sent == []
+        assert "\nContinue scan: " in first.stdout
+        second, sent = pages_sent(_continuation(first))
+        assert second.exit_code == 0, second.output
+        assert sent == []
+        third, sent = pages_sent(_continuation(second))  # API page 11 never fetched
+        assert third.exit_code == 1
+        assert "Not cached: GET /database/search" in third.stderr
+        assert sent == []

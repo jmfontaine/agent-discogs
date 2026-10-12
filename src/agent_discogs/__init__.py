@@ -107,6 +107,11 @@ Environment:
   PYTHONIOENCODING     Non-UTF-8 stdout (e.g. ascii) prints characters it
                        cannot hold as backslash escapes (\\u5b87)
 
+Paging:
+  Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
+  it repeats --cached or --fresh and puts a search's type and query after --,
+  so a query such as -ambient survives.
+
 Budget:
   After any command that talks to the API, stderr ends with a budget line, e.g.
   'api: 3 requests · 43/60 left this minute'. ⚠ means 10 or fewer requests

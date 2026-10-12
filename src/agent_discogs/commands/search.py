@@ -250,17 +250,14 @@ def search(
         return
 
     filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}
-    footer_cmd = None
-    if result.has_next:
-        argv = ["search", *filter(None, (type_filter, query))]
-        footer_cmd = next_page_cmd(
-            argv,
-            **filters,
-            release_type=release_type if release_type != "official" else None,
-            limit=limit if limit != DEFAULT_LIMIT else None,
-            after=result.next_cursor,
-            page=None if result.filtered else result.page + 1,
-        )
+    footer_cmd = next_page_cmd(
+        ["search"],
+        result,
+        limit=limit,
+        positionals=args,  # as typed: re-parses to the same type and query
+        **filters,
+        release_type=release_type if release_type != "official" else None,
+    )
 
     if release_type != "official" and type_filter in (None, "release", "master"):
         filters["release-type"] = release_type

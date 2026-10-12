@@ -14,6 +14,8 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 
 After any command that talks to the API, stderr ends with a budget line such as `api: 3 requests · 43/60 left this minute` (`⚠` when 10 or fewer remain). See the Budget section of the core skill.
 
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy.
+
 
 ## search
 
@@ -28,7 +30,7 @@ agent-discogs search [type] <query> [--flags]
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `type` | No | Entity type: `release`, `master`, `artist`, `label`. If omitted, searches all types. |
-| `query` | No | Search query string. Required unless at least one non-blank filter is given (e.g., `--catno`, `--barcode`); otherwise `invalid_argument` before any request. |
+| `query` | No | Search query string. Required unless at least one non-blank filter is given (e.g., `--catno`, `--barcode`); otherwise `invalid_argument` before any request. A query starting with `-` goes after `--` (`agent-discogs search --release-type all -- -ambient`); printed `Next page:` commands always put the type and query there. |
 
 **Flags:**
 

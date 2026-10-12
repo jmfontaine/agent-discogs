@@ -68,5 +68,5 @@ When a search returns many similar results (common for popular albums with hundr
 - Use `--limit 10` or `--limit 20` when browsing larger result sets
 - Always prefer adding filters over paginating through hundreds of results
 - Discogs does not paginate beyond 10,000 results. If a query is that broad, add filters to narrow it.
-- Paste the `Next page:` / `Continue scan:` command shown under the results to continue; do not compute `--page` values for the default filtered search. `--page N` works with `--release-type all` and artist/label searches.
+- Paste the `Next page:` / `Continue scan:` command shown under the results to continue; do not compute `--page` values for the default filtered search. `--page N` works with `--release-type all` and artist/label searches. The printed command keeps `--cached`/`--fresh` and puts the type and query after `--`, so a query such as `-ambient` survives.
 - A `≤N` total means the count is the unfiltered upper bound; `Continue scan:` means the last window was cut short at 5 API calls and may be sparse.

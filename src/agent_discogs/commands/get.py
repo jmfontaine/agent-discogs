@@ -231,15 +231,9 @@ def _get_label_releases(
     if mode.json:
         return mode.page(result, project_label_release)
 
-    footer_cmd = None
-    if result.has_next:
-        footer_cmd = next_page_cmd(
-            ["get", "releases", label_ref],
-            year=year,
-            limit=limit if limit != DEFAULT_LIMIT else None,
-            after=result.next_cursor,
-            page=None if result.filtered else result.page + 1,
-        )
+    footer_cmd = next_page_cmd(
+        ["get", "releases", label_ref], result, limit=limit, year=year
+    )
     return format_label_releases(
         result.items,
         label_ref,
@@ -306,17 +300,14 @@ def _get_releases(
     if mode.json:
         return mode.page(result, project_artist_release)
 
-    footer_cmd = None
-    if result.has_next:
-        footer_cmd = next_page_cmd(
-            ["get", "releases", artist_ref],
-            role=role,
-            sort=sort,
-            desc=desc,
-            limit=limit if limit != DEFAULT_LIMIT else None,
-            after=result.next_cursor,
-            page=None if result.filtered else result.page + 1,
-        )
+    footer_cmd = next_page_cmd(
+        ["get", "releases", artist_ref],
+        result,
+        limit=limit,
+        role=role,
+        sort=sort,
+        desc=desc,
+    )
 
     return format_artist_releases(
         result.items,
@@ -398,19 +389,19 @@ def _get_versions(
     if mode.json:
         return mode.page(result, project_master_version)
 
-    footer_cmd = None
-    if result.has_next:
-        footer_cmd = next_page_cmd(
-            ["get", "versions", master_ref],
-            country=country,
-            format=format,
-            label=label,
-            year=year,
-            sort=sort,
-            desc=desc,
-            limit=limit if limit != DEFAULT_LIMIT else None,
-            page=result.page + 1,
-        )
+    # Versions page server-side only: `result` is never filtered, so this
+    # always continues with `--page`.
+    footer_cmd = next_page_cmd(
+        ["get", "versions", master_ref],
+        result,
+        limit=limit,
+        country=country,
+        format=format,
+        label=label,
+        year=year,
+        sort=sort,
+        desc=desc,
+    )
 
     return format_master_versions(
         result.items,
