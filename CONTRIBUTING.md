@@ -26,7 +26,8 @@ cd agent-discogs
 just setup
 ```
 
-This installs dependencies with [uv](https://docs.astral.sh/uv/) and sets up pre-commit hooks.
+This installs dependencies with [uv](https://docs.astral.sh/uv/), including [pre-commit](https://pre-commit.com/)
+from the dev group, and sets up the pre-commit hooks. No global pre-commit install is needed.
 
 > [!TIP]
 > The task runner is [just](https://github.com/casey/just). If you don't have it installed, you can run the underlying

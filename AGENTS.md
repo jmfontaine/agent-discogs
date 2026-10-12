@@ -74,7 +74,9 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 ## Dependencies
 
 - Runtime: `click`, `discogs-sdk`, `pydantic`
-- Dev: deptry, pyproject-fmt, pyright, ruff, ty, plus the `test` group
+- Dev: deptry, pre-commit, pyproject-fmt, pyright, ruff, ty, plus the `test`
+  group. The `pre-commit` recipes run it through `uv run`, so no global
+  install is needed.
 - Test group: pytest, pytest-cov. Kept separate because CI installs it on its
   own (`uv export --only-group test`) into the clean environment where the
   built wheel is tested; anything added here lands in that environment too.

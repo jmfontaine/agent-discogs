@@ -60,15 +60,15 @@ lint-fix:
 
 # Run pre-commit on all files
 pre-commit:
-    pre-commit run --all-files
+    uv run pre-commit run --all-files
 
 # Install pre-commit hooks
 pre-commit-install:
-    pre-commit install
+    uv run pre-commit install
 
 # Update pre-commit hooks to latest versions
 pre-commit-update:
-    pre-commit autoupdate --freeze
+    uv run pre-commit autoupdate --freeze
 
 # Run all quality assurance checks
 qa: dead-code deps-unused format-check lint type-check verify-types
@@ -133,7 +133,7 @@ sdk-unlink:
 # Set local dev environment up
 setup:
     uv sync --all-extras --all-groups  # Install dependencies
-    pre-commit install  # Install pre-commit hooks
+    uv run pre-commit install  # Install pre-commit hooks
     echo "Run 'source .venv/bin/activate' to activate the Python virtual environment"
 
 # Run tests

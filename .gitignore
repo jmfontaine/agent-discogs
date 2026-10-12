@@ -1,4 +1,6 @@
 __pycache__
+.claude/settings.local.json
+.codex
 .coverage
 .env
 .pytest_cache
