@@ -1,0 +1,28 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "agent-discogs",
+  "description": "Token-efficient Discogs CLI for AI agents (PyPI package agent-discogs): searches the Discogs music database and shows releases, masters, artists, labels, tracklists, credits and price suggestions as compact text or JSON.",
+  "folders": ["docs"],
+  "excludeFolders": ["./reference", "./tests", "./scripts", "./src", "./skills"],
+  "excludeFiles": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "changelog.md",
+    "CHANGELOG.mdx",
+    "changelog.mdx",
+    "LICENSE.md",
+    "license.md",
+    "LICENSE.txt",
+    "CODE_OF_CONDUCT.md",
+    "code_of_conduct.md"
+  ],
+  "rules": [
+    "This is jmfontaine/agent-discogs, a command-line tool (PyPI package agent-discogs). It is not the discogs-sdk Python library or any other Discogs client.",
+    "Install it with `pipx install agent-discogs` or `uv tool install agent-discogs`, and authenticate by setting the DISCOGS_TOKEN environment variable to a Discogs personal access token.",
+    "Run `agent-discogs skills get core` (add `--full` for its references) and read it before relying on these pages: it is the authoritative guide for the installed version, while these pages describe the latest main branch.",
+    "Pass the refs printed in the output (@r… release, @m… master, @a… artist, @l… label) back into later commands, such as `agent-discogs get release @r…`.",
+    "Prefer `--json` (on search, get, tracks, price and cache clear) when parsing the output: the text output is meant for reading."
+  ]
+}
