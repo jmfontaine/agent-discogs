@@ -108,7 +108,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 
 | Flag | Description |
 |------|-------------|
-| `--json` | JSON output: a compact projection of the text view, plus `url` on `release`, `master`, `artist`, and `label`: the absolute Discogs web page (never in text; `versions` and `releases` rows have none, nor do `tracklist`, `price`, `credits`, and `identifiers`: use `release` for the link). Errors become `{"error":{"code",...}}` on stdout |
+| `--json` | JSON output: a compact projection of the text view, plus `url` on `release`, `master`, `artist`, and `label`: the absolute Discogs web page (never in text; `versions` and `releases` rows only when Discogs sends one, which it does not today; never on `tracklist`, `price`, `credits`, and `identifiers`: use `release` for the link). Errors become `{"error":{"code",...}}` on stdout |
 | `--full` | With `--json`: the complete record instead of the projection, normalized (consistent field names such as `catalog_number` and a track's `type`, RFC 3339 timestamps, `null` for an absent or unparseable timestamp; unmodeled fields as Discogs sends them) |
 | `--limit` | `releases`, `versions` only: results per page, 1-100 (default: 5) |
 | `--page` | Page number, from 1 (server-side pages: `versions`, `releases` without `--role` / label `--year`) |

@@ -156,8 +156,9 @@ get release prints 'Added: YYYY-MM-DD', the day the release was added to
 Discogs (--json: 'added', an RFC 3339 timestamp), at no extra request.
 
 --json gives each release, master, artist, label, and search result a 'url':
-its Discogs web page, absolute, to hand to a person. Text output omits it. The
-versions/releases rows and tracks, price, credits, identifiers have none.
+its Discogs web page, absolute, to hand to a person. Text output omits it.
+versions/releases rows carry it only if Discogs sends one (not today); tracks,
+price, credits, and identifiers never do.
 
 Piping into a reader that closes early (| head -1) exits 1 with no message.
 

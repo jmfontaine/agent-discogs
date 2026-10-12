@@ -49,9 +49,20 @@ def _timestamp(value: datetime | None) -> str | None:
     return _DATETIME.dump_python(value, mode="json") if value else None
 
 
+_SITE_URL = "https://www.discogs.com"
+
+
 def _url(entity: Any) -> str | None:
-    """The entity's Discogs web page: its `uri`, which the SDK makes absolute."""
-    return getattr(entity, "uri", None)
+    """The entity's Discogs web page: its `uri`, always absolute.
+
+    The SDK makes a search result's site-relative `uri` absolute; a list row
+    keeps an unmodeled `uri` as sent, so a relative one is completed the same
+    way here.
+    """
+    uri = getattr(entity, "uri", None)
+    if isinstance(uri, str) and uri.startswith("/"):
+        return _SITE_URL + uri
+    return uri
 
 
 def _artist_refs(artists: list[Any] | None) -> list[dict[str, Any]]:
@@ -274,6 +285,7 @@ def project_label_release(rel: Any) -> dict[str, Any]:
     return drop_empty(
         {
             "ref": make_ref("release", rel.id),
+            "url": _url(rel),
             "title": rel.title,
             "artist": getattr(rel, "artist", None),
             "year": known_year(getattr(rel, "year", None)),
@@ -308,6 +320,7 @@ def project_master_version(ver: Any) -> dict[str, Any]:
     return drop_empty(
         {
             "ref": make_ref("release", ver.id),
+            "url": _url(ver),
             "title": getattr(ver, "title", None),
             "released": release_date(getattr(ver, "released", None)),
             "country": getattr(ver, "country", None),
@@ -324,6 +337,7 @@ def project_artist_release(rel: Any) -> dict[str, Any]:
     return drop_empty(
         {
             "ref": make_ref(entity_type, rel.id),
+            "url": _url(rel),
             "type": entity_type,
             "title": rel.title,
             "year": known_year(getattr(rel, "year", None)),

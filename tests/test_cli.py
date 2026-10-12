@@ -4201,6 +4201,58 @@ class TestRealSdk:
         assert outputs["linked"][0] == outputs["bare"][0]
         assert "discogs.com" not in outputs["linked"][0]
 
+    @pytest.mark.parametrize(
+        ("argv", "path", "key", "fields"),
+        [
+            (["get", "versions", "@m3719"], "/masters/3719/versions", "versions", {}),
+            (
+                ["get", "releases", "@a3857"],
+                "/artists/3857/releases",
+                "releases",
+                {"type": "release"},
+            ),
+            (["get", "releases", "@l647"], "/labels/647/releases", "releases", {}),
+        ],
+    )
+    def test_json_list_rows_carry_a_link_when_discogs_sends_one(
+        self, argv: list[str], path: str, key: str, fields: dict[str, object]
+    ) -> None:
+        # No such row has `uri` today; the SDK models would keep one as an
+        # unmodeled field, so `url` must follow it if Discogs ever sends it.
+        rows = [
+            {
+                **fields,
+                "id": 10,
+                "title": "Absolute",
+                "uri": "https://www.discogs.com/release/10-A",
+            },
+            {**fields, "id": 11, "title": "Relative", "uri": "/release/11-R"},
+            {**fields, "id": 12, "title": "Bare"},
+        ]
+        pagination = {"page": 1, "pages": 1, "per_page": 5, "items": 3}
+        entity = {"id": 1, "title": "Entity", "name": "Entity"}  # text headers
+        outputs = {}
+        for name, sent in (
+            ("linked", rows),
+            ("bare", [{k: v for k, v in r.items() if k != "uri"} for r in rows]),
+        ):
+            listing = {"pagination": pagination, key: sent}
+            self.respond = lambda request, listing=listing: httpx2.Response(
+                200, json=listing if request.url.path == path else entity
+            )
+            text = CliRunner().invoke(cli, ["--fresh", *argv])
+            doc = CliRunner().invoke(cli, ["--fresh", *argv[:2], "--json", argv[2]])
+            assert text.exit_code == doc.exit_code == 0, text.output + doc.output
+            outputs[name] = (text.stdout, json.loads(doc.stdout)["results"])
+        assert [row.get("url") for row in outputs["linked"][1]] == [
+            "https://www.discogs.com/release/10-A",
+            "https://www.discogs.com/release/11-R",
+            None,
+        ]
+        assert not [row for row in outputs["bare"][1] if "url" in row]
+        assert outputs["linked"][0] == outputs["bare"][0]
+        assert "discogs.com" not in outputs["linked"][0]
+
     def test_json_search_links_are_absolute(self) -> None:
         self.respond = lambda _request: httpx2.Response(
             200,
