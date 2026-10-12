@@ -49,6 +49,9 @@ Refs:
   Search results return typed refs: @a3857 (artist), @r847868 (release),
   @m3719 (master), @l647 (label). Use refs with get commands.
 
+Unknown dates are left out: Discogs' year 0 is omitted, and a release date
+drops a zero month or day (1994-05-00 prints as 1994-05, 1994-00-00 as 1994).
+
 Options:
   --cached         Serve only from the cache; a miss fails (cache_miss), spends
                    nothing. Precedes the command: agent-discogs --cached price @r...

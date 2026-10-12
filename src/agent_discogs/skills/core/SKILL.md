@@ -59,6 +59,7 @@ Check status: `agent-discogs status`
 - **get releases @a...** — artist discography: ref, `[type]`, title, year, label, format, role. `--sort year|title|format`, `--desc`.
 - **get releases @l...** — label catalogue: ref, title, artist, year, catalog number, format. No server-side filters or sorting (API limit): `--year` is a client-side scan that continues via `--after`, otherwise page with `--page`.
 - **get artist** — profile, `Members:` and `Former:` each with `[@a...]` refs. `Former:` lists only members Discogs marks inactive; a member with no recorded status is listed under `Members:` (JSON `members`/`former` match). **get label** — profile, `Parent:` and `Sub-labels:` with `[@l...]` refs.
+- **Dates** — unknown parts are left out in text and `--json`: Discogs' year `0` is omitted rather than printed, and a release date drops a zero month or day (`1994-05-00` → `1994-05`, `1994-00-00` → `1994`; the text view prints no `Released:` when that equals the header year).
 
 ## Common Patterns
 
