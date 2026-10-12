@@ -147,6 +147,8 @@ agent-discogs get release @r352665 --json --full     # raw SDK model, when you n
 agent-discogs get credits @r352665 --json --full     # raw release credits, plus track_credits: [{position, title, extra_artists}]
 ```
 
+On a UTF-8 stdout, non-ASCII text is written as is (`"title":"無罪モラトリアム"`), which keeps Japanese, Cyrillic, or accented titles short. On any other stdout encoding, it is written as `\uXXXX` escapes so the document stays valid. Either way, C1 controls (U+0080–U+009F), bidi controls (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), U+2028/U+2029, and lone surrogates are always escaped. No value is changed: `json.loads` returns exactly what Discogs sent.
+
 Errors under `--json` are a JSON document on stdout with exit code 1:
 
 ```json

@@ -65,7 +65,8 @@ Options:
                    size on stderr, plus the SDK's own log lines. Never changes
                    stdout or the exit code; an unresolvable cache location
                    shows as 'unknown (no home directory)'
-  --json           JSON output: a compact projection of the text view (search, get)
+  --json           JSON output: a compact projection of the text view (search, get);
+                   non-ASCII is literal on a UTF-8 stdout, \\uXXXX escapes otherwise
   --full           With --json: the raw SDK record instead of the projection
   --limit N        Results per page (search, get)
   --page N         Page number for server-side pages (search, get)

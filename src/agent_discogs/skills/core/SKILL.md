@@ -99,6 +99,8 @@ agent-discogs get release @r847868 --json -v          # adds notes, credits, and
 agent-discogs get release @r847868 --json --full      # raw Discogs record (images, URLs, ~20x larger); only when the projection lacks a field you need
 ```
 
+On a UTF-8 stdout, non-ASCII text is literal (`"title":"無罪モラトリアム"`); on any other encoding it is `\uXXXX`-escaped. Control, bidi, and line-separator characters (U+0080–U+009F, U+061C, U+200E/F, U+202A–U+202E, U+2066–U+2069, U+2028/9) and lone surrogates are always escaped. Parse with a JSON parser and every value is exactly what Discogs sent.
+
 With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}`. Branch on `error.code`: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when Discogs sends it, plus `limit`/`remaining` for the current minute), `cache_miss` (only under `--cached`), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
 
 ## Anti-Patterns

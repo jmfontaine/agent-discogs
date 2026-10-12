@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import asdict, dataclass
 from typing import Any, NoReturn
@@ -19,6 +18,7 @@ from discogs_sdk import (
 )
 
 from agent_discogs import trace
+from agent_discogs.json_output import dumps
 
 
 @dataclass(frozen=True)
@@ -161,7 +161,7 @@ def error_document(exc: Exception, context: str | None = None) -> dict[str, Any]
 
 def format_error_json(exc: Exception, context: str | None = None) -> str:
     """JSON rendering: `{"error": {"code": ..., "message": ..., "hint": ...}}`."""
-    return json.dumps({"error": error_document(exc, context)}, separators=(",", ":"))
+    return dumps({"error": error_document(exc, context)})
 
 
 def fail(exc: Exception, context: str | None = None, *, json_output: bool) -> NoReturn:

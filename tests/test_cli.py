@@ -12,6 +12,7 @@ import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import click
 import httpx2
@@ -33,6 +34,7 @@ from discogs_sdk import (
 )
 
 from agent_discogs import cli, main, trace
+from agent_discogs.json_output import dumps
 from agent_discogs.pagination import PageResult
 
 
@@ -2044,6 +2046,125 @@ class TestNonUtf8Stdout:
         assert "@r1" in result.stdout
         assert "@r2" in result.stdout
         assert result.stdout.count("\\u5b87\\u591a\\u7530") == 2
+
+
+Argv = tuple[str, ...]
+
+
+class TestJsonEncoding:
+    """JSON writes non-ASCII literally on a UTF-8 stdout, falls back to
+    `\\uXXXX` elsewhere, and always escapes characters that can reorder or
+    break a terminal, without changing any value."""
+
+    UNSAFE = ("\u0085", "\u202e", "\u2066", "\u2028")
+    TITLE = "宇多田ヒカル A\u0085B\u202eC\u2066D\u2028E 🎵"
+    NOTES = "Line one\u2028line two \u202eevil\u2069 \u0085next \u2066x\u2069 end"
+
+    @pytest.fixture(autouse=True)
+    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        release = {"id": 1, "title": self.TITLE, "notes": self.NOTES}
+        page = {"page": 1, "pages": 1, "items": 1, "per_page": 50}
+        routes: dict[str, object] = {
+            "/releases/1": release,
+            "/database/search": {
+                "pagination": page,
+                "results": [{**release, "type": "release"}],
+            },
+        }
+        _mock_api(monkeypatch, "get", routes)
+        _mock_api(monkeypatch, "search", routes)
+
+    ARGVS = (
+        ("get", "release", "--json", "-v", "@r1"),
+        ("get", "release", "--json", "--full", "@r1"),
+        ("search", "--json", "x"),
+        # --debug swaps stdout for a counting proxy; the encoding still shows.
+        ("--debug", "get", "release", "--json", "-v", "@r1"),
+    )
+
+    def _values(self, argv: Argv, doc: dict[str, Any]) -> tuple[str, ...]:
+        if "search" in argv:
+            return (doc["results"][0]["title"],)
+        return (doc["title"], doc["notes"])
+
+    def _expected(self, argv: Argv) -> tuple[str, ...]:
+        return (self.TITLE,) if "search" in argv else (self.TITLE, self.NOTES)
+
+    @pytest.mark.parametrize("argv", ARGVS)
+    def test_utf8_stdout_writes_literal_characters(self, argv: Argv) -> None:
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 0, result.output
+        assert "宇多田ヒカル" in result.stdout
+        assert "🎵" in result.stdout
+        assert self._values(argv, json.loads(result.stdout)) == self._expected(argv)
+
+    @pytest.mark.parametrize("argv", ARGVS)
+    def test_unsafe_characters_are_escaped_losslessly(self, argv: Argv) -> None:
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 0, result.output
+        for ch in self.UNSAFE:
+            assert ch not in result.stdout
+            assert f"\\u{ord(ch):04x}" in result.stdout
+        assert self._values(argv, json.loads(result.stdout)) == self._expected(argv)
+
+    @pytest.mark.parametrize("charset", ["ascii", "latin-1"])
+    @pytest.mark.parametrize("argv", ARGVS)
+    def test_non_utf8_stdout_stays_valid_json(self, argv: Argv, charset: str) -> None:
+        result = CliRunner(charset=charset).invoke(cli, argv)
+        assert result.exit_code == 0, result.output
+        assert result.stdout_bytes.isascii()
+        assert self._values(argv, json.loads(result.stdout)) == self._expected(argv)
+
+    def test_error_envelope(self) -> None:
+        bad = "@r1" + "".join(self.UNSAFE) + "宇"
+        result = CliRunner().invoke(cli, ["get", "release", "--json", bad])
+        assert result.exit_code == 1
+        assert "宇" in result.stdout
+        for ch in self.UNSAFE:
+            assert ch not in result.stdout
+            assert f"\\u{ord(ch):04x}" in result.stdout
+        error = json.loads(result.stdout)["error"]
+        assert error["code"] == "invalid_argument"
+        assert bad in error["message"]
+
+        ascii_run = CliRunner(charset="ascii").invoke(
+            cli, ["get", "release", "--json", bad]
+        )
+        assert ascii_run.stdout_bytes.isascii()
+        assert bad in json.loads(ascii_run.stdout)["error"]["message"]
+
+    def test_exactly_the_fixed_set_is_always_escaped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            sys, "stdout", io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        )
+        escaped = [
+            *map(chr, range(0x80, 0xA0)),
+            "\u061c",
+            "\u200e",
+            "\u200f",
+            *map(chr, range(0x202A, 0x202F)),
+            *map(chr, range(0x2066, 0x206A)),
+            "\u2028",
+            "\u2029",
+            # Low before high: a high surrogate followed by a low one would
+            # decode as a pair in any JSON, escaped or not.
+            "\udcff",
+            "\udfff",
+            "\ud800",
+        ]
+        neighbours = ["\u00a0", "\u061b", "\u200d", "\u2010", "\u202f", "\u2070"]
+        neighbours += ["\ud7ff", "\ue000"]
+        value = "".join(escaped + neighbours)
+        text = dumps({"k": value})
+        for ch in escaped:
+            assert ch not in text
+            assert f"\\u{ord(ch):04x}" in text
+        for ch in neighbours:
+            assert ch in text
+        assert json.loads(text) == {"k": value}
+        sys.stdout.write(text)  # strict UTF-8: no lone surrogate left to choke on
 
 
 class TestJsonGet:

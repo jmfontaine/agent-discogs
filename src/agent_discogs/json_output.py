@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+import codecs
 import json
+import re
+import sys
 from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from agent_discogs.pagination import PageResult
+
+# Written as \uXXXX even on a UTF-8 stdout: C1 controls, bidi controls, and
+# the line/paragraph separators. Literal, they can reorder or break what a
+# terminal or log viewer shows. Lone surrogates (from undecodable argv bytes
+# or a `\udXXX` escape in an API body) cannot be encoded as UTF-8 at all.
+# json.dumps emits non-ASCII characters only inside string literals, so
+# escaping them afterwards is still valid JSON and changes no value.
+_ALWAYS_ESCAPED = re.compile(
+    "[\u0080-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\u2028\u2029"
+    "\ud800-\udfff]"
+)
 
 Projector = Callable[[Any], Any]
 
@@ -26,8 +40,24 @@ class Mode(NamedTuple):
         return page_document(result, project, full=self.full)
 
 
+def _stdout_is_utf8() -> bool:
+    # A stream without an encoding (StringIO) gets the safe ASCII output.
+    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+    return codecs.lookup(encoding).name == "utf-8"
+
+
+def dumps(data: Any) -> str:
+    """Compact JSON for stdout: non-ASCII literal when stdout is UTF-8, else
+    `\\uXXXX` so the document is valid in any encoding. `_ALWAYS_ESCAPED`
+    characters are escaped either way."""
+    text = json.dumps(
+        data, separators=(",", ":"), default=str, ensure_ascii=not _stdout_is_utf8()
+    )
+    return _ALWAYS_ESCAPED.sub(lambda m: f"\\u{ord(m.group()):04x}", text)
+
+
 def _emit(data: Any) -> None:
-    print(json.dumps(data, separators=(",", ":"), default=str))
+    print(dumps(data))
 
 
 def raw(obj: Any) -> Any:
