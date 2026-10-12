@@ -17,15 +17,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
+from agent_discogs.config import CACHE_DIR, CACHE_TTL, MAX_API_CALLS, has_token
+
 if TYPE_CHECKING:
     import click
     from discogs_sdk import RequestEvent
 
 # Remaining requests at which the footer warns. One client-side scan costs up
-# to MAX_API_CALLS (5) requests; two back-to-back scans can spend 10.
-LOW_BUDGET = 10
-# Passed to Discogs(cache_ttl=...) and shown by --debug.
-CACHE_TTL = 3600.0
+# to MAX_API_CALLS requests; two back-to-back scans can spend twice that.
+LOW_BUDGET = 2 * MAX_API_CALLS
 
 _SDK_LOGGER = "discogs_sdk"
 
@@ -203,8 +203,6 @@ def render_panel(trace: Trace, *, cache_dir: Path, elapsed_ms: float) -> str:
 def finish() -> None:
     """Print the footer (and the panel under --debug) to stderr and undo
     whatever `begin()` installed."""
-    from agent_discogs.client import CACHE_DIR, has_token
-
     if _trace.stdout is not None:
         sys.stdout = _trace.stdout.target
     footer = render_footer(

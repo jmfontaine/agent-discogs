@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from agent_discogs.pagination import MAX_API_CALLS
+from agent_discogs.config import MAX_API_CALLS
 from agent_discogs.refs import make_ref
 
 

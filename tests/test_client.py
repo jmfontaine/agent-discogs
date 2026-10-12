@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import pytest
 
 import agent_discogs.client as client_module
-from agent_discogs.client import get_client, has_token
+from agent_discogs.client import get_client
 
 
 class TestGetClient:
@@ -42,13 +42,3 @@ class TestGetClient:
         get_client()
         assert len(calls) == 1
         assert calls[0]["token"] is None
-
-
-class TestHasToken:
-    def test_has_token_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("DISCOGS_TOKEN", "abc")
-        assert has_token() is True
-
-    def test_has_token_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("DISCOGS_TOKEN", raising=False)
-        assert has_token() is False

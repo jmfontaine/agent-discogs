@@ -91,7 +91,6 @@ lint.select = [
 lint.ignore = [
   "EM101",   # raw-string-in-exception - the test doubles that raise use one-off literals; naming them first adds a line and no clarity
   "EM102",   # f-string-in-exception - refs.py and get.py interpolate the offending ref or noun, which is what makes the message actionable
-  "PLC0415", # import-outside-top-level - errors.py and __init__.py import discogs_sdk lazily so --help and --version never pay to load it
   "PLR0911", # too-many-return-statements - format_error() returns one tailored message per SDK exception type
   "PLR0912", # too-many-branches - verbose release output walks a long list of independently optional Discogs fields
   "PLR0913", # too-many-arguments - click hands every command option to the callback as its own keyword argument

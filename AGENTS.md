@@ -47,7 +47,8 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 
 ### Core Modules
 
-- `client.py` — Singleton `Discogs` client. Reads `DISCOGS_TOKEN` from env. Cache dir: `~/.cache/agent-discogs`.
+- `config.py` — Leaf module (imports nothing from the package) holding shared configuration: `CACHE_DIR` (`~/.cache/agent-discogs`), `CACHE_TTL`, `MAX_API_CALLS`, and `has_token()`. Put new shared constants here rather than in a module that needs them, so the package stays free of import cycles.
+- `client.py` — Singleton `Discogs` client. Reads `DISCOGS_TOKEN` from env; cache settings come from `config.py`.
 - `refs.py` — Typed ref system (`@a3857`, `@r847868`, `@m3719`, `@l647`). `make_ref()` creates refs, `parse_ref()` parses them. Raw numeric IDs return type `"unknown"`.
 - `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`). `_send()` is the SDK's HTTP-error boundary — it raises the mapped `DiscogsAPIError` subclass before returning, so callers never re-check the status.
 - `formatting.py` — All output formatting. Returns plain strings, callers `print()` them.
@@ -67,8 +68,9 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 ## Testing
 
 - Tests use `click.testing.CliRunner` for in-process CLI testing (no subprocess).
-- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_doc_examples.py`, `tests/test_env_isolation.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`, `tests/test_trace.py`.
+- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_config.py`, `tests/test_doc_examples.py`, `tests/test_env_isolation.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_imports.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`, `tests/test_trace.py`.
 - `tests/conftest.py` has one autouse fixture, `_isolate_env`: every test not marked `live` runs with `AGENT_DISCOGS_DEBUG` and the five SDK credential variables (`DISCOGS_TOKEN`, `DISCOGS_CONSUMER_KEY`, `DISCOGS_CONSUMER_SECRET`, `DISCOGS_ACCESS_TOKEN`, `DISCOGS_ACCESS_TOKEN_SECRET`) removed, so the developer's shell cannot change results. Live tests keep them. A test that needs one sets it with `monkeypatch.setenv`. The conftest also enables the `pytester` plugin, which `tests/test_env_isolation.py` uses to check the fixture.
+- `tests/test_imports.py` builds the package's import graph from the source and fails on any import cycle (function-level imports included) or on `config.py` importing from the package.
 - No mocking framework beyond `unittest.mock`.
 - `tests/test_doc_examples.py` checks every `@ref` in the docs against `KNOWN_REFS`, and that every `KNOWN_REFS` entry is cited somewhere. Its `live`-marked half resolves each ref against the real API through its own uncached client (not `get_client()`), so each ref costs exactly one network request and the developer's cache dir is never read or written; `just test` excludes it, `just test-live` runs it (needs `DISCOGS_TOKEN`). Adding a new example ID to any doc means adding it to `KNOWN_REFS`; dropping the last citation of one means removing it.
 
@@ -122,6 +124,7 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 
 - Python 3.10+ required
 - `py.typed` marker present (PEP 561)
+- Imports live at module scope; ruff's `PLC0415` enforces it. Only `TYPE_CHECKING` blocks may import inside a function or block.
 - Run `git` commands directly, never with `git -C`
 - When adding or changing user-facing behavior (commands, flags, output shape, errors), update all of: `_HELP_TEXT` in `src/agent_discogs/__init__.py`, `README.md`, and `src/agent_discogs/skills/core/` (`SKILL.md` for workflow/overview, `references/*.md` for detail). Agents load the bundled skill from the installed binary, so stale content there is a live bug.
 

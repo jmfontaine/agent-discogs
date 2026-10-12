@@ -13,9 +13,15 @@ from types import SimpleNamespace
 import click
 import pytest
 from click.testing import CliRunner
-from discogs_sdk import RateLimit, RequestEvent
+from discogs_sdk import (
+    CacheMissError,
+    NotFoundError,
+    RateLimit,
+    RateLimitError,
+    RequestEvent,
+)
 
-from agent_discogs import cli, trace
+from agent_discogs import AliasGroup, cli, main, trace
 from agent_discogs.pagination import PageResult
 
 
@@ -116,8 +122,6 @@ class TestCLIBasics:
         assert result.exit_code != 0
 
     def test_main_entry_point(self) -> None:
-        from agent_discogs import main
-
         result = CliRunner().invoke(cli, ["--help"])
         assert result.exit_code == 0
         assert main is not None
@@ -1448,8 +1452,6 @@ class TestShortcutCommands:
 class TestResolveCommand:
     def test_resolve_none_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """resolve_command returns None tuple when super returns None cmd."""
-        from agent_discogs import AliasGroup
-
         group = AliasGroup(name="test")
         ctx = click.Context(group)
         monkeypatch.setattr(
@@ -1466,8 +1468,6 @@ class TestResolveCommand:
 class TestMainEntry:
     def test_main_invokes_cli(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """main() delegates to cli()."""
-        from agent_discogs import main
-
         calls: list[object] = []
         monkeypatch.setattr("agent_discogs.cli", lambda *a, **kw: calls.append(1))
         main()
@@ -1478,8 +1478,7 @@ class TestMainEntry:
         calls: list[object] = []
         monkeypatch.setattr("agent_discogs.main", lambda: calls.append(1))
 
-        import agent_discogs.__main__ as dunder_main
-
+        dunder_main = importlib.import_module("agent_discogs.__main__")
         importlib.reload(dunder_main)
         assert len(calls) >= 1
 
@@ -1489,8 +1488,6 @@ class TestMultiRef:
 
     @pytest.fixture(autouse=True)
     def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from discogs_sdk import NotFoundError
-
         releases = {
             847868: _fake_model(
                 id=847868,
@@ -1600,8 +1597,6 @@ class TestMultiRef:
         result = CliRunner().invoke(cli, ["tracks", "@r847868", "@r12453760"])
         assert result.exit_code == 0
         assert result.output.count("Tracklist: ") == 2
-
-        from discogs_sdk import NotFoundError
 
         def _release(release_id: int) -> object:
             if release_id == 1:
@@ -1800,8 +1795,6 @@ class TestJsonSearch:
         assert "--page is not available" in data["error"]["message"]
 
     def test_json_error_envelope_for_api_errors(self) -> None:
-        from discogs_sdk import RateLimitError
-
         def _raise(*_a: object, **_kw: object) -> None:
             raise RateLimitError(
                 "slow", status_code=429, response_body={}, retry_after="12"
@@ -2211,8 +2204,6 @@ class TestJsonGet:
         assert full["marketplace_stats"] == _via_json(marketplace_stats.model_dump())
 
     def test_get_json_error_envelope(self) -> None:
-        from discogs_sdk import NotFoundError
-
         def _missing(_id: int) -> None:
             raise NotFoundError("nope", status_code=404, response_body={})
 
@@ -2412,8 +2403,6 @@ class TestCacheFlags:
     def test_cache_miss_is_a_per_ref_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from discogs_sdk import CacheMissError
-
         price = _fake_model(conditions={"Mint (M)": _fake(value=50.0)})
         stats = _fake_model(num_for_sale=10, lowest_price=None)
 
@@ -2469,7 +2458,6 @@ class TestCacheFlags:
     ) -> None:
         """The SDK emits no event for a `CacheMissError`, so a run whose very
         first lookup misses has an empty trace; the footer must still say so."""
-        from discogs_sdk import CacheMissError
 
         def _miss(release_id: int) -> object:
             raise CacheMissError(

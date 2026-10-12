@@ -6,7 +6,7 @@ from importlib.metadata import version
 
 import click
 
-from agent_discogs.client import CACHE_DIR, has_token
+from agent_discogs.config import CACHE_DIR, has_token
 from agent_discogs.formatting import format_status
 
 

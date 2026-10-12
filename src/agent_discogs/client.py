@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from discogs_sdk import Discogs
 
 from agent_discogs import trace
+from agent_discogs.config import CACHE_DIR, CACHE_TTL
 
 _client: Discogs | None = None
-
-CACHE_DIR = (
-    Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "agent-discogs"
-)
 
 
 def get_client() -> Discogs:
@@ -27,12 +23,7 @@ def get_client() -> Discogs:
         token=token,
         cache=True,
         cache_dir=CACHE_DIR,
-        cache_ttl=trace.CACHE_TTL,
+        cache_ttl=CACHE_TTL,
         on_request=trace.record,
     )
     return _client
-
-
-def has_token() -> bool:
-    """Check if a DISCOGS_TOKEN is configured."""
-    return bool(os.environ.get("DISCOGS_TOKEN"))

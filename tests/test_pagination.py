@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Callable, Mapping
 from types import SimpleNamespace
 from typing import Any
@@ -10,8 +11,8 @@ import pytest
 from pydantic import BaseModel
 
 from agent_discogs import trace
+from agent_discogs.config import MAX_API_CALLS
 from agent_discogs.pagination import (
-    MAX_API_CALLS,
     PageResult,
     fetch_filtered_page,
     fetch_page,
@@ -84,8 +85,6 @@ class TestNextPageCmd:
         )
 
     def test_quotes_survive_a_shell_round_trip(self) -> None:
-        import shlex
-
         cmd = next_page_cmd(["search", 'He said "hi" $HOME'], label="R & S")
         assert shlex.split(cmd) == [
             "agent-discogs",

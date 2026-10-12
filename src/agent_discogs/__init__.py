@@ -13,6 +13,7 @@ from agent_discogs.commands.get import get, price, tracks
 from agent_discogs.commands.search import search
 from agent_discogs.commands.skills import skills
 from agent_discogs.commands.status import status
+from agent_discogs.errors import format_error
 
 ALIASES: dict[str, str] = {
     "find": "search",
@@ -135,8 +136,6 @@ class AliasGroup(click.Group):
         # Last-resort boundary: any escaped exception becomes agent-readable text
         # instead of a traceback.
         except Exception as e:  # noqa: BLE001
-            from agent_discogs.errors import format_error
-
             print(format_error(e), file=sys.stderr)
             sys.exit(1)
 

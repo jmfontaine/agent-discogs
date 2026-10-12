@@ -11,8 +11,8 @@ from discogs_sdk import Discogs
 from pydantic import BaseModel
 
 from agent_discogs import trace
+from agent_discogs.config import MAX_API_CALLS
 
-MAX_API_CALLS = 5
 DEFAULT_LIMIT = 5
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from agent_discogs import cli
+from agent_discogs.commands.skills import _description, _render
 
 
 class TestSkillsCommand:
@@ -58,8 +59,6 @@ class TestSkillsCommand:
         assert "skills get core" in result.output
 
     def test_render_and_description_for_a_bare_skill(self, tmp_path: Path) -> None:
-        from agent_discogs.commands.skills import _description, _render
-
         (tmp_path / "SKILL.md").write_text("# Solo\n", encoding="utf-8")
         assert _render(tmp_path, full=True) == "# Solo\n"
         assert _description("# Solo\n") == ""

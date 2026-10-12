@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
 from agent_discogs.formatting import (
+    _artist_string,
+    _format_track_lines,
+    _label_string,
+    _search_result_type,
+    _track_artist_prefix,
+    _truncate,
+    _urls_short,
     format_artist,
     format_artist_releases,
     format_credits,
@@ -30,69 +38,49 @@ def _fake(**kwargs: object) -> SimpleNamespace:
 
 class TestArtistString:
     def test_artist_with_join(self) -> None:
-        from agent_discogs.formatting import _artist_string
-
         a1 = _fake(name="Trent Reznor", join="&")
         a2 = _fake(name="Atticus Ross", join=None)
         result = _artist_string([a1, a2])
         assert result == "Trent Reznor & Atticus Ross"
 
     def test_empty_artists(self) -> None:
-        from agent_discogs.formatting import _artist_string
-
         assert _artist_string(None) == "Unknown Artist"
         assert _artist_string([]) == "Unknown Artist"
 
 
 class TestLabelString:
     def test_no_catno(self) -> None:
-        from agent_discogs.formatting import _label_string
-
         lbl = _fake(name="Nothing Records", catalog_number=None)
         assert _label_string([lbl]) == "Nothing Records"
 
     def test_empty_labels(self) -> None:
-        from agent_discogs.formatting import _label_string
-
         assert _label_string(None) == ""
         assert _label_string([]) == ""
 
 
 class TestTruncate:
     def test_long_text(self) -> None:
-        from agent_discogs.formatting import _truncate
-
         text = "a " * 200  # 400 chars
         result = _truncate(text)
         assert result.endswith("...")
         assert len(result) <= 304  # 300 + "..."
 
     def test_short_text(self) -> None:
-        from agent_discogs.formatting import _truncate
-
         assert _truncate("short") == "short"
 
     def test_none_text(self) -> None:
-        from agent_discogs.formatting import _truncate
-
         assert _truncate(None) == ""
 
     def test_empty_text(self) -> None:
-        from agent_discogs.formatting import _truncate
-
         assert _truncate("") == ""
 
 
 class TestSearchResultType:
     def test_empty_type(self) -> None:
-        from agent_discogs.formatting import _search_result_type
-
         r = _fake(type="")
         assert _search_result_type(r) == "release"
 
     def test_no_type_attr(self) -> None:
-        from agent_discogs.formatting import _search_result_type
-
         class NoType:
             pass
 
@@ -102,20 +90,14 @@ class TestSearchResultType:
 
 class TestUrlsShort:
     def test_url_without_scheme(self) -> None:
-        from agent_discogs.formatting import _urls_short
-
         # No "//" means len(parts) == 1, so falls back to parts[0] (full string)
         assert _urls_short(["example.com/path"]) == "example.com/path"
 
     def test_non_string_url(self) -> None:
-        from agent_discogs.formatting import _urls_short
-
         # Non-string triggers AttributeError → continue
         assert _urls_short(cast("list[str]", [123])) == ""
 
     def test_empty_urls(self) -> None:
-        from agent_discogs.formatting import _urls_short
-
         assert _urls_short(None) == ""
         assert _urls_short([]) == ""
 
@@ -497,8 +479,6 @@ class TestFormatStatus:
         assert "none (unauthenticated" in output
 
     def test_with_cache_dir(self) -> None:
-        from pathlib import Path
-
         output = format_status("0.1.0", True, cache_dir=Path("/tmp/test-cache"))
         assert "Cache: /tmp/test-cache (1h TTL)" in output
 
@@ -1144,16 +1124,12 @@ class TestFormatPriceGuideEdgeCases:
 
 class TestTrackArtistPrefix:
     def test_track_with_artists(self) -> None:
-        from agent_discogs.formatting import _track_artist_prefix
-
         track = _fake(
             artists=[_fake(name="Throbbing Gristle", join=None)],
         )
         assert _track_artist_prefix(track) == "Throbbing Gristle - "
 
     def test_track_with_multiple_artists(self) -> None:
-        from agent_discogs.formatting import _track_artist_prefix
-
         track = _fake(
             artists=[
                 _fake(name="Trent Reznor", join="&"),
@@ -1163,22 +1139,16 @@ class TestTrackArtistPrefix:
         assert _track_artist_prefix(track) == "Trent Reznor & Atticus Ross - "
 
     def test_track_without_artists(self) -> None:
-        from agent_discogs.formatting import _track_artist_prefix
-
         track = _fake(position="A1", title="Song", duration="3:00", type_=None)
         assert _track_artist_prefix(track) == ""
 
     def test_track_with_empty_artists(self) -> None:
-        from agent_discogs.formatting import _track_artist_prefix
-
         track = _fake(artists=[])
         assert _track_artist_prefix(track) == ""
 
 
 class TestFormatTrackLines:
     def test_tracks_with_artists(self) -> None:
-        from agent_discogs.formatting import _format_track_lines
-
         tracks = [
             _fake(
                 position="A1",
@@ -1202,8 +1172,6 @@ class TestFormatTrackLines:
         ]
 
     def test_tracks_without_artists(self) -> None:
-        from agent_discogs.formatting import _format_track_lines
-
         tracks = [
             _fake(position="A1", title="Song", duration="3:00", type_=None),
         ]
@@ -1211,8 +1179,6 @@ class TestFormatTrackLines:
         assert lines == ["  A1. Song (3:00)"]
 
     def test_heading_ignores_artists(self) -> None:
-        from agent_discogs.formatting import _format_track_lines
-
         tracks = [
             _fake(
                 position="",
