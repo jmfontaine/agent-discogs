@@ -7,7 +7,8 @@ import importlib.metadata
 import json
 import logging
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from pathlib import Path
 from types import SimpleNamespace
 
 import click
@@ -2306,6 +2307,11 @@ def _tracks_client(
     )
 
 
+def _no_home() -> Path:
+    msg = "Could not determine home directory."
+    raise RuntimeError(msg)
+
+
 class TestBudgetFooter:
     """The footer is stderr-only, printed after the command, in every mode."""
 
@@ -2526,3 +2532,78 @@ class TestDebug:
 
         result = CliRunner().invoke(cli, ["tracks", "@r123"])
         assert "[sdk]" not in result.stderr
+
+    @pytest.fixture
+    def cache_home(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """An XDG cache holding a 2 KB database and a 1 KB WAL sidecar."""
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        directory = tmp_path / "agent-discogs"
+        directory.mkdir()
+        (directory / "cache.db").write_bytes(b"x" * 2048)
+        (directory / "cache.db-wal").write_bytes(b"x" * 1024)
+        return directory
+
+    def test_sidecar_vanishing_between_glob_and_stat(
+        self, cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_glob = Path.glob
+
+        def glob_then_checkpoint(self: Path, pattern: str) -> Iterator[Path]:
+            found = list(real_glob(self, pattern))
+            (cache_home / "cache.db-wal").unlink()  # a sibling's last close
+            return iter(found)
+
+        monkeypatch.setattr(Path, "glob", glob_then_checkpoint)
+        result = CliRunner().invoke(cli, ["--debug", "skills"])
+        assert result.exit_code == 0, result.exception
+        assert f"cache     {trace._tilde(cache_home)}  2.0 KB  ttl 1h" in result.stderr
+
+    def test_home_lookup_failure_with_xdg_cache(
+        self, cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Path, "home", _no_home)
+        result = CliRunner().invoke(cli, ["--debug", "skills"])
+        assert result.exit_code == 0, result.exception
+        assert f"cache     {cache_home}  3.0 KB  ttl 1h" in result.stderr
+
+    def test_home_lookup_failure_without_xdg_cache(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+        monkeypatch.setattr(Path, "home", _no_home)
+        result = CliRunner().invoke(cli, ["--debug", "skills"])
+        assert result.exit_code == 0, result.exception
+        assert "── debug ──" in result.stderr
+        assert "cache     unknown (no home directory)  ttl 1h" in result.stderr
+
+    def test_failed_command_keeps_its_exit_code(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _missing(_id: int) -> object:
+            raise NotFoundError("nope", status_code=404, response_body={})
+
+        monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client",
+            lambda: _fake_client(releases_get=_missing),
+        )
+        monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+        monkeypatch.setattr(Path, "home", _no_home)
+        result = CliRunner().invoke(cli, ["--debug", "tracks", "@r1"])
+        assert result.exit_code == 1, result.exception
+        assert isinstance(result.exception, SystemExit)  # not a teardown crash
+        assert "✗ Tracklist @r1 not found." in result.stderr
+        assert "cache     unknown (no home directory)  ttl 1h" in result.stderr
+
+    def test_logger_restored_when_the_panel_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def broken_panel(*_a: object, **_kw: object) -> str:
+            raise ValueError("panel")
+
+        monkeypatch.setattr(trace, "render_panel", broken_panel)
+        sdk_logger = logging.getLogger("discogs_sdk")
+        level = sdk_logger.level
+        result = CliRunner().invoke(cli, ["--debug", "skills"])
+        assert isinstance(result.exception, ValueError)
+        assert sdk_logger.handlers == []
+        assert sdk_logger.level == level

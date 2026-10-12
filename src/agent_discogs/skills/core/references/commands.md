@@ -8,7 +8,7 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 |------|-------------|
 | `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. |
 | `--fresh` | Bypass the cache for this command. Every request goes to the API; the response is not stored, so a later run without `--fresh` may still see the older cached entry until its 1h TTL expires. Mutually exclusive with `--cached` (exit 2). |
-| `--debug` | Trace panel on stderr after the budget line: one row per request (path, status, timing or `cache`, `×N attempts` on retry), scan statistics, cache size, output size with a token estimate, plus the SDK's own log lines in real time. `AGENT_DISCOGS_DEBUG=1` does the same. stdout is unchanged. |
+| `--debug` | Trace panel on stderr after the budget line: one row per request (path, status, timing or `cache`, `×N attempts` on retry), scan statistics, cache size (`unknown (no home directory)` when the cache location cannot be resolved), output size with a token estimate, plus the SDK's own log lines in real time. `AGENT_DISCOGS_DEBUG=1` does the same. stdout and the exit code are unchanged. |
 | `--help` | Show help |
 | `--version` | Show version |
 

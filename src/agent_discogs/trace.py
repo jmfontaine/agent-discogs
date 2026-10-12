@@ -148,9 +148,16 @@ def _request_path(url: str) -> str:
 _KB = 1024
 
 
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except FileNotFoundError:  # gone since the glob, e.g. a WAL checkpointed away
+        return 0
+
+
 def _cache_size(cache_dir: Path) -> str:
     # SQLite may leave -wal/-shm beside the database file.
-    size = sum(p.stat().st_size for p in cache_dir.glob("cache.db*"))
+    size = sum(_file_size(p) for p in cache_dir.glob("cache.db*"))
     if size < _KB:
         return f"{size} B"
     if size < _KB * _KB:
@@ -159,16 +166,25 @@ def _cache_size(cache_dir: Path) -> str:
 
 
 def _tilde(path: Path) -> str:
-    home = Path.home()
     try:
-        return f"~/{path.relative_to(home)}"
-    except ValueError:
+        return f"~/{path.relative_to(Path.home())}"
+    except (RuntimeError, ValueError):  # no home directory, or not under it
         return str(path)
 
 
-def render_panel(trace: Trace, *, cache_dir: Path, elapsed_ms: float) -> str:
+def _cache_line(cache_dir: Path | None) -> str:
+    where = (
+        f"{_tilde(cache_dir)}  {_cache_size(cache_dir)}"
+        if cache_dir is not None
+        else "unknown (no home directory)"
+    )
+    return f"cache     {where}  ttl {CACHE_TTL / 3600:g}h"
+
+
+def render_panel(trace: Trace, *, cache_dir: Path | None, elapsed_ms: float) -> str:
     """The `--debug` panel: one row per request, then scan, cache and output
-    statistics. Takes plain values; never touches the client or the network."""
+    statistics. Takes plain values; never touches the client or the network.
+    `cache_dir` is None when it could not be resolved."""
     lines = ["── debug ".ljust(56, "─"), f"total     {elapsed_ms:.0f}ms"]
     paths = [_request_path(e.url) for e in trace.events]
     width = max((len(p) for p in paths), default=0)
@@ -188,10 +204,7 @@ def render_panel(trace: Trace, *, cache_dir: Path, elapsed_ms: float) -> str:
             f"scan      {scan.api_calls} API calls, {scan.rows} rows fetched, "
             f"{scan.kept} kept, {capped}"
         )
-    lines.append(
-        f"cache     {_tilde(cache_dir)}  {_cache_size(cache_dir)}  "
-        f"ttl {CACHE_TTL / 3600:g}h"
-    )
+    lines.append(_cache_line(cache_dir))
     if trace.stdout is not None:
         out = trace.stdout
         lines.append(
@@ -200,22 +213,34 @@ def render_panel(trace: Trace, *, cache_dir: Path, elapsed_ms: float) -> str:
     return "\n".join(lines)
 
 
+def _resolve_cache_dir() -> Path | None:
+    try:
+        return cache_dir()
+    except RuntimeError:  # Path.home() found no home directory
+        return None
+
+
 def finish() -> None:
     """Print the footer (and the panel under --debug) to stderr and undo
-    whatever `begin()` installed."""
-    if _trace.stdout is not None:
-        sys.stdout = _trace.stdout.target
-    footer = render_footer(
-        _trace.events, authenticated=has_token(), cache_misses=_trace.cache_misses
-    )
-    if footer:
-        print(footer, file=sys.stderr)
-    if _trace.debug:
-        elapsed_ms = (time.perf_counter() - _trace.started) * 1000
-        panel = render_panel(_trace, cache_dir=cache_dir(), elapsed_ms=elapsed_ms)
-        print(panel, file=sys.stderr)
-    if _trace.log_handler is not None:
-        logger = logging.getLogger(_SDK_LOGGER)
-        logger.removeHandler(_trace.log_handler)
-        logger.setLevel(_trace.log_level)
-        _trace.log_handler = None
+    whatever `begin()` installed. The SDK logger is restored even if printing
+    fails."""
+    try:
+        if _trace.stdout is not None:
+            sys.stdout = _trace.stdout.target
+        footer = render_footer(
+            _trace.events, authenticated=has_token(), cache_misses=_trace.cache_misses
+        )
+        if footer:
+            print(footer, file=sys.stderr)
+        if _trace.debug:
+            elapsed_ms = (time.perf_counter() - _trace.started) * 1000
+            panel = render_panel(
+                _trace, cache_dir=_resolve_cache_dir(), elapsed_ms=elapsed_ms
+            )
+            print(panel, file=sys.stderr)
+    finally:
+        if _trace.log_handler is not None:
+            logger = logging.getLogger(_SDK_LOGGER)
+            logger.removeHandler(_trace.log_handler)
+            logger.setLevel(_trace.log_level)
+            _trace.log_handler = None

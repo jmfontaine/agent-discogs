@@ -205,7 +205,7 @@ The CLI reports; it never sleeps or throttles on your behalf. When Discogs answe
 
 ## Debugging
 
-`--debug` (or `AGENT_DISCOGS_DEBUG=1`) prints a trace panel to stderr after the budget line: one row per request with status and timing (`cache` for cache hits, `×N attempts` when the SDK retried), scan statistics for client-side filters, cache size, and output size with a rough token estimate. The SDK's own log lines (`[sdk] HTTP request ...`, `[sdk] Retrying ... waiting 30s`) stream to stderr in real time, which is the only way to see a rate-limit retry while it is happening. stdout is byte-identical with and without the flag.
+`--debug` (or `AGENT_DISCOGS_DEBUG=1`) prints a trace panel to stderr after the budget line: one row per request with status and timing (`cache` for cache hits, `×N attempts` when the SDK retried), scan statistics for client-side filters, cache size, and output size with a rough token estimate. The SDK's own log lines (`[sdk] HTTP request ...`, `[sdk] Retrying ... waiting 30s`) stream to stderr in real time, which is the only way to see a rate-limit retry while it is happening. stdout is byte-identical with and without the flag, and so is the exit code: when the cache location cannot be resolved (no home directory and no absolute `XDG_CACHE_HOME`), the cache row reads `unknown (no home directory)` and the panel still prints.
 
 ```
 api: 2 requests · 58/60 left this minute

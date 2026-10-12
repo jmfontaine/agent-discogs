@@ -50,7 +50,9 @@ Options:
                    nothing. Precedes the command: agent-discogs --cached price @r...
   --fresh          Bypass the cache for this command (response is not stored)
   --debug          Request rows, timings, retries, scan stats, cache and output
-                   size on stderr, plus the SDK's own log lines
+                   size on stderr, plus the SDK's own log lines. Never changes
+                   stdout or the exit code; an unresolvable cache location
+                   shows as 'unknown (no home directory)'
   --json           JSON output: a compact projection of the text view (search, get)
   --full           With --json: the raw SDK record instead of the projection
   --limit N        Results per page (search, get)
