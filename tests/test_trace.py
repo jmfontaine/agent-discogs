@@ -42,36 +42,27 @@ def _event(
 
 class TestRenderFooter:
     def test_no_events_is_silent(self) -> None:
-        assert render_footer([], authenticated=True) is None
+        assert render_footer([]) is None
 
     def test_only_cache_hits(self) -> None:
         events = [_event(source="cache"), _event(source="cache")]
-        assert render_footer(events, authenticated=True) == "api: 0 requests · cached"
+        assert render_footer(events) == "api: 0 requests · cached"
 
     def test_cache_miss_reports_zero_spend(self) -> None:
         miss = _event(source="miss", status_code=None, attempts=0, elapsed_ms=0.0)
-        assert render_footer([miss], authenticated=True) == "api: 0 requests · cached"
+        assert render_footer([miss]) == "api: 0 requests · cached"
 
     def test_transport_failure_counts_as_a_send(self) -> None:
         failed = _event(status_code=None)
         ok = _event(ratelimit=RateLimit(60, 2, 58))
-        assert (
-            render_footer([ok, failed], authenticated=True)
-            == "api: 2 requests · 58/60 left this minute"
-        )
+        assert render_footer([ok, failed]) == "api: 2 requests · 58/60 left this minute"
 
     def test_singular_and_plural(self) -> None:
         rl = RateLimit(60, 1, 59)
         one = [_event(ratelimit=rl)]
-        assert (
-            render_footer(one, authenticated=True)
-            == "api: 1 request · 59/60 left this minute"
-        )
+        assert render_footer(one) == "api: 1 request · 59/60 left this minute"
         three = [_event(ratelimit=RateLimit(60, 17, 43)) for _ in range(3)]
-        assert (
-            render_footer(three, authenticated=True)
-            == "api: 3 requests · 43/60 left this minute"
-        )
+        assert render_footer(three) == "api: 3 requests · 43/60 left this minute"
 
     def test_budget_comes_from_last_network_event_with_headers(self) -> None:
         events = [
@@ -80,29 +71,26 @@ class TestRenderFooter:
             _event(ratelimit=None),  # documented "some exceptions" response
             _event(source="cache"),
         ]
-        assert (
-            render_footer(events, authenticated=True)
-            == "api: 3 requests · 49/60 left this minute"
-        )
+        assert render_footer(events) == "api: 3 requests · 49/60 left this minute"
 
     def test_no_headers_at_all_is_a_bare_count(self) -> None:
         events = [_event(), _event()]
-        assert render_footer(events, authenticated=True) == "api: 2 requests"
+        assert render_footer(events) == "api: 2 requests"
 
     def test_warns_at_threshold_only(self) -> None:
         at = [_event(ratelimit=RateLimit(60, 50, LOW_BUDGET))]
         above = [_event(ratelimit=RateLimit(60, 49, LOW_BUDGET + 1))]
-        assert render_footer(at, authenticated=True) == (
+        assert render_footer(at) == (
             f"api: 1 request · {LOW_BUDGET}/60 left this minute"
             " ⚠ pause ~60s before uncached calls"
         )
-        assert render_footer(above, authenticated=True) == (
+        assert render_footer(above) == (
             f"api: 1 request · {LOW_BUDGET + 1}/60 left this minute"
         )
 
-    def test_unauthenticated_warning_suggests_a_token(self) -> None:
+    def test_anonymous_limit_suggests_a_token(self) -> None:
         events = [_event(ratelimit=RateLimit(25, 22, 3))]
-        assert render_footer(events, authenticated=False) == (
+        assert render_footer(events) == (
             "api: 1 request · 3/25 left this minute"
             " ⚠ set DISCOGS_TOKEN for 60/min, or pause ~60s"
         )

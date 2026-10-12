@@ -6,11 +6,14 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent_discogs import sanitize
 from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS
 from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
+
+if TYPE_CHECKING:
+    from discogs_sdk import AuthMode
 
 
 def _text(lines: list[str]) -> str:
@@ -854,13 +857,20 @@ def format_search_results(
     return _text(lines)
 
 
-def format_status(version: str, authenticated: bool, cache_dir: Path) -> str:
+# Discogs serves 60 req/min to any credentials and 25 without. Consumer
+# key/secret identify an app, not a user, so user-only endpoints such as price
+# suggestions refuse them.
+_AUTH_LABELS: dict[AuthMode, str] = {
+    "token": "token (authenticated)",
+    "oauth": "oauth (authenticated)",
+    "consumer": "consumer (authenticated app, not a user: no price suggestions)",
+    "none": "none (unauthenticated, 25 req/min)",
+}
+
+
+def format_status(version: str, auth_mode: AuthMode, cache_dir: Path) -> str:
     """Format status output."""
-    auth_str = (
-        "token (authenticated)"
-        if authenticated
-        else "none (unauthenticated, 25 req/min)"
-    )
+    auth_str = _AUTH_LABELS[auth_mode]
     return _text(
         [
             f"agent-discogs v{version}",

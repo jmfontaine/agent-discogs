@@ -35,7 +35,7 @@ Commands:
   price <ref>...              Shortcut: get price <ref>...
   cache clear                 Clear HTTP cache
   skills [get <name>]         Print the bundled agent guide (start: skills get core)
-  status                      Show session and auth info
+  status                      Show version, auth mode, and cache location
 
 Search Types:  artist, label, master, release
 Get Nouns:     artist, credits, identifiers (ids), label, master, price, release,
@@ -107,6 +107,11 @@ Get flags by noun (any other get flag fails with invalid_argument):
 
 Environment:
   DISCOGS_TOKEN        Personal access token (60 req/min, required for price data)
+  DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET
+                       Used when DISCOGS_TOKEN is unset: an app key/secret (60
+                       req/min, not a user, no price data), or OAuth 1.0a with
+                       DISCOGS_ACCESS_TOKEN and DISCOGS_ACCESS_TOKEN_SECRET.
+                       'status' shows the mode in use
   AGENT_DISCOGS_DEBUG  Same as --debug
   XDG_CACHE_HOME       Cache under $XDG_CACHE_HOME/agent-discogs when set to an
                        absolute path; otherwise ~/.cache/agent-discogs

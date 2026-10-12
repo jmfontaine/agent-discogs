@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS, cache_dir, has_token
+from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS, cache_dir
 
 if TYPE_CHECKING:
     import click
@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 # Remaining requests at which the footer warns. One client-side scan costs up
 # to MAX_API_CALLS requests; two back-to-back scans can spend twice that.
 LOW_BUDGET = 2 * MAX_API_CALLS
+# Discogs' per-minute limit for requests carrying any credentials (25 without).
+# An observed limit below it means Discogs counted the request as anonymous.
+_AUTHENTICATED_LIMIT = 60
 
 _SDK_LOGGER = "discogs_sdk"
 
@@ -107,13 +110,15 @@ def note_scan(note: ScanNote) -> None:
     _trace.scans.append(note)
 
 
-def render_footer(events: Sequence[RequestEvent], *, authenticated: bool) -> str | None:
+def render_footer(events: Sequence[RequestEvent]) -> str | None:
     """The budget line, or None when nothing was requested.
 
     Counts HTTP sends, failed transport sends included: each network event
     carries its `attempts`. Cache hits and `--cached` misses send nothing, so
     a run of only those reports zero. The budget comes from the last network
-    response that reported rate-limit headers, so cache hits never move it.
+    response that reported rate-limit headers, so cache hits never move it,
+    and so does the warning: a token is suggested only when the limit Discogs
+    reported is below the authenticated one, whatever credentials are set.
     """
     if not events:
         return None
@@ -129,8 +134,8 @@ def render_footer(events: Sequence[RequestEvent], *, authenticated: bool) -> str
     if rl.remaining <= LOW_BUDGET:
         line += (
             " ⚠ pause ~60s before uncached calls"
-            if authenticated
-            else " ⚠ set DISCOGS_TOKEN for 60/min, or pause ~60s"
+            if rl.limit >= _AUTHENTICATED_LIMIT
+            else f" ⚠ set DISCOGS_TOKEN for {_AUTHENTICATED_LIMIT}/min, or pause ~60s"
         )
     return line
 
@@ -220,7 +225,7 @@ def finish() -> None:
     try:
         if _trace.stdout is not None:
             sys.stdout = _trace.stdout.target
-        footer = render_footer(_trace.events, authenticated=has_token())
+        footer = render_footer(_trace.events)
         if footer:
             print(footer, file=sys.stderr)
         if _trace.debug:

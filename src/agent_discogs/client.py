@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from typing import Literal
 
 import click
-from discogs_sdk import CacheError, Discogs, SQLiteCache
+from discogs_sdk import AuthMode, CacheError, Discogs, SQLiteCache
 
 from agent_discogs import trace
 from agent_discogs.config import CACHE_TTL, cache_dir
@@ -40,6 +39,17 @@ def _enter_pending_scope(discogs: Discogs) -> None:
         ctx.find_root().with_resource(discogs.no_cache())
 
 
+def auth_mode() -> AuthMode:
+    """The auth mode the SDK selects from the `DISCOGS_*` environment
+    variables, the same one `get_client()` would use.
+
+    Read from a throwaway client built without a cache, so it sends nothing
+    and never opens or creates the cache dir.
+    """
+    with Discogs() as client:
+        return client.auth_mode
+
+
 def get_client() -> Discogs:
     """Get or create the Discogs SDK client, entering any pending cache scope.
 
@@ -50,14 +60,12 @@ def get_client() -> Discogs:
     """
     global _client  # noqa: PLW0603  # module-level singleton is the point
     if _client is None:
-        token = os.environ.get("DISCOGS_TOKEN")
         cache = SQLiteCache(ttl=CACHE_TTL, cache_dir=cache_dir())
         # The CLI never retries or sleeps on the caller's behalf: a 429, a
         # 5xx or a transport failure is reported at once, so one request is
-        # one send and the footer counts what was spent.
-        client = Discogs(
-            token=token, cache=cache, max_retries=0, on_request=trace.record
-        )
+        # one send and the footer counts what was spent. Credentials come
+        # from the environment, resolved by the SDK as in auth_mode().
+        client = Discogs(cache=cache, max_retries=0, on_request=trace.record)
         try:
             cache.open()
         except CacheError as exc:

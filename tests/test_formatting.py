@@ -481,17 +481,13 @@ class TestFormatMasterVersions:
 
 
 class TestFormatStatus:
-    def test_authenticated(self) -> None:
-        output = format_status("0.1.0", True, Path("/tmp/test-cache"))
+    def test_layout(self) -> None:
+        output = format_status("0.1.0", "token", Path("/tmp/test-cache"))
         assert output.splitlines() == [
             "agent-discogs v0.1.0",
             "Auth: token (authenticated)",
             "Cache: /tmp/test-cache (1h TTL)",
         ]
-
-    def test_unauthenticated(self) -> None:
-        output = format_status("0.1.0", False, Path("/tmp/test-cache"))
-        assert "Auth: none (unauthenticated, 25 req/min)" in output.splitlines()
 
 
 class TestFormatReleaseVerbose:

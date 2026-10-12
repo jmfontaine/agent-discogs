@@ -230,6 +230,54 @@ class TestStatusCommand:
         assert "Auth:" in result.output
         assert "Cache:" in result.output
 
+    @pytest.mark.parametrize(
+        ("env", "auth"),
+        [
+            ({"DISCOGS_TOKEN": "t"}, "token (authenticated)"),
+            (
+                {"DISCOGS_CONSUMER_KEY": "k", "DISCOGS_CONSUMER_SECRET": "s"},
+                "consumer (authenticated app, not a user: no price suggestions)",
+            ),
+            (
+                {
+                    "DISCOGS_CONSUMER_KEY": "k",
+                    "DISCOGS_CONSUMER_SECRET": "s",
+                    "DISCOGS_ACCESS_TOKEN": "a",
+                    "DISCOGS_ACCESS_TOKEN_SECRET": "b",
+                },
+                "oauth (authenticated)",
+            ),
+            ({}, "none (unauthenticated, 25 req/min)"),
+        ],
+        ids=["token", "consumer", "oauth", "none"],
+    )
+    def test_reports_the_auth_mode_in_use(
+        self, env: dict[str, str], auth: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        result = CliRunner().invoke(cli, ["status"])
+        assert result.exit_code == 0
+        assert f"Auth: {auth}" in result.stdout.splitlines()
+
+    def test_never_touches_the_cache(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("DISCOGS_TOKEN", "t")
+        monkeypatch.setattr("agent_discogs.client._client", None)
+        not_a_dir = tmp_path / "file"
+        not_a_dir.write_text("")
+        monkeypatch.setenv("XDG_CACHE_HOME", str(not_a_dir))
+        result = CliRunner().invoke(cli, ["status"])
+        assert result.exit_code == 0, result.output
+        assert "Auth: token (authenticated)" in result.stdout.splitlines()
+
+        absent = tmp_path / "absent"
+        monkeypatch.setenv("XDG_CACHE_HOME", str(absent))
+        result = CliRunner().invoke(cli, ["status"])
+        assert result.exit_code == 0, result.output
+        assert not absent.exists()
+
 
 class TestAliases:
     def test_find_alias(self) -> None:
@@ -1894,10 +1942,10 @@ class TestExceptionHandling:
         callers get an envelope; this last resort only sees the rest.
         """
 
-        def _raise() -> bool:
+        def _raise() -> str:
             raise RuntimeError("kaboom")
 
-        monkeypatch.setattr("agent_discogs.commands.status.has_token", _raise)
+        monkeypatch.setattr("agent_discogs.commands.status.auth_mode", _raise)
         result = CliRunner().invoke(cli, ["status"])
         assert result.exit_code == 1
         assert "✗ Unexpected error: kaboom" in result.output
@@ -3155,6 +3203,18 @@ class TestBudgetFooter:
         result = CliRunner().invoke(cli, ["tracks", "@r123"])
         assert result.stderr.endswith(
             "3/25 left this minute ⚠ set DISCOGS_TOKEN for 60/min, or pause ~60s\n"
+        )
+
+    def test_consumer_credentials_are_not_told_to_set_a_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DISCOGS_CONSUMER_KEY", "k")
+        monkeypatch.setenv("DISCOGS_CONSUMER_SECRET", "s")
+        _tracks_client(lambda: trace.record(_network_event(3, 60)), monkeypatch)
+        result = CliRunner().invoke(cli, ["tracks", "@r123"])
+        assert result.stderr == (
+            "api: 1 request · 3/60 left this minute"
+            " ⚠ pause ~60s before uncached calls\n"
         )
 
     def test_no_requests_no_footer(self) -> None:

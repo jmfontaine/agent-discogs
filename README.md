@@ -47,9 +47,11 @@ Set your personal access token from [your Discogs developer settings](https://ww
 export DISCOGS_TOKEN="your-token-here"
 ```
 
-A token is required for search and price lookups. Without it, only direct entity lookups work (25 requests/minute). With a token, every command except `price` is available at 60 requests/minute.
+Credentials are required for search and price lookups. Without any, only direct entity lookups work (25 requests/minute). With a token, every command except `price` is available at 60 requests/minute.
 
 `price` needs one thing more than a token: Discogs only returns price suggestions to accounts that have filled out their [seller settings](https://www.discogs.com/settings/seller). Until you do, the endpoint answers 404 and `price` tells you so; every other command is unaffected.
+
+The CLI sends whichever credentials discogs-sdk finds in the environment, in this order: `DISCOGS_TOKEN`; OAuth 1.0a (`DISCOGS_CONSUMER_KEY`, `DISCOGS_CONSUMER_SECRET`, `DISCOGS_ACCESS_TOKEN` and `DISCOGS_ACCESS_TOKEN_SECRET`, all four); a consumer key and secret alone (`DISCOGS_CONSUMER_KEY` and `DISCOGS_CONSUMER_SECRET`); otherwise none. A consumer key and secret get 60 requests/minute but identify an app, not a user, so `price` needs a token or OAuth. `agent-discogs status` reports the mode in use.
 
 > [!TIP]
 > Use a `.env` file with [direnv](https://direnv.net/) to avoid exporting tokens manually in every shell.
@@ -124,7 +126,7 @@ agent-discogs price @r352665
 
 ### status
 
-Show version, authentication mode, and cache location:
+Show version, authentication mode, and cache location. The `Auth:` line names the credentials requests will carry: `token (authenticated)`, `oauth (authenticated)`, `consumer (authenticated app, not a user: no price suggestions)`, or `none (unauthenticated, 25 req/min)`. It makes no API call and never opens or creates the cache.
 
 ```bash
 agent-discogs status
@@ -206,7 +208,7 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 
 ## Budget
 
-Discogs throttles by source IP: 60 requests per minute with a token, 25 without, as a moving 60-second window. After any command that talks to the API, stderr ends with one budget line:
+Discogs throttles by source IP: 60 requests per minute with any credentials, 25 without, as a moving 60-second window. After any command that talks to the API, stderr ends with one budget line:
 
 ```
 api: 3 requests · 43/60 left this minute
@@ -214,7 +216,7 @@ api: 0 requests · cached
 api: 4 requests · 6/60 left this minute ⚠ pause ~60s before uncached calls
 ```
 
-The count is what this command spent: every HTTP request sent, including one whose connection failed; a `--cached` miss sends nothing. `43/60` is what Discogs reported after the last request. `⚠` appears when 10 or fewer requests remain: pause about a minute, or keep to refs that are already cached (`--cached` guarantees zero spend). Without a token the warning suggests setting `DISCOGS_TOKEN` instead. The line is on stderr and never inside `--json` output; commands that make no request (`status`, `skills`, `cache clear`) print nothing.
+The count is what this command spent: every HTTP request sent, including one whose connection failed; a `--cached` miss sends nothing. `43/60` is what Discogs reported after the last request. `⚠` appears when 10 or fewer requests remain: pause about a minute, or keep to refs that are already cached (`--cached` guarantees zero spend). When the limit Discogs reported is below 60/min (the anonymous tier), the warning suggests setting `DISCOGS_TOKEN` instead; which credentials are set does not change it. The line is on stderr and never inside `--json` output; commands that make no request (`status`, `skills`, `cache clear`) print nothing.
 
 What commands cost (network requests; listing rows are per ref):
 

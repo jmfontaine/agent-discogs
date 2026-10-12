@@ -174,7 +174,7 @@ agent-discogs get release @r847868 --verbose
 
 ## status
 
-Show session and auth info. No API call.
+Show version, auth mode, and cache location. No API call, and the cache is never opened. `Auth:` reads `token (authenticated)`, `oauth (authenticated)`, `consumer (authenticated app, not a user: no price suggestions)`, or `none (unauthenticated, 25 req/min)`: the credentials discogs-sdk picked from `DISCOGS_TOKEN`, then all four OAuth variables (`DISCOGS_CONSUMER_KEY`, `DISCOGS_CONSUMER_SECRET`, `DISCOGS_ACCESS_TOKEN`, `DISCOGS_ACCESS_TOKEN_SECRET`), then the consumer key and secret alone.
 
 ```bash
 agent-discogs status

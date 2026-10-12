@@ -43,9 +43,3 @@ class TestGetClient:
         c1 = get_client()
         c2 = get_client()
         assert c1 is c2
-
-    def test_no_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("DISCOGS_TOKEN", raising=False)
-        get_client()
-        assert len(self.calls) == 1
-        assert self.calls[0]["token"] is None

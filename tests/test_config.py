@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from agent_discogs import cli, config
-from agent_discogs.config import cache_dir, has_token
+from agent_discogs.config import cache_dir
 
 
 def _no_home() -> Path:
@@ -52,13 +52,3 @@ def test_cache_free_commands_work_without_a_home_directory(
     result = CliRunner().invoke(cli, args)
     assert result.exit_code == 0, result.output
     assert "agent-discogs" in result.output
-
-
-class TestHasToken:
-    def test_has_token_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("DISCOGS_TOKEN", "abc")
-        assert has_token() is True
-
-    def test_has_token_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("DISCOGS_TOKEN", raising=False)
-        assert has_token() is False

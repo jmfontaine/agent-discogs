@@ -1,5 +1,5 @@
 """Shared configuration: where the cache lives, how long it keeps responses,
-how many requests one scan may spend, and whether a token is set.
+and how many requests one scan may spend.
 
 A leaf module: it imports nothing from the package, so any module can import
 it without creating a cycle.
@@ -29,8 +29,3 @@ def cache_dir() -> Path:
     xdg = Path(os.environ.get("XDG_CACHE_HOME", ""))
     base = xdg if xdg.is_absolute() else Path.home() / ".cache"
     return base / "agent-discogs"
-
-
-def has_token() -> bool:
-    """Check if a DISCOGS_TOKEN is configured."""
-    return bool(os.environ.get("DISCOGS_TOKEN"))

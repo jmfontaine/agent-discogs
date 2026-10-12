@@ -16,13 +16,13 @@ Requires `DISCOGS_TOKEN` for full access (60 req/min, search, price data):
 export DISCOGS_TOKEN=<your-token>  # discogs.com/settings/developers
 ```
 
-Without a token: 25 req/min, no search, no price suggestions.
+Without any credentials: 25 req/min, no search, no price suggestions.
 
 `price` additionally requires that the token's account has filled out its
 seller settings (discogs.com/settings/seller) — Discogs returns 404 for price
 suggestions otherwise. A token alone covers every other command.
 
-Check status: `agent-discogs status`
+Check status: `agent-discogs status`. Its `Auth:` line names the credentials requests carry: `token` or `oauth` (authenticated), `consumer` (a `DISCOGS_CONSUMER_KEY`/`DISCOGS_CONSUMER_SECRET` app key: 60 req/min, but not a user, so no price suggestions), or `none` (25 req/min). `DISCOGS_TOKEN` wins when several are set. It sends no request.
 
 ## Core Workflow
 
@@ -122,7 +122,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 ## Error Recovery
 
 - **0 results** — broaden filters (drop `--year`, `--country`), try a different type (`master` instead of `release`), or simplify the query.
-- **Auth required** — price suggestions and search require `DISCOGS_TOKEN`. Run `agent-discogs status` to check.
+- **Auth required** — price suggestions need a user (`DISCOGS_TOKEN`, or OAuth), and search needs credentials. Run `agent-discogs status` to see which are in use.
 - **"Price data requires seller settings"** — not a bad ref. The release exists, but Discogs only serves price suggestions to accounts with seller settings filled out. Nothing to retry: use `get release @r...` for the `num_for_sale`/`lowest_price` summary instead.
 - **Invalid ref** — refs are Discogs IDs and never expire; there is no session. Check the prefix matches the noun (`@r` release, `@m` master, `@a` artist, `@l` label). A bare `@123` is invalid: either add the type letter or pass the raw number `123`.
 - **"--x does not apply to 'get noun'"** — each `get` flag belongs to specific nouns (`--country`/`--format`/`--label` to `versions`, `--role` to `releases @a...`, `--limit`/`--page` to `releases` and `versions`, `-v`/`-c` to `release`); the error lists what the noun takes. Drop the flag. `--after` takes one ref: continue each listing in its own command. Table: [references/commands.md](references/commands.md#get).
@@ -150,7 +150,7 @@ Prefer the most specific command: `tracks @r...` over `get release @r...` when y
 
 ## Budget
 
-Discogs allows 60 requests per minute with a token (25 without), as a moving 60s window shared by every process on this machine. After any command that talks to the API, stderr ends with one line:
+Discogs allows 60 requests per minute with any credentials (25 without), as a moving 60s window shared by every process on this machine. After any command that talks to the API, stderr ends with one line:
 
 ```
 api: 3 requests · 43/60 left this minute
@@ -171,7 +171,7 @@ The count is what this command spent: every request sent, a failed connection in
 | Other searches (`--release-type official`, the default, or `unofficial` with `--format`): client-side scan | 1 to 5 |
 | Anything repeated within 1 hour | 0 (cached) |
 
-At `⚠` (10 or fewer left): pause ~60s before uncached calls, or spend nothing with `--cached`. Unauthenticated runs get 25/min; setting `DISCOGS_TOKEN` is the fix there.
+At `⚠` (10 or fewer left): pause ~60s before uncached calls, or spend nothing with `--cached`. When Discogs reports the anonymous 25/min limit, the warning says to set `DISCOGS_TOKEN`; that is the fix there.
 
 **Try everything with `--cached` first, then spend only on the misses.** `agent-discogs --cached get release @r847868 @r...` serves what the cache has and reports each miss inline as `✗ Not cached: GET ...` (`error.code == "cache_miss"` under `--json`) without touching the API. It matters when several agents share one machine (one cache, one IP budget), and after a `⚠`. The flags precede the command:
 
