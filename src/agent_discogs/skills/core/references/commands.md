@@ -34,7 +34,7 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 
 **Client-side scans:** `search` with `--release-type official` (the default) or `unofficial --format ...`, `get releases @a... --role`, and `get releases @l... --year` filter rows the API cannot filter. They read 100-row pages until `--limit` rows match or the list ends, with no cap by default: a dense filter costs one request, a sparse one over 2,000 results up to 20, plus the text header lookup for `get releases`. `--max-requests N` (N ≥ 1, one ref, only on these listings; otherwise `invalid_argument` before any request) caps every HTTP send of the command, header lookups included, which run first; cache hits are free. A scan that stops early ends in `Continue scan:` and says why in its header:
 
-- `scan stopped at --max-requests N`: the cap ran out (JSON: `capped: true`, `stop_reason: "max_requests"`). If the header lookup used the whole cap, the header reads `(--max-requests N ran out before the scan started)` with no counts, JSON `total_items` and `total_pages` are `null`, and the continuation starts the scan.
+- `scan stopped at --max-requests N`: the cap ran out (JSON: `capped: true`, `stop_reason: "max_requests"`). If the header lookup used the whole cap, the header reads `(--max-requests N ran out before the scan started)` with no counts, JSON `total_items` and `total_pages` are `null`, and the continuation starts the scan. Under `--fresh` the header adds `; --fresh sends the header lookup again on every run, so continue with a higher --max-requests`: the lookup is not cached, so the same cap would spend itself on it again.
 - `scan stopped: rate limited, retry in Ns`: Discogs answered 429 after at least one page, and the rows read so far are returned, exit 0 (JSON: `stop_reason: "rate_limited"`, `retry_after` when Discogs sent one). A 429 on the first page is the `rate_limited` error.
 
 With a tool-call time limit, pass `--max-requests`.
@@ -135,7 +135,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--limit` | `releases`, `versions` only: results per page, 1-100 (default: 5) |
 | `--page` | Page number, from 1 (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`, one ref only) |
-| `--max-requests` | `releases --role` and `releases @l... --year`, one ref only: cap the command's HTTP sends, the text header lookup included (it runs first). Default: no cap. In text under `--fresh` the header is sent every run, so `--max-requests 1` is rejected there. See Client-side scans above. |
+| `--max-requests` | `releases --role` and `releases @l... --year`, one ref only: cap the command's HTTP sends, the text header lookup included (it runs first). Default: no cap. In text under `--fresh` the header is sent again on every run, so a cap it uses up ends in an empty capped page whose header says to continue with a higher `--max-requests`. See Client-side scans above. |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 | `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; an index track counts as its parts, timed by their sum or, when a part is untimed, by the index track's own duration; otherwise the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
 

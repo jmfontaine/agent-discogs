@@ -40,6 +40,7 @@ def _page_counts(
     *,
     filtered: bool,
     stop: ScanStop | None = None,
+    header_resent: bool = False,
 ) -> str:
     """`(page 2, 5 of ≤23 results; scan stopped at --max-requests 3)`.
 
@@ -47,10 +48,18 @@ def _page_counts(
     count; a scan note means the scan stopped early and the page may be
     short. With no total, the scan read no listing page before
     `--max-requests` ran out, so no page, count or bound is known yet.
+    `header_resent` (`--fresh`): the header lookup that spent the budget
+    will be sent again by the continuation, so it needs a higher cap.
     """
     if total is None:
         cap = "" if stop is None else f" {stop.max_requests}"
-        return f"(--max-requests{cap} ran out before the scan started)"
+        again = (
+            "; --fresh sends the header lookup again on every run, so continue "
+            "with a higher --max-requests"
+            if header_resent
+            else ""
+        )
+        return f"(--max-requests{cap} ran out before the scan started{again})"
     bound = "≤" if filtered else ""
     note = "" if stop is None else f"; {_scan_note(stop)}"
     return f"(page {page}, {shown} of {bound}{total:,} {noun}{note})"
@@ -441,10 +450,17 @@ def format_label_releases(
     *,
     filtered: bool = False,
     stop: ScanStop | None = None,
+    header_resent: bool = False,
 ) -> str:
     """Format a label's catalogue (client-side `--year` scans are `filtered`)."""
     counts = _page_counts(
-        page, len(releases), total_results, "results", filtered=filtered, stop=stop
+        page,
+        len(releases),
+        total_results,
+        "results",
+        filtered=filtered,
+        stop=stop,
+        header_resent=header_resent,
     )
     lines = [f'Releases on {label_ref} "{label_name}" {counts}', ""]
     lines.extend(
@@ -472,10 +488,17 @@ def format_artist_releases(
     *,
     filtered: bool = False,
     stop: ScanStop | None = None,
+    header_resent: bool = False,
 ) -> str:
     """Format artist releases/discography."""
     counts = _page_counts(
-        page, len(releases), total_results, "results", filtered=filtered, stop=stop
+        page,
+        len(releases),
+        total_results,
+        "results",
+        filtered=filtered,
+        stop=stop,
+        header_resent=header_resent,
     )
     lines = [f'Releases by {artist_ref} "{artist_name}" {counts}', ""]
 

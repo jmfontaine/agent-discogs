@@ -241,6 +241,7 @@ def _get_label_releases(
         footer_cmd,
         filtered=result.filtered,
         stop=result.stop,
+        header_resent=_fresh(),
     )
 
 
@@ -314,6 +315,7 @@ def _get_releases(
         footer_cmd,
         filtered=result.filtered,
         stop=result.stop,
+        header_resent=_fresh(),
     )
 
 
@@ -422,6 +424,12 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
 NOUN_SPECIFIC_OPTIONS: frozenset[str] = frozenset().union(*NOUN_OPTIONS.values())
 
 
+def _fresh() -> bool:
+    """Whether this invocation runs under `--fresh`, which caches nothing, so
+    the text header lookup is sent again on every run."""
+    return bool(click.get_current_context().find_root().params.get("fresh"))
+
+
 def _option_flag(name: str) -> str:
     return "--" + name.rstrip("_").replace("_", "-")
 
@@ -455,15 +463,13 @@ def _flag_error(
     sort: str | None,
     desc: bool,
     max_requests: int | None,
-    header_uncached: bool,
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
     Checked before any API call so a bad flag never costs a request or gets
     masked by an auth/network failure. Client-side filtered listings (which
     page by cursor, not by number) are `releases --role` on an artist and
-    `releases --year` on a label. `header_uncached`: the text header lookup
-    will be sent on every run (text output under `--fresh`).
+    `releases --year` on a label.
     """
     label_refs = noun == "releases" and any(r.startswith("@l") for r in refs)
     artist_refs = noun == "releases" and not all(r.startswith("@l") for r in refs)
@@ -538,14 +544,6 @@ def _flag_error(
             "offers no --role or --sort for /labels/{id}/releases. Use --year "
             "(client-side), page with --page, or search: "
             "agent-discogs search release --label <name>."
-        )
-    if max_requests == 1 and filtered and header_uncached:
-        # The header lookup would spend the only send on every run, so the
-        # printed continuation would never get further.
-        return (
-            "--max-requests 1 is spent on the header lookup, which --fresh "
-            "sends again on every run, so the scan could never start. Pass "
-            "--max-requests 2 or more, or --json, which reads no header."
         )
     return None
 
@@ -674,8 +672,6 @@ def _dispatch(
         sort=sort,
         desc=desc,
         max_requests=max_requests,
-        header_uncached=not mode.json
-        and bool(click.get_current_context().find_root().params.get("fresh")),
     )
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)

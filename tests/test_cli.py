@@ -4208,21 +4208,27 @@ class TestUncappedScan:
         assert sent == [("/artists/1/releases", 1)]
         assert [int(i) for i, _ in _ROW.findall(resumed.stdout)] == [50]
 
-    def test_fresh_text_cap_of_one_is_rejected(
+    def test_fresh_header_budget_says_to_raise_the_cap(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Under --fresh the header is sent on every run, so a cap of one could
-        never reach the scan and its continuation would repeat forever."""
+        """Under --fresh the header is sent on every run: a cap of one still
+        returns the empty capped page, and says the continuation needs more."""
         self._api(monkeypatch)
         argv = ["--fresh", "get", "releases", "@a1", "--role", "Main"]
         result, sent = self._run(*argv, "--max-requests", "1")
-        assert result.exit_code == 1
-        assert "--max-requests 2 or more" in result.stderr
-        assert sent == []
-
-        result, sent = self._run(*argv, "--max-requests", "1", "--json")
         assert result.exit_code == 0, result.output
-        assert sent == [("/artists/1/releases", 1)]
+        assert sent == [("/artists/1", 0)]
+        header = result.stdout.splitlines()[0]
+        assert "before the scan started" in header
+        assert "continue with a higher --max-requests" in header
+        continuation = _continuation(result)
+        assert continuation[continuation.index("--after") + 1] == "1:0"
+
+        # Without --fresh the same empty page carries no such note: the header
+        # is cached from now on, so the same cap reaches the scan next time.
+        result, _ = self._run(*argv[1:], "--max-requests", "1")
+        assert result.exit_code == 0, result.output
+        assert "higher --max-requests" not in result.stdout
 
     def test_non_listing_noun_names_what_it_takes(
         self, monkeypatch: pytest.MonkeyPatch
