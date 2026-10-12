@@ -3953,6 +3953,21 @@ _RELEASE_WITH_HEADINGS = {
 }
 
 
+# Each auth mode's environment, as the SDK reads it (DISCOGS_TOKEN wins).
+_CREDENTIALS: dict[str, dict[str, str]] = {
+    "token": {"DISCOGS_TOKEN": "t"},
+    "consumer": {"DISCOGS_CONSUMER_KEY": "k", "DISCOGS_CONSUMER_SECRET": "s"},
+    "oauth": {
+        "DISCOGS_CONSUMER_KEY": "k",
+        "DISCOGS_CONSUMER_SECRET": "s",
+        "DISCOGS_ACCESS_TOKEN": "a",
+        "DISCOGS_ACCESS_TOKEN_SECRET": "b",
+    },
+    "none": {},
+}
+_SEE_STATUS = "agent-discogs status shows the credentials in use."
+
+
 class TestRealSdk:
     """The CLI against a real `Discogs` client built by `get_client()`, with only
     its HTTP faked. The `SimpleNamespace` fakes elsewhere cannot notice an SDK
@@ -4060,6 +4075,177 @@ class TestRealSdk:
         assert (error["code"], error["retry_after"]) == ("rate_limited", 60)
         assert self.sends == ["/releases/1"]
         assert self.sleeps == []
+
+    def _use_credentials(self, mode: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Leave only `mode`'s credentials in the environment. No client exists
+        yet, so the one `get_client()` builds selects that mode."""
+        monkeypatch.delenv("DISCOGS_TOKEN")
+        for name, value in _CREDENTIALS[mode].items():
+            monkeypatch.setenv(name, value)
+
+    def _assert_error(self, mode: str, expected: dict[str, object]) -> None:
+        """The same error in the JSON envelope and in the text output, from a
+        request sent by a client using `mode`."""
+        result = CliRunner().invoke(cli, ["tracks", "--json", "@r1"])
+        assert result.exit_code == 1
+        assert self.sends == ["/releases/1"]
+        assert client_module._client is not None
+        assert client_module._client.auth_mode == mode
+        assert json.loads(result.stdout) == {"error": expected}
+        result = CliRunner().invoke(cli, ["tracks", "@r1"])
+        assert result.exit_code == 1
+        assert result.stderr.startswith(
+            f"✗ {expected['message']}\n  {expected['hint']}\n"
+        )
+
+    @pytest.mark.parametrize(
+        ("mode", "message", "hint"),
+        [
+            pytest.param(
+                "token",
+                "Authentication failed with DISCOGS_TOKEN.",
+                "Check the token, or generate a new one at "
+                f"discogs.com/settings/developers. {_SEE_STATUS}",
+                id="token",
+            ),
+            pytest.param(
+                "consumer",
+                "Authentication failed with the consumer key/secret "
+                "(DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET).",
+                "Check both at discogs.com/settings/developers. They identify an "
+                "app, not a user: price suggestions need DISCOGS_TOKEN or OAuth. "
+                f"{_SEE_STATUS}",
+                id="consumer",
+            ),
+            pytest.param(
+                "oauth",
+                "Authentication failed with OAuth (DISCOGS_CONSUMER_KEY, "
+                "DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, "
+                "DISCOGS_ACCESS_TOKEN_SECRET).",
+                "Check all four; the access token may have been revoked. "
+                f"{_SEE_STATUS}",
+                id="oauth",
+            ),
+            pytest.param(
+                "none",
+                "Authentication failed: no credentials are set.",
+                "Set token: export DISCOGS_TOKEN=<token> "
+                f"(discogs.com/settings/developers). {_SEE_STATUS}",
+                id="none",
+            ),
+        ],
+    )
+    def test_401_names_the_credentials_in_use(
+        self, mode: str, message: str, hint: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._use_credentials(mode, monkeypatch)
+        self.respond = lambda _request: httpx2.Response(
+            401, json={"message": "You must authenticate to access this resource."}
+        )
+        self._assert_error(
+            mode,
+            {"code": "auth_required", "message": message, "hint": hint, "status": 401},
+        )
+
+    @pytest.mark.parametrize(
+        ("mode", "limit", "hint"),
+        [
+            pytest.param(
+                "token",
+                60,
+                "Retry in 30s. Discogs reported 60 req/min for the credentials "
+                "in use (token).",
+                id="token",
+            ),
+            pytest.param(
+                "consumer",
+                60,
+                "Retry in 30s. Discogs reported 60 req/min for the credentials "
+                "in use (consumer).",
+                id="consumer",
+            ),
+            pytest.param(
+                "oauth",
+                60,
+                "Retry in 30s. Discogs reported 60 req/min for the credentials "
+                "in use (oauth).",
+                id="oauth",
+            ),
+            pytest.param(
+                "token",
+                25,
+                "Retry in 30s. Discogs reported 25 req/min for the credentials "
+                "in use (token).",
+                id="token-counted-as-anonymous",
+            ),
+            pytest.param(
+                "none",
+                25,
+                "Retry in 30s. 60 req/min with DISCOGS_TOKEN, 25 without.",
+                id="none",
+            ),
+        ],
+    )
+    def test_429_hint_follows_the_credentials_in_use(
+        self, mode: str, limit: int, hint: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._use_credentials(mode, monkeypatch)
+        self.respond = lambda _request: httpx2.Response(
+            429,
+            json={"message": "You are making requests too quickly."},
+            headers={
+                "Retry-After": "30",
+                "X-Discogs-Ratelimit": str(limit),
+                "X-Discogs-Ratelimit-Used": str(limit),
+                "X-Discogs-Ratelimit-Remaining": "0",
+            },
+        )
+        self._assert_error(
+            mode,
+            {
+                "code": "rate_limited",
+                "message": f"Rate limited: 0/{limit} requests left this minute.",
+                "hint": hint,
+                "retry_after": 30,
+                "status": 429,
+                "limit": limit,
+                "remaining": 0,
+            },
+        )
+
+    @pytest.mark.parametrize(
+        ("mode", "hint"),
+        [
+            pytest.param(
+                "consumer",
+                "Retry in 30s. Discogs allows 60 req/min for the credentials in "
+                "use (consumer).",
+                id="consumer",
+            ),
+            pytest.param(
+                "none",
+                "Retry in 30s. 60 req/min with DISCOGS_TOKEN, 25 without.",
+                id="none",
+            ),
+        ],
+    )
+    def test_429_without_rate_limit_headers(
+        self, mode: str, hint: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._use_credentials(mode, monkeypatch)
+        self.respond = lambda _request: httpx2.Response(
+            429, json={}, headers={"Retry-After": "30"}
+        )
+        self._assert_error(
+            mode,
+            {
+                "code": "rate_limited",
+                "message": "Rate limit exceeded.",
+                "hint": hint,
+                "retry_after": 30,
+                "status": 429,
+            },
+        )
 
     def test_connection_failure_is_one_counted_send(self) -> None:
         def _refuse(request: httpx2.Request) -> httpx2.Response:

@@ -126,12 +126,6 @@ class TestFormatError:
         assert "seller settings" in result
         assert "not found. Try" not in result
 
-    def test_authentication_error(self) -> None:
-        exc = AuthenticationError("bad token", status_code=401, response_body={})
-        result = format_error(exc)
-        assert "Authentication failed" in result
-        assert "DISCOGS_TOKEN" in result
-
     def test_api_error(self) -> None:
         exc = DiscogsAPIError("server error", status_code=500, response_body={})
         assert format_error(exc) == "✗ API error (500): server error"
