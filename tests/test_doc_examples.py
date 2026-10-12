@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parent.parent
 DOC_FILES = [
     ROOT / "README.md",
+    *sorted((ROOT / "docs").glob("*.md")),
     ROOT / "AGENTS.md",
     ROOT / "skills" / "agent-discogs" / "SKILL.md",
     *sorted((ROOT / "src" / "agent_discogs" / "skills").rglob("*.md")),
