@@ -106,7 +106,7 @@ lint.per-file-ignores."tests/**" = [
   "PLR2004", # magic-value-comparison - assertions compare against literal Discogs IDs and counts, which read better inline than as named constants
   "S101",    # assert - pytest expresses every assertion this way
   "S108",    # hardcoded-temp-file - test_formatting.py only formats /tmp/test-cache into the status output; nothing is created or written there
-  "SLF001",  # private-member-access - test_client.py resets the module-level _client singleton around each test
+  "SLF001",  # private-member-access - conftest.py's real_sdk resets the module-level client._client singleton, and tests read private state such as trace._trace
 ]
 
 [tool.pyproject-fmt]

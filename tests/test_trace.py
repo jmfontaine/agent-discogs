@@ -98,15 +98,16 @@ class TestRenderFooter:
 
 class TestCountingWriter:
     def test_counts_across_writes_and_forwards(self) -> None:
-        target = io.StringIO()
+        target = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", newline="")
         writer = _CountingWriter(target)
         writer.write("hello\n")
         writer.write("wor")
         writer.write("ld\n\n")
         writer.flush()
         assert (writer.chars, writer.lines) == (13, 3)
-        assert target.getvalue() == "hello\nworld\n\n"
-        assert writer.encoding is None  # attribute lookup falls through
+        assert target.buffer.getvalue() == b"hello\nworld\n\n"
+        # Other attributes are the target's: what click and print() read.
+        assert writer.encoding == "cp1252"
 
 
 class TestRenderPanel:

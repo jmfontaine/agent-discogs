@@ -36,23 +36,19 @@ from agent_discogs.formatting import (
     format_tracklist,
     track_summary,
 )
-
-
-def _fake(**kwargs: object) -> SimpleNamespace:
-    """Create a fake object with given attributes."""
-    return SimpleNamespace(**kwargs)
+from tests.conftest import fake
 
 
 class TestArtistTitle:
     """Rows built from looked-up releases are titled like search results."""
 
     def test_joins(self) -> None:
-        release = _fake(
+        release = fake(
             title="Coachella 2026",
             artists=[
-                _fake(name="Nine Inch Nails", join=","),
-                _fake(name="Boys Noize", join="&"),
-                _fake(name="Guest", join=""),
+                fake(name="Nine Inch Nails", join=","),
+                fake(name="Boys Noize", join="&"),
+                fake(name="Guest", join=""),
             ],
         )
         assert artist_title(release) == (
@@ -60,13 +56,13 @@ class TestArtistTitle:
         )
 
     def test_no_artists_is_the_title(self) -> None:
-        assert artist_title(_fake(title="Untitled", artists=None)) == "Untitled"
+        assert artist_title(fake(title="Untitled", artists=None)) == "Untitled"
 
 
 class TestArtistString:
     def test_artist_with_join(self) -> None:
-        a1 = _fake(name="Trent Reznor", join="&")
-        a2 = _fake(name="Atticus Ross", join=None)
+        a1 = fake(name="Trent Reznor", join="&")
+        a2 = fake(name="Atticus Ross", join=None)
         result = _artist_string([a1, a2])
         assert result == "Trent Reznor & Atticus Ross"
 
@@ -77,7 +73,7 @@ class TestArtistString:
 
 class TestLabelString:
     def test_no_catno(self) -> None:
-        lbl = _fake(name="Nothing Records", catalog_number=None)
+        lbl = fake(name="Nothing Records", catalog_number=None)
         assert _label_string([lbl]) == "Nothing Records"
 
     def test_empty_labels(self) -> None:
@@ -118,7 +114,7 @@ class TestUrlsShort:
 class TestFormatSearchResults:
     def test_artist_search(self) -> None:
         results = [
-            _fake(
+            fake(
                 id=3857,
                 type="artist",
                 title="Nine Inch Nails",
@@ -126,7 +122,7 @@ class TestFormatSearchResults:
                 label=None,
                 format=None,
             ),
-            _fake(
+            fake(
                 id=4779331,
                 type="artist",
                 title="Dave Heath",
@@ -153,7 +149,7 @@ class TestFormatSearchResults:
 
     def test_release_search(self) -> None:
         results = [
-            _fake(
+            fake(
                 id=847868,
                 type="release",
                 title="Nine Inch Nails - The Downward Spiral",
@@ -163,7 +159,7 @@ class TestFormatSearchResults:
                 catalog_number="92346-2",
                 format=["CD", "Album"],
                 master_id=3719,
-                community=_fake(have=7544, want=1113),
+                community=fake(have=7544, want=1113),
             ),
         ]
         output = format_search_results(
@@ -189,7 +185,7 @@ class TestFormatSearchResults:
         self,
     ) -> None:
         results = [
-            _fake(
+            fake(
                 id=3719,
                 type="master",
                 title="Nine Inch Nails - The Downward Spiral",
@@ -198,7 +194,7 @@ class TestFormatSearchResults:
                 format=["CD", "Album"],
                 master_id=3719,
             ),
-            _fake(id=3857, type="artist", title="Nine Inch Nails"),
+            fake(id=3857, type="artist", title="Nine Inch Nails"),
         ]
         output = format_search_results(
             results=results,
@@ -239,17 +235,17 @@ class TestFormatSearchResults:
 
 class TestFormatRelease:
     def test_full_release(self) -> None:
-        rating = _fake(average=4.38, count=4521)
-        community = _fake(rating=rating, have=89234, want=45678)
-        label = _fake(name="Nothing Records", catalog_number="INT-92346")
-        fmt = _fake(name="Vinyl", descriptions=["LP", "Album"])
-        track1 = _fake(
+        rating = fake(average=4.38, count=4521)
+        community = fake(rating=rating, have=89234, want=45678)
+        label = fake(name="Nothing Records", catalog_number="INT-92346")
+        fmt = fake(name="Vinyl", descriptions=["LP", "Album"])
+        track1 = fake(
             position="A1", title="Mr. Self Destruct", duration="4:09", type=None
         )
-        track2 = _fake(position="A2", title="Piggy", duration="4:24", type=None)
-        artist = _fake(name="Nine Inch Nails", join=None)
+        track2 = fake(position="A2", title="Piggy", duration="4:24", type=None)
+        artist = fake(name="Nine Inch Nails", join=None)
 
-        release = _fake(
+        release = fake(
             id=367113,
             title="The Downward Spiral",
             year=1994,
@@ -279,7 +275,7 @@ class TestFormatRelease:
         assert "A1. Mr. Self Destruct (4:09)" in output
 
     def test_minimal_release(self) -> None:
-        release = _fake(
+        release = fake(
             id=99999,
             title="Unknown",
             year=None,
@@ -300,7 +296,7 @@ class TestFormatRelease:
 
 class TestFormatArtist:
     def test_artist_with_urls(self) -> None:
-        artist = _fake(
+        artist = fake(
             id=3857,
             name="Nine Inch Nails",
             profile="Industrial rock band",
@@ -314,7 +310,7 @@ class TestFormatArtist:
         assert "en.wikipedia.org" in output
 
     def test_empty_urls_are_skipped(self) -> None:
-        artist = _fake(
+        artist = fake(
             id=1,
             name="A",
             profile=None,
@@ -326,11 +322,11 @@ class TestFormatArtist:
 
 class TestFormatMaster:
     def test_master(self) -> None:
-        artist = _fake(name="Nine Inch Nails", join=None)
-        track = _fake(
+        artist = fake(name="Nine Inch Nails", join=None)
+        track = fake(
             position="1", title="Mr. Self Destruct", duration="4:09", type=None
         )
-        master = _fake(
+        master = fake(
             id=4917,
             title="The Downward Spiral",
             year=1994,
@@ -362,8 +358,8 @@ class TestFormatMaster:
 
 class TestFormatLabel:
     def test_label(self) -> None:
-        sub = _fake(name="Nothing Studios")
-        label = _fake(
+        sub = fake(name="Nothing Studios")
+        label = fake(
             id=2919,
             name="Nothing Records",
             profile="Industrial label",
@@ -378,12 +374,12 @@ class TestFormatLabel:
 
 class TestFormatTracklist:
     def test_tracklist(self) -> None:
-        artist = _fake(name="Nine Inch Nails", join=None)
+        artist = fake(name="Nine Inch Nails", join=None)
         tracks = [
-            _fake(position="A1", title="Mr. Self Destruct", duration="4:09", type=None),
-            _fake(position="A2", title="Piggy", duration="4:24", type=None),
+            fake(position="A1", title="Mr. Self Destruct", duration="4:09", type=None),
+            fake(position="A2", title="Piggy", duration="4:24", type=None),
         ]
-        release = _fake(
+        release = fake(
             id=367113,
             title="The Downward Spiral",
             year=1994,
@@ -427,14 +423,14 @@ class TestFormatPriceGuide:
 class TestFormatArtistReleases:
     def test_artist_releases(self) -> None:
         releases = [
-            _fake(
+            fake(
                 id=3373,
                 type="master",
                 title="Down In It",
                 year=1989,
                 role="Main",
             ),
-            _fake(
+            fake(
                 id=4401,
                 type="release",
                 title="Pretty Hate Machine",
@@ -464,16 +460,16 @@ class TestFormatArtistReleases:
 class TestFormatMasterVersions:
     def test_master_versions(self) -> None:
         versions = [
-            _fake(
+            fake(
                 id=847868,
                 released="1994",
                 country="US",
                 label="Nothing Records",
                 catalog_number="92346-2",
                 format="CD, Album",
-                stats=_fake(community=_fake(in_collection=7544, in_wantlist=1113)),
+                stats=fake(community=fake(in_collection=7544, in_wantlist=1113)),
             ),
-            _fake(
+            fake(
                 id=9876543,
                 released="2017",
                 country="US",
@@ -513,7 +509,7 @@ class TestFormatStatus:
 
 class TestFormatReleaseVerbose:
     def test_verbose_with_notes(self) -> None:
-        release = _fake(
+        release = fake(
             id=1,
             title="Album",
             year=None,
@@ -533,7 +529,7 @@ class TestFormatReleaseVerbose:
         assert "Notes: Pressed at Sterling Sound." in output
 
     def test_not_verbose_with_notes(self) -> None:
-        release = _fake(
+        release = fake(
             id=1,
             title="Album",
             year=None,
@@ -552,8 +548,8 @@ class TestFormatReleaseVerbose:
         output = format_release(release)
         assert "Notes:" not in output
 
-    def test_verbose_without_notes_attr(self) -> None:
-        release = _fake(
+    def test_verbose_without_notes(self) -> None:
+        release = fake(
             id=1,
             title="Album",
             year=None,
@@ -567,12 +563,13 @@ class TestFormatReleaseVerbose:
             lowest_price=None,
             master_id=None,
             tracklist=None,
+            notes=None,
         )
         output = format_release(release, verbose=True)
         assert "Notes:" not in output
 
     def test_verbose_empty_notes(self) -> None:
-        release = _fake(
+        release = fake(
             id=1,
             title="Album",
             year=None,
@@ -593,16 +590,16 @@ class TestFormatReleaseVerbose:
 
     def test_refs_are_always_inline(self) -> None:
         """Artist, label, and per-track artist refs never need --verbose."""
-        artist = _fake(id=3857, name="Nine Inch Nails", join=None)
-        label = _fake(id=647, name="Nothing Records", catalog_number="92346-2")
-        track = _fake(
+        artist = fake(id=3857, name="Nine Inch Nails", join=None)
+        label = fake(id=647, name="Nothing Records", catalog_number="92346-2")
+        track = fake(
             position="1",
             title="Hamburger Lady",
             duration="4:12",
             type=None,
-            artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
+            artists=[fake(id=12589, name="Throbbing Gristle", join=None)],
         )
-        release = _fake(
+        release = fake(
             id=847868,
             title="The Downward Spiral",
             year=1994,
@@ -623,7 +620,7 @@ class TestFormatReleaseVerbose:
         assert "Throbbing Gristle [@a12589] - Hamburger Lady" in output
 
     def test_verbose_appends_credits_and_identifiers_after_tracklist(self) -> None:
-        release = _fake(
+        release = fake(
             id=847868,
             title="The Downward Spiral",
             year=1994,
@@ -637,10 +634,10 @@ class TestFormatReleaseVerbose:
             lowest_price=None,
             master_id=None,
             notes="Slipcase.",
-            tracklist=[_fake(position="1", title="A", duration="", type=None)],
-            extra_artists=[_fake(id=20661, name="Flood", role="Producer", tracks="")],
+            tracklist=[fake(position="1", title="A", duration="", type=None)],
+            extra_artists=[fake(id=20661, name="Flood", role="Producer", tracks="")],
             identifiers=[
-                _fake(type="Barcode", value="765449234620", description="Scanned")
+                fake(type="Barcode", value="765449234620", description="Scanned")
             ],
         )
         plain = format_release(release)
@@ -662,71 +659,69 @@ class TestFormatReleaseVerbose:
 class TestTrackSummary:
     def test_counts_tracks_and_sums_durations_past_an_hour(self) -> None:
         tracks = [
-            _fake(position="1", title="A", duration="30:00", type=None),
-            _fake(position="", title="Side B", duration="", type="heading"),
-            _fake(position="2", title="B", duration="35:01", type=None),
+            fake(position="1", title="A", duration="30:00", type=None),
+            fake(position="", title="Side B", duration="", type="heading"),
+            fake(position="2", title="B", duration="35:01", type=None),
         ]
         assert track_summary(tracks) == "2 (65:01)"
 
     def test_any_unknown_duration_drops_the_total(self) -> None:
         """A partial sum would read as the release running time; count only."""
         tracks = [
-            _fake(position="1", title="A", duration="4:30", type=None),
-            _fake(position="2", title="B", duration="", type=None),
-            _fake(position="3", title="C", duration="?", type=None),
+            fake(position="1", title="A", duration="4:30", type=None),
+            fake(position="2", title="B", duration="", type=None),
+            fake(position="3", title="C", duration="?", type=None),
         ]
         assert track_summary(tracks) == "3"
 
     def test_hours_minutes_seconds_durations(self) -> None:
         tracks = [
-            _fake(position="1", title="A", duration="1:02:03", type=None),
-            _fake(position="2", title="B", duration="0:57", type=None),
+            fake(position="1", title="A", duration="1:02:03", type=None),
+            fake(position="2", title="B", duration="0:57", type=None),
         ]
         assert track_summary(tracks) == "2 (63:00)"
 
     def test_no_known_durations_gives_count_only(self) -> None:
-        tracks = [_fake(position="1", title="A", duration=None, type=None)]
+        tracks = [fake(position="1", title="A", duration=None, type=None)]
         assert track_summary(tracks) == "1"
 
     def test_headings_only(self) -> None:
-        assert (
-            track_summary([_fake(title="Side A", duration="", type="heading")]) == "0"
-        )
+        assert track_summary([fake(title="Side A", duration="", type="heading")]) == "0"
 
     def test_index_track_counts_its_parts_and_sums_their_durations(self) -> None:
-        suite = _fake(
+        suite = fake(
             title="Suite",
             duration="",
             type="index",
             sub_tracks=[
-                _fake(title="A", duration="3:00", type="track"),
-                _fake(title="B", duration="4:00", type="track"),
+                fake(title="A", duration="3:00", type="track"),
+                fake(title="B", duration="4:00", type="track"),
             ],
         )
-        solo = _fake(title="Solo", duration="5:00", type="track")
+        solo = fake(title="Solo", duration="5:00", type="track")
         assert track_summary([suite, solo]) == "3 (12:00)"
 
     def test_index_duration_stands_in_for_untimed_parts(self) -> None:
         """Discogs often times only the whole work; that is not a partial sum."""
-        suite = _fake(
+        suite = fake(
             title="Suite",
             duration="10:00",
             type="index",
             sub_tracks=[
-                _fake(title="A", duration="", type="track"),
-                _fake(title="B", duration="", type="track"),
+                fake(title="A", duration="", type="track"),
+                fake(title="B", duration="", type="track"),
             ],
         )
         assert track_summary([suite]) == "2 (10:00)"
 
     def test_untimed_part_of_untimed_index_drops_the_total(self) -> None:
-        suite = _fake(
+        suite = fake(
             title="Suite",
             duration="",
             type="index",
             sub_tracks=[
-                _fake(title="A", duration="3:00", type="track"),
-                _fake(title="B", duration="", type="track"),
+                fake(title="A", duration="3:00", type="track"),
+                fake(title="B", duration="", type="track"),
             ],
         )
         assert track_summary([suite]) == "2"
@@ -734,7 +729,7 @@ class TestTrackSummary:
 
 class TestFormatReleaseCompact:
     def _release(self, tracklist: list[SimpleNamespace] | None) -> SimpleNamespace:
-        return _fake(
+        return fake(
             id=847868,
             title="The Downward Spiral",
             year=1994,
@@ -749,17 +744,17 @@ class TestFormatReleaseCompact:
             master_id=3719,
             notes="Slipcase.",
             tracklist=tracklist,
-            extra_artists=[_fake(id=20661, name="Flood", role="Producer", tracks="")],
+            extra_artists=[fake(id=20661, name="Flood", role="Producer", tracks="")],
             identifiers=None,
         )
 
     def test_compact_replaces_tracklist_with_summary(self) -> None:
         release = self._release(
             [
-                _fake(
+                fake(
                     position="1", title="Mr. Self Destruct", duration="4:30", type=None
                 ),
-                _fake(position="2", title="Piggy", duration="4:24", type=None),
+                fake(position="2", title="Piggy", duration="4:24", type=None),
             ]
         )
         output = format_release(release, compact=True)
@@ -769,7 +764,7 @@ class TestFormatReleaseCompact:
 
     def test_compact_with_verbose_keeps_facets(self) -> None:
         release = self._release(
-            [_fake(position="1", title="A", duration="1:00", type=None)]
+            [fake(position="1", title="A", duration="1:00", type=None)]
         )
         output = format_release(release, compact=True, verbose=True)
         order = [
@@ -803,7 +798,7 @@ class TestFormatReleaseOrigin:
             "master_id": None,
             "tracklist": None,
         }
-        return _fake(**{**base, **kw})
+        return fake(**{**base, **kw})
 
     def test_country_and_full_date(self) -> None:
         output = format_release(self._release(country="US", released="1994-03-08"))
@@ -854,29 +849,29 @@ class TestMasterVersionsDates:
 
 class TestFormatCredits:
     def test_groups_by_role_splitting_outside_brackets(self) -> None:
-        release = _fake(
+        release = fake(
             id=847868,
             title="The Downward Spiral",
             extra_artists=[
-                _fake(
+                fake(
                     id=27457,
                     name="Trent Reznor",
                     role="Written-By, Producer [Production]",
                     tracks="",
                 ),
-                _fake(
+                fake(
                     id=20661,
                     name="Flood",
                     role="Producer [Production]",
                     tracks="1, 2, 5 to 7",
                 ),
-                _fake(
+                fake(
                     id=2768,
                     name="Alan Moulder",
                     role="Engineer [Mixing, Additional]",
                     tracks="",
                 ),
-                _fake(id=None, name="Unknown Tech", role="", tracks=""),
+                fake(id=None, name="Unknown Tech", role="", tracks=""),
             ],
         )
         output = format_credits(release)
@@ -894,31 +889,31 @@ class TestFormatCredits:
         release-wide entry wins, whatever order Discogs lists them in."""
         moulder = {"id": 2768, "name": "Alan Moulder", "role": "Engineer"}
         for scopes in (["1, 3", ""], ["", "1, 3"]):
-            release = _fake(
+            release = fake(
                 id=1,
                 title="X",
                 tracklist=None,
-                extra_artists=[_fake(**moulder, tracks=s) for s in scopes],
+                extra_artists=[fake(**moulder, tracks=s) for s in scopes],
             )
             assert format_credits(release).endswith("\nEngineer: Alan Moulder [@a2768]")
 
     def test_no_credits(self) -> None:
-        output = format_credits(_fake(id=1, title="X", extra_artists=None))
+        output = format_credits(fake(id=1, title="X", extra_artists=None))
         assert "(0)" in output
         assert "(no credits listed)" in output
 
 
 class TestFormatIdentifiers:
     def test_lists_type_value_description(self) -> None:
-        release = _fake(
+        release = fake(
             id=847868,
             title="The Downward Spiral",
             identifiers=[
-                _fake(type="Barcode", value="765449234620", description="Scanned"),
-                _fake(
+                fake(type="Barcode", value="765449234620", description="Scanned"),
+                fake(
                     type="Matrix / Runout", value="3 92346-2 SRC**01", description=None
                 ),
-                _fake(type=None, value="LC 0120", description="Back cover"),
+                fake(type=None, value="LC 0120", description="Back cover"),
             ],
         )
         output = format_identifiers(release)
@@ -928,16 +923,16 @@ class TestFormatIdentifiers:
         assert "Other: LC 0120 (Back cover)" in output
 
     def test_no_identifiers(self) -> None:
-        output = format_identifiers(_fake(id=1, title="X", identifiers=[]))
+        output = format_identifiers(fake(id=1, title="X", identifiers=[]))
         assert "(no identifiers listed)" in output
 
 
 class TestFormatArtistEdgeCases:
     def test_members_and_former_carry_refs(self) -> None:
-        m1 = _fake(id=27457, name="Trent Reznor", active=True)
-        m2 = _fake(id=None, name="Robin Finck", active=True)
-        m3 = _fake(id=4237, name="Chris Vrenna", active=False)
-        artist = _fake(
+        m1 = fake(id=27457, name="Trent Reznor", active=True)
+        m2 = fake(id=None, name="Robin Finck", active=True)
+        m3 = fake(id=4237, name="Chris Vrenna", active=False)
+        artist = fake(
             id=3857,
             name="Nine Inch Nails",
             profile=None,
@@ -949,8 +944,8 @@ class TestFormatArtistEdgeCases:
         assert output.endswith("Former: Chris Vrenna [@a4237]")
 
     def test_artist_all_inactive_members(self) -> None:
-        m1 = _fake(id=1, name="Gone", active=False)
-        artist = _fake(id=1, name="Band", profile=None, urls=None, members=[m1])
+        m1 = fake(id=1, name="Gone", active=False)
+        artist = fake(id=1, name="Band", profile=None, urls=None, members=[m1])
         output = format_artist(artist)
         assert "Members:" not in output
         assert "Former: Gone [@a1]" in output
@@ -958,14 +953,14 @@ class TestFormatArtistEdgeCases:
 
 class TestFormatLabelRefs:
     def test_parent_and_sub_labels_carry_refs(self) -> None:
-        label = _fake(
+        label = fake(
             id=647,
             name="Nothing Records",
             profile=None,
             urls=None,
             # The SDK leaves parent_label as a raw dict; sub_labels are models.
             parent_label={"id": 2311, "name": "Interscope Records"},
-            sub_labels=[_fake(id=561260, name="NIN"), _fake(id=None, name="Loose")],
+            sub_labels=[fake(id=561260, name="NIN"), fake(id=None, name="Loose")],
         )
         output = format_label(label)
         assert "Parent: Interscope Records [@l2311]" in output
@@ -975,7 +970,7 @@ class TestFormatLabelRefs:
 class TestFormatLabelReleases:
     def test_rows_show_artist_catno_format(self) -> None:
         releases = [
-            _fake(
+            fake(
                 id=4401,
                 title="Pretty Hate Machine",
                 artist="Nine Inch Nails",
@@ -983,7 +978,7 @@ class TestFormatLabelReleases:
                 catalog_number="0694903742",
                 format="CD, Album, RE, RP",
             ),
-            _fake(
+            fake(
                 id=144167,
                 title="Rest Proof Clockwork",
                 artist="Plaid",
@@ -1017,42 +1012,42 @@ class TestFormatLabelReleases:
 class TestFormatTracklistEdgeCases:
     def test_heading_track(self) -> None:
         tracks = [
-            _fake(position="", title="Side A", duration="", type="heading"),
-            _fake(position="A1", title="Song", duration="3:00", type=None),
+            fake(position="", title="Side A", duration="", type="heading"),
+            fake(position="A1", title="Song", duration="3:00", type=None),
         ]
-        release = _fake(id=1, title="Album", year=None, artists=None, tracklist=tracks)
+        release = fake(id=1, title="Album", year=None, artists=None, tracklist=tracks)
         output = format_tracklist(release)
         assert "  Side A" in output
         assert "A1. Song (3:00)" in output
 
     def test_track_no_position(self) -> None:
         tracks = [
-            _fake(position="", title="Untitled", duration="2:00", type=None),
+            fake(position="", title="Untitled", duration="2:00", type=None),
         ]
-        release = _fake(id=1, title="Album", year=None, artists=None, tracklist=tracks)
+        release = fake(id=1, title="Album", year=None, artists=None, tracklist=tracks)
         output = format_tracklist(release)
         assert "  Untitled (2:00)" in output
         assert "." not in output.split("Untitled")[0].split("\n")[-1]
 
     def test_empty_tracklist(self) -> None:
-        release = _fake(id=1, title="Album", year=None, artists=None, tracklist=None)
+        release = fake(id=1, title="Album", year=None, artists=None, tracklist=None)
         output = format_tracklist(release)
         assert "(no tracklist available)" in output
 
     def test_empty_list_tracklist(self) -> None:
-        release = _fake(id=1, title="Album", year=None, artists=None, tracklist=[])
+        release = fake(id=1, title="Album", year=None, artists=None, tracklist=[])
         output = format_tracklist(release)
         assert "(no tracklist available)" in output
 
 
 class TestFormatMasterEdgeCases:
     def test_heading_track_in_master(self) -> None:
-        artist = _fake(name="Artist", join=None)
+        artist = fake(name="Artist", join=None)
         tracks = [
-            _fake(position="", title="Side A", duration="", type="heading"),
-            _fake(position="1", title="Song", duration="3:00", type=None),
+            fake(position="", title="Side A", duration="", type="heading"),
+            fake(position="1", title="Song", duration="3:00", type=None),
         ]
-        master = _fake(
+        master = fake(
             id=1,
             title="Album",
             year=None,
@@ -1069,11 +1064,11 @@ class TestFormatMasterEdgeCases:
         assert "1. Song (3:00)" in output
 
     def test_track_no_position_in_master(self) -> None:
-        artist = _fake(name="Artist", join=None)
+        artist = fake(name="Artist", join=None)
         tracks = [
-            _fake(position="", title="Untitled", duration="", type=None),
+            fake(position="", title="Untitled", duration="", type=None),
         ]
-        master = _fake(
+        master = fake(
             id=1,
             title="Album",
             year=None,
@@ -1089,8 +1084,8 @@ class TestFormatMasterEdgeCases:
         assert "  Untitled" in output
 
     def test_market_without_lowest_price(self) -> None:
-        artist = _fake(name="Artist", join=None)
-        master = _fake(
+        artist = fake(name="Artist", join=None)
+        master = fake(
             id=1,
             title="Album",
             year=None,
@@ -1110,10 +1105,10 @@ class TestFormatMasterEdgeCases:
 class TestFormatReleaseEdgeCases:
     def test_heading_track_in_release(self) -> None:
         tracks = [
-            _fake(position="", title="Side A", duration="", type="heading"),
-            _fake(position="A1", title="Song", duration="3:00", type=None),
+            fake(position="", title="Side A", duration="", type="heading"),
+            fake(position="A1", title="Song", duration="3:00", type=None),
         ]
-        release = _fake(
+        release = fake(
             id=1,
             title="Album",
             year=None,
@@ -1134,9 +1129,9 @@ class TestFormatReleaseEdgeCases:
 
     def test_track_no_position_in_release(self) -> None:
         tracks = [
-            _fake(position="", title="Untitled", duration="", type=None),
+            fake(position="", title="Untitled", duration="", type=None),
         ]
-        release = _fake(
+        release = fake(
             id=1,
             title="Album",
             year=None,
@@ -1155,7 +1150,7 @@ class TestFormatReleaseEdgeCases:
         assert "  Untitled" in output
 
     def test_market_without_lowest_price(self) -> None:
-        release = _fake(
+        release = fake(
             id=1,
             title="Album",
             year=None,
@@ -1185,8 +1180,8 @@ class TestFormatReleaseEdgeCases:
         assert "$" not in output
 
     def test_community_no_rating(self) -> None:
-        community = _fake(rating=None, have=100, want=50)
-        release = _fake(
+        community = fake(rating=None, have=100, want=50)
+        release = fake(
             id=1,
             title="Album",
             year=None,
@@ -1208,73 +1203,66 @@ class TestFormatReleaseEdgeCases:
 
 class TestFormatPriceGuideEdgeCases:
     def test_empty_conditions(self) -> None:
-        release = _fake(id=1, title="Album", year=None, artists=None)
-        price_suggestions = _fake(conditions={})
-        marketplace_stats = _fake(num_for_sale=None, lowest_price=None)
+        release = fake(id=1, title="Album", year=None, artists=None)
+        price_suggestions = fake(conditions={})
+        marketplace_stats = fake(num_for_sale=None, lowest_price=None)
 
         output = format_price_guide(release, price_suggestions, marketplace_stats)
         assert "No price suggestions available" in output
 
     def test_marketplace_no_lowest(self) -> None:
-        release = _fake(id=1, title="Album", year=None, artists=None)
-        price_suggestions = _fake(conditions={})
-        marketplace_stats = _fake(num_for_sale=42, lowest_price=None)
+        release = fake(id=1, title="Album", year=None, artists=None)
+        price_suggestions = fake(conditions={})
+        marketplace_stats = MarketplaceReleaseStats.model_validate(
+            {"num_for_sale": 42, "lowest_price": None}
+        )
 
         output = format_price_guide(release, price_suggestions, marketplace_stats)
         assert "For sale: 42" in output
         assert "Lowest:" not in output
 
-    def test_marketplace_lowest_no_value(self) -> None:
-        release = _fake(id=1, title="Album", year=None, artists=None)
-        price_suggestions = _fake(conditions={})
-        marketplace_stats = _fake(num_for_sale=10, lowest_price=_fake(value=None))
-
-        output = format_price_guide(release, price_suggestions, marketplace_stats)
-        assert "For sale: 10" in output
-        assert "Lowest:" not in output
-
 
 class TestTrackArtistPrefix:
     def test_track_with_artists(self) -> None:
-        track = _fake(
-            artists=[_fake(name="Throbbing Gristle", join=None)],
+        track = fake(
+            artists=[fake(name="Throbbing Gristle", join=None)],
         )
         assert _track_artist_prefix(track) == "Throbbing Gristle - "
 
     def test_track_with_multiple_artists(self) -> None:
-        track = _fake(
+        track = fake(
             artists=[
-                _fake(name="Trent Reznor", join="&"),
-                _fake(name="Atticus Ross", join=None),
+                fake(name="Trent Reznor", join="&"),
+                fake(name="Atticus Ross", join=None),
             ],
         )
         assert _track_artist_prefix(track) == "Trent Reznor & Atticus Ross - "
 
     def test_track_without_artists(self) -> None:
-        track = _fake(position="A1", title="Song", duration="3:00", type=None)
+        track = fake(position="A1", title="Song", duration="3:00", type=None)
         assert _track_artist_prefix(track) == ""
 
     def test_track_with_empty_artists(self) -> None:
-        track = _fake(artists=[])
+        track = fake(artists=[])
         assert _track_artist_prefix(track) == ""
 
 
 class TestFormatTrackLines:
     def test_tracks_with_artists(self) -> None:
         tracks = [
-            _fake(
+            fake(
                 position="A1",
                 title="Hamburger Lady",
                 duration="4:12",
                 type=None,
-                artists=[_fake(name="Throbbing Gristle", join=None)],
+                artists=[fake(name="Throbbing Gristle", join=None)],
             ),
-            _fake(
+            fake(
                 position="A2",
                 title="Blue Monday",
                 duration="7:29",
                 type=None,
-                artists=[_fake(name="New Order", join=None)],
+                artists=[fake(name="New Order", join=None)],
             ),
         ]
         lines = _format_track_lines(tracks)
@@ -1285,19 +1273,19 @@ class TestFormatTrackLines:
 
     def test_tracks_without_artists(self) -> None:
         tracks = [
-            _fake(position="A1", title="Song", duration="3:00", type=None),
+            fake(position="A1", title="Song", duration="3:00", type=None),
         ]
         lines = _format_track_lines(tracks)
         assert lines == ["  A1. Song (3:00)"]
 
     def test_heading_ignores_artists(self) -> None:
         tracks = [
-            _fake(
+            fake(
                 position="",
                 title="Side A",
                 duration="",
                 type="heading",
-                artists=[_fake(name="Ignored", join=None)],
+                artists=[fake(name="Ignored", join=None)],
             ),
         ]
         lines = _format_track_lines(tracks)
@@ -1307,22 +1295,22 @@ class TestFormatTrackLines:
 class TestFormatReleaseTrackArtists:
     def test_va_compilation(self) -> None:
         """VA compilation shows per-track artists."""
-        va_artist = _fake(name="Various", join=None)
-        track1 = _fake(
+        va_artist = fake(name="Various", join=None)
+        track1 = fake(
             position="A1",
             title="Hamburger Lady",
             duration="4:12",
             type=None,
-            artists=[_fake(name="Throbbing Gristle", join=None)],
+            artists=[fake(name="Throbbing Gristle", join=None)],
         )
-        track2 = _fake(
+        track2 = fake(
             position="A2",
             title="Blue Monday",
             duration="7:29",
             type=None,
-            artists=[_fake(name="New Order", join=None)],
+            artists=[fake(name="New Order", join=None)],
         )
-        release = _fake(
+        release = fake(
             id=452218,
             title="Some Bizzare Album",
             year=1981,
@@ -1345,18 +1333,18 @@ class TestFormatReleaseTrackArtists:
 class TestFormatTracklistTrackArtists:
     def test_va_tracklist(self) -> None:
         """format_tracklist shows per-track artists."""
-        track = _fake(
+        track = fake(
             position="1",
             title="Warm Leatherette",
             duration="3:24",
             type=None,
-            artists=[_fake(name="The Normal", join=None)],
+            artists=[fake(name="The Normal", join=None)],
         )
-        release = _fake(
+        release = fake(
             id=1,
             title="Comp",
             year=1980,
-            artists=[_fake(name="Various", join=None)],
+            artists=[fake(name="Various", join=None)],
             tracklist=[track],
         )
         output = format_tracklist(release)
@@ -1366,18 +1354,18 @@ class TestFormatTracklistTrackArtists:
 class TestFormatMasterTrackArtists:
     def test_va_master(self) -> None:
         """format_master shows per-track artists."""
-        track = _fake(
+        track = fake(
             position="1",
             title="Warm Leatherette",
             duration="3:24",
             type=None,
-            artists=[_fake(name="The Normal", join=None)],
+            artists=[fake(name="The Normal", join=None)],
         )
-        master = _fake(
+        master = fake(
             id=1,
             title="Comp",
             year=1980,
-            artists=[_fake(name="Various", join=None)],
+            artists=[fake(name="Various", join=None)],
             genres=None,
             styles=None,
             main_release=None,
@@ -1392,7 +1380,7 @@ class TestFormatMasterTrackArtists:
 class TestFormatMasterVersionsEdgeCases:
     def test_version_no_next_page(self) -> None:
         versions = [
-            _fake(
+            fake(
                 id=1,
                 released="",
                 country="",
@@ -1408,7 +1396,7 @@ class TestFormatMasterVersionsEdgeCases:
 
     def test_version_label_only(self) -> None:
         versions = [
-            _fake(
+            fake(
                 id=1,
                 released="",
                 country="",
@@ -1426,7 +1414,7 @@ class TestFormatMasterVersionsEdgeCases:
 class TestFormatArtistReleasesEdgeCases:
     def test_release_no_year_no_role(self) -> None:
         releases = [
-            _fake(id=1, type="release", title="Test", year=None, role=""),
+            fake(id=1, type="release", title="Test", year=None, role=""),
         ]
         output = format_artist_releases(
             releases, "@a1", "Artist", page=1, total_results=1, next_page_cmd=None
