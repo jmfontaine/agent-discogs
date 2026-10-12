@@ -96,8 +96,15 @@ def begin(ctx: click.Context, *, debug: bool) -> None:
 
 
 def record(event: RequestEvent) -> None:
-    """SDK `on_request` hook: one event per request, cache hit or network."""
-    _trace.events.append(event)
+    """SDK `on_request` hook: one event per request that got a response, from
+    the cache or the network.
+
+    The SDK also reports calls that ended without one, a `cache_only()` miss
+    and a transport failure, with no status code. They are dropped: neither
+    counts as a request in the footer, nor gets a `--debug` row.
+    """
+    if event.status_code is not None:
+        _trace.events.append(event)
 
 
 def note_scan(note: ScanNote) -> None:
@@ -106,8 +113,8 @@ def note_scan(note: ScanNote) -> None:
 
 
 def note_cache_miss() -> None:
-    """Record a `--cached` lookup the cache could not serve. The SDK emits no
-    event for it, so this is the only trace such a request leaves."""
+    """Record a `--cached` lookup the cache could not serve. `record()` drops
+    the SDK's event for it, so this is the only trace such a request leaves."""
     _trace.cache_misses += 1
 
 

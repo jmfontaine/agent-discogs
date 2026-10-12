@@ -38,7 +38,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.3.1" },
-    { name = "discogs-sdk", specifier = ">=0.7.0" },
+    { name = "discogs-sdk", specifier = ">=0.8.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
 ]
 
@@ -273,7 +273,7 @@ wheels = [
 
 [[package]]
 name = "discogs-sdk"
-version = "0.7.0"
+version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx2" },
@@ -282,9 +282,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/08/e7196bb065aadf011917dc9abbd19b01dcdc72e2074d4c8d711189495f86/discogs_sdk-0.7.0.tar.gz", hash = "sha256:f198c899afb30292b55dbae7c780d3aed24b6f34d0a80ae72da4a4910382a993", size = 101129, upload-time = "2026-10-11T19:01:41.128Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/64/f0/bd722a57cdc5e987d0a0a8c8d311c8f19cdb7f1886b7e7b2c8bc78f6f234/discogs_sdk-0.8.0.tar.gz", hash = "sha256:93b2a5db282ed5c22e74a144e2f1bac8a0996ef6df1f9f2c5fb349d489be0810", size = 114890, upload-time = "2026-10-12T02:10:59.518Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/1d/9d3a4233749f3aca32e134fd18ed80b3b09246cff2366f34ed209222d04c/discogs_sdk-0.7.0-py3-none-any.whl", hash = "sha256:39717a20033c5d8b477ce2aea17c7511eb8416705218343109a7e434dafc4d63", size = 115291, upload-time = "2026-10-11T19:01:39.762Z" },
+    { url = "https://files.pythonhosted.org/packages/30/dc/947b43dc2aa60a2c60d1ae0b2bfeb43a8e15315213e9c83cb7dcaab5741e/discogs_sdk-0.8.0-py3-none-any.whl", hash = "sha256:bab9fe916537cb1798357a8c710d0dc37c542c56e7a19eb991681cbf0874a360", size = 144426, upload-time = "2026-10-12T02:10:58.111Z" },
 ]
 
 [[package]]

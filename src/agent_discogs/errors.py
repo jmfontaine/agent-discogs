@@ -131,7 +131,7 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         )
 
     if isinstance(exc, CacheMissError):
-        # The SDK emits no request event for a miss, so the footer learns
+        # `trace.record()` drops the SDK's event for a miss, so the footer learns
         # about it here: every miss an agent sees passes through classify().
         trace.note_cache_miss()
         split = urlsplit(exc.url)

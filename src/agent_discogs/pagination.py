@@ -143,19 +143,20 @@ def fetch_page(
 ) -> PageResult:
     """Fetch a single page from the Discogs API with full pagination metadata.
 
-    This bypasses SyncPage because SyncPage is an auto-paging iterator:
-    consuming all items on a page triggers a fetch of the next page.
-    We need exactly one page of items without triggering additional requests.
-    SyncPage exposes pagination metadata (total_items, total_pages, etc.)
-    but no way to access the current page's items without iterating.
+    This bypasses SyncPage because iterating it auto-pages: consuming all
+    items on a page triggers a fetch of the next page, and we need exactly one
+    page of items without additional requests. It predates `SyncPage.fetch()`
+    (discogs-sdk 0.8.0), which now reads exactly one page through public API.
 
     `_send()` is the SDK's HTTP-error boundary: it maps a failing response to
     the matching DiscogsAPIError subclass before returning, so the body parsed
-    below is always a success payload.
+    below is always a success payload. Passing `parse` makes it return the
+    decoded JSON and keeps a body that does not decode out of the cache.
     """
     url = client._build_url(path)  # noqa: SLF001
-    response = client._send("GET", url, params=params)  # noqa: SLF001
-    body = response.json()
+    body = client._send(  # noqa: SLF001
+        "GET", url, params=params, parse=lambda data: data
+    )
 
     pagination = body.get("pagination", {})
     raw_items = body.get(items_key, [])

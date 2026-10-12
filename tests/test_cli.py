@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import functools
 import importlib
 import importlib.metadata
 import io
@@ -35,6 +36,7 @@ from discogs_sdk import (
     SearchResult,
 )
 
+import agent_discogs.client as client_module
 from agent_discogs import cli, main, trace
 from agent_discogs.json_output import dumps
 from agent_discogs.pagination import PageResult
@@ -3267,8 +3269,8 @@ class TestCacheFlags:
     def test_first_request_miss_still_reports_zero_spend(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The SDK emits no event for a `CacheMissError`, so a run whose very
-        first lookup misses has an empty trace; the footer must still say so."""
+        """`trace.record()` keeps no event for a `CacheMissError`, so a run whose
+        very first lookup misses has an empty trace; the footer must still say so."""
 
         def _miss(release_id: int) -> object:
             raise CacheMissError(
@@ -3885,3 +3887,105 @@ class TestContinuation:
         assert third.exit_code == 1
         assert "Not cached: GET /database/search" in third.stderr
         assert sent == []
+
+
+_RELEASE_WITH_HEADINGS = {
+    "id": 1,
+    "title": "Sides",
+    "artists": [{"id": 2, "name": "Band", "join": ""}],
+    "tracklist": [
+        {"position": "", "title": "Side A", "duration": "", "type_": "heading"},
+        {"position": "A1", "title": "Opener", "duration": "3:00", "type_": "track"},
+    ],
+}
+
+
+class TestRealSdk:
+    """The CLI against a real `Discogs` client built by `get_client()`, with only
+    its HTTP faked. The `SimpleNamespace` fakes elsewhere cannot notice an SDK
+    upgrade that changes the events it emits or the models it returns."""
+
+    @pytest.fixture(autouse=True)
+    def _real_client(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> Iterator[None]:
+        self.sends: list[str] = []
+        self.respond: Callable[[httpx2.Request], httpx2.Response] = lambda _request: (
+            httpx2.Response(
+                200,
+                json=_RELEASE_WITH_HEADINGS,
+                headers={
+                    "X-Discogs-Ratelimit": "60",
+                    "X-Discogs-Ratelimit-Used": "1",
+                    "X-Discogs-Ratelimit-Remaining": "59",
+                },
+            )
+        )
+
+        def _transport(request: httpx2.Request) -> httpx2.Response:
+            self.sends.append(request.url.path)
+            return self.respond(request)
+
+        http = httpx2.Client(transport=httpx2.MockTransport(_transport))
+        monkeypatch.setenv("DISCOGS_TOKEN", "test-token")
+        monkeypatch.setattr("time.sleep", lambda _seconds: None)  # SDK retries
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        monkeypatch.setattr(client_module, "_client", None)
+        monkeypatch.setattr(
+            client_module, "Discogs", functools.partial(Discogs, http_client=http)
+        )
+        yield
+        if client_module._client is not None:
+            client_module._client.close()
+        http.close()
+
+    def test_repeat_lookup_is_served_from_cache(self) -> None:
+        first = CliRunner().invoke(cli, ["tracks", "@r1"])
+        assert first.exit_code == 0
+        assert "A1. Opener (3:00)" in first.stdout
+        assert first.stderr == "api: 1 request · 59/60 left this minute\n"
+
+        repeat = CliRunner().invoke(cli, ["tracks", "@r1"])
+        assert repeat.exit_code == 0
+        assert repeat.stdout == first.stdout
+        assert repeat.stderr == "api: 0 requests · cached\n"
+        assert self.sends == ["/releases/1"]
+
+    def test_headings_render_as_headings(self) -> None:
+        result = CliRunner().invoke(cli, ["tracks", "@r1"])
+        assert "  Side A\n  A1. Opener (3:00)\n" in result.stdout
+        result = CliRunner().invoke(cli, ["tracks", "--json", "@r1"])
+        assert json.loads(result.stdout)["tracklist"] == [
+            {"title": "Side A", "type": "heading"},
+            {"pos": "A1", "title": "Opener", "duration": "3:00"},
+        ]
+
+    def test_cached_miss_spends_nothing(self) -> None:
+        result = CliRunner().invoke(cli, ["--debug", "--cached", "tracks", "@r1"])
+        assert result.exit_code == 1
+        lines = [s for s in result.stderr.splitlines() if not s.startswith("[sdk]")]
+        assert lines[:3] == [
+            "✗ Not cached: GET /releases/1",
+            "  Rerun without --cached to fetch it from the API.",
+            "api: 0 requests · cached",
+        ]
+        assert not [line for line in lines if line.startswith("GET ")]  # no row
+
+        result = CliRunner().invoke(cli, ["--cached", "tracks", "--json", "@r1"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "cache_miss"
+        assert result.stderr == "api: 0 requests · cached\n"
+        assert self.sends == []
+
+    def test_connection_failure_reports_no_request(self) -> None:
+        def _refuse(request: httpx2.Request) -> httpx2.Response:
+            raise httpx2.ConnectError("Connection refused", request=request)
+
+        self.respond = _refuse
+        result = CliRunner().invoke(cli, ["--debug", "tracks", "@r1"])
+        assert result.exit_code == 1
+        lines = result.stderr.splitlines()
+        assert "✗ Connection error." in lines
+        assert not [line for line in lines if line.startswith(("api:", "GET "))]
+        assert len(self.sends) > 1  # the SDK retried; no attempt was counted
+        assert set(self.sends) == {"/releases/1"}

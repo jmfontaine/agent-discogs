@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from types import SimpleNamespace
 from typing import Any
 
+import httpx2
 import pytest
+from discogs_sdk import Discogs
 from pydantic import BaseModel
 
 from agent_discogs import trace
@@ -72,23 +75,16 @@ class _FakeModel(BaseModel):
     name: str
 
 
-def _make_fake_client(
-    body: Mapping[str, object],
-    status_code: int = 200,
-) -> Any:
-    """Build a fake Discogs client that returns a canned response.
+def _make_fake_client(body: Mapping[str, object]) -> Any:
+    """Build a fake Discogs client that returns a canned success body.
 
     The real `_send()` is the SDK's HTTP-error boundary: it raises before
-    returning, so nothing downstream of it needs to re-check the status.
+    returning, so nothing downstream of it needs to re-check the status. Given
+    `parse`, it returns what `parse` makes of the decoded JSON.
     """
-    response = SimpleNamespace(
-        json=lambda: body,
-        status_code=status_code,
-        headers={},
-    )
     return SimpleNamespace(
         _build_url=lambda path: f"https://api.discogs.com{path}",
-        _send=lambda method, url, params=None: response,
+        _send=lambda method, url, *, params, parse: parse(body),
     )
 
 
@@ -98,7 +94,9 @@ def _paged_client(
     """Fake client serving `total` rows (ids 0..total-1) across API pages."""
     calls: list[int] = []
 
-    def _send(_method: str, _url: str, params: Any = None) -> SimpleNamespace:
+    def _send(
+        _method: str, _url: str, *, params: Any, parse: Callable[[Any], Any]
+    ) -> object:
         page, per = params["page"], params["per_page"]
         calls.append(page)
         if per_page_hook:
@@ -107,11 +105,16 @@ def _paged_client(
         rows = [
             {"id": i, "name": f"row{i}"} for i in range(start, min(start + per, total))
         ]
-        body = {
-            "pagination": {"page": page, "items": total, "pages": -(-total // per)},
-            "results": rows,
-        }
-        return SimpleNamespace(json=lambda: body, status_code=200, headers={})
+        return parse(
+            {
+                "pagination": {
+                    "page": page,
+                    "items": total,
+                    "pages": -(-total // per),
+                },
+                "results": rows,
+            }
+        )
 
     client = SimpleNamespace(
         _build_url=lambda path: f"https://api.discogs.com{path}", _send=_send
@@ -271,3 +274,27 @@ class TestFetchPage:
         assert result.total_items == 0
         assert result.total_pages == 1
         assert result.items == []
+
+    def test_body_that_is_not_json_is_never_cached(self) -> None:
+        """A 200 whose body is not JSON (a gateway page) fails every time, so a
+        later call must reach the API again instead of reading it from cache."""
+        sends: list[str] = []
+
+        def _gateway_page(request: httpx2.Request) -> httpx2.Response:
+            sends.append(request.url.path)
+            return httpx2.Response(200, text="<html>Bad gateway</html>")
+
+        with (
+            httpx2.Client(transport=httpx2.MockTransport(_gateway_page)) as http,
+            Discogs(
+                # The SDK skips its cache for an injected client with no auth.
+                token="fake",  # noqa: S106  # placeholder, never reaches Discogs
+                cache=True,
+                http_client=http,
+                max_retries=0,
+            ) as client,
+        ):
+            for _ in range(2):
+                with pytest.raises(json.JSONDecodeError):
+                    fetch_page(client, "/database/search", {}, _FakeModel, "results")
+        assert sends == ["/database/search", "/database/search"]

@@ -49,7 +49,7 @@ class TestRenderFooter:
         assert render_footer(events, authenticated=True) == "api: 0 requests · cached"
 
     def test_cache_miss_without_events_reports_zero_spend(self) -> None:
-        # A `--cached` miss on the first lookup raises before any event exists.
+        # A `--cached` miss on the first lookup leaves no recorded event.
         assert (
             render_footer([], authenticated=True, cache_misses=1)
             == "api: 0 requests · cached"
