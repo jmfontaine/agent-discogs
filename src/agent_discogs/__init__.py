@@ -45,6 +45,10 @@ Get Credits:   release, track, and sub-track credits by role; each person once
                per role with the tracks covered (none = whole release);
                --json --full adds track_credits
 
+get release's Format line (and --json formats) lists one entry per physical
+format, ';'-separated: the quantity when above 1, the name, then descriptions
+and free text in parentheses, e.g. 2\u00d7Vinyl (LP, Album, 180g, Gatefold); CD (Album).
+
 Refs:
   Search results return typed refs: @a3857 (artist), @r847868 (release),
   @m3719 (master), @l647 (label). Use refs with get commands.
