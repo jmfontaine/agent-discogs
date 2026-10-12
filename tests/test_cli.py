@@ -13,6 +13,7 @@ import re
 import shlex
 import sys
 from collections.abc import Callable, Iterator
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -963,7 +964,7 @@ class TestGetCommand:
 
     def test_get_tracklist(self) -> None:
         track = _fake(
-            position="A1", title="Mr. Self Destruct", duration="4:09", type_=None
+            position="A1", title="Mr. Self Destruct", duration="4:09", type=None
         )
         release = _fake(
             id=367113,
@@ -1073,7 +1074,7 @@ class TestGetCommand:
             position="1",
             title="Hamburger Lady",
             duration="4:12",
-            type_=None,
+            type=None,
             artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
         )
         release = _fake(
@@ -1138,10 +1139,10 @@ class TestGetCommand:
             master_id=None,
             tracklist=[
                 _fake(
-                    position="1", title="A", duration="4:30", type_=None, artists=None
+                    position="1", title="A", duration="4:30", type=None, artists=None
                 ),
                 _fake(
-                    position="2", title="B", duration="4:24", type_=None, artists=None
+                    position="2", title="B", duration="4:24", type=None, artists=None
                 ),
             ],
         )
@@ -1630,7 +1631,7 @@ class TestGetCommand:
 
 class TestShortcutCommands:
     def test_tracks_shortcut(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        track = _fake(position="1", title="Track One", duration="3:00", type_=None)
+        track = _fake(position="1", title="Track One", duration="3:00", type=None)
         release = _fake(
             id=123,
             title="Album",
@@ -1706,7 +1707,7 @@ class TestMultiRef:
                 num_for_sale=None,
                 lowest_price=None,
                 master_id=None,
-                tracklist=[_fake(position="1", title="A", duration="1:00", type_=None)],
+                tracklist=[_fake(position="1", title="A", duration="1:00", type=None)],
             ),
             12453760: _fake_model(
                 id=12453760,
@@ -1723,7 +1724,7 @@ class TestMultiRef:
                 num_for_sale=None,
                 lowest_price=None,
                 master_id=None,
-                tracklist=[_fake(position="1", title="A", duration="1:00", type_=None)],
+                tracklist=[_fake(position="1", title="A", duration="1:00", type=None)],
             ),
         }
         self.calls: list[int] = []
@@ -1939,14 +1940,14 @@ class TestExceptionHandling:
 
 
 def _fake_model(**kwargs: object) -> SimpleNamespace:
-    """Fake SDK model with model_dump() support."""
+    """Fake SDK model with model_dump() support (any `mode`)."""
     ns = SimpleNamespace(**kwargs)
-    ns.model_dump = lambda: dict(kwargs)
+    ns.model_dump = lambda **_: dict(kwargs)
     return ns
 
 
 def _via_json(data: object) -> object:
-    """What a raw `--full` dump of a fake looks like after `default=str`."""
+    """What a `--full` dump of a fake looks like after `default=str`."""
     return json.loads(json.dumps(data, default=str))
 
 
@@ -2498,7 +2499,7 @@ class TestJsonGet:
                     position="1",
                     title="Mr. Self Destruct",
                     duration="4:30",
-                    type_=None,
+                    type=None,
                     artists=None,
                 )
             ],
@@ -2639,7 +2640,7 @@ class TestJsonGet:
             num_for_sale=200,
             lowest_price=1.5,
             tracklist=[
-                _fake(position="1", title="A", duration="", type_=None, artists=None)
+                _fake(position="1", title="A", duration="", type=None, artists=None)
             ],
         )
         self._set_client(_fake_client(masters_get=lambda _id: master))
@@ -2751,7 +2752,7 @@ class TestJsonGet:
             position="A1",
             title="Track One",
             duration="4:00",
-            type_="track",
+            type="track",
             artists=[_fake(id=1, name="X", join=None)],
         )
         release = _fake(id=123, title="R", tracklist=[track])
@@ -3090,7 +3091,7 @@ def _network_event(remaining: int = 59, limit: int = 60) -> RequestEvent:
 def _tracks_fake(recorder: Callable[[], None]) -> SimpleNamespace:
     """A client serving `tracks @r123` whose lookup also runs `recorder`, the
     way the real client's `on_request` hook fires inside the SDK call."""
-    track = _fake_model(position="1", title="Song", duration="3:00", type_=None)
+    track = _fake_model(position="1", title="Song", duration="3:00", type=None)
     release = _fake(id=123, title="Album", year=2020, artists=None, tracklist=[track])
 
     def _get(_id: int) -> object:
@@ -3703,7 +3704,7 @@ class TestRequestCost:
             ("get release @r1 @r2 @r3", 3),
             ("tracks @r1", 1),
             ("price @r1", 3),
-            ("get price @r1 --json --full", 2),  # raw documents: no release read
+            ("get price @r1 --json --full", 2),  # full documents: no release read
             # Lists: the JSON page reads no header attribute; text adds the
             # artist/label/master name.
             ("get releases @a1 --json", 1),
@@ -3994,22 +3995,66 @@ class TestRealSdk:
         assert len(self.sends) > 1  # the SDK retried; no attempt was counted
         assert set(self.sends) == {"/releases/1"}
 
-    def test_full_json_keeps_track_type_underscore(self) -> None:
-        result = CliRunner().invoke(cli, ["tracks", "--json", "--full", "@r1"])
-        tracks = json.loads(result.stdout)["tracklist"]
-        assert [t["type_"] for t in tracks] == ["heading", "track"]
-        assert not [t for t in tracks if "type" in t]
+    def _full_release(self, **fields: object) -> dict[str, Any]:
+        release = {**_RELEASE_WITH_HEADINGS, **fields}
+        self.respond = lambda _request: httpx2.Response(200, json=release)
         result = CliRunner().invoke(cli, ["get", "release", "--json", "--full", "@r1"])
-        tracks = json.loads(result.stdout)["tracklist"]
-        assert [t["type_"] for t in tracks] == ["heading", "track"]
+        assert result.exit_code == 0, result.output
+        return json.loads(result.stdout)
 
-    def test_full_json_keeps_search_uri_as_sent(self) -> None:
+    def test_full_json_timestamps_are_rfc3339(self) -> None:
+        full = self._full_release(
+            date_added="2005-01-03T23:17:26-08:00", date_changed="2005-01-03T23:17:26"
+        )
+        assert full["date_added"] == "2005-01-03T23:17:26-08:00"
+        changed = full["date_changed"]  # sent without an offset
+        assert changed.startswith("2005-01-03T23:17:26")
+        assert datetime.fromisoformat(changed).utcoffset() is not None
+
+    def test_full_json_unparseable_timestamp_is_null(self) -> None:
+        full = self._full_release(date_added="not-a-timestamp")
+        assert "date_added" in full
+        assert full["date_added"] is None
+
+    def test_full_json_uses_the_sdk_field_names(self) -> None:
+        credit = {"id": 3, "name": "Flood", "anv": "F.", "role": "Producer"}
+        track = {"position": "A1", "title": "Opener", "extraartists": [credit]}
+        full = self._full_release(
+            labels=[{"id": 4, "name": "Nothing", "catno": "INT-1"}],
+            extraartists=[credit],
+            tracklist=[track],
+            unmodeled_field={"kept": [1, "two"]},
+        )
+        assert full["labels"][0]["catalog_number"] == "INT-1"
+        assert "catno" not in full["labels"][0]
+        assert full["extra_artists"][0]["name_variation"] == "F."
+        assert "extraartists" not in full
+        assert full["tracklist"][0]["extra_artists"][0]["role"] == "Producer"
+        assert full["unmodeled_field"] == {"kept": [1, "two"]}
+
+    def test_full_json_tracks_carry_type(self) -> None:
+        for argv in (
+            ["tracks", "--json", "--full", "@r1"],
+            ["get", "release", "--json", "--full", "@r1"],
+        ):
+            result = CliRunner().invoke(cli, argv)
+            tracks = json.loads(result.stdout)["tracklist"]
+            assert [t["type"] for t in tracks] == ["heading", "track"]
+            assert not [t for t in tracks if "type_" in t]
+
+    def test_full_json_search_rows_are_normalized(self) -> None:
         self.respond = lambda _request: httpx2.Response(
             200,
             json={
                 "pagination": {"page": 1, "pages": 1, "items": 1},
                 "results": [
-                    {"id": 1, "type": "release", "title": "Sides", "uri": "/release/1"}
+                    {
+                        "id": 1,
+                        "type": "release",
+                        "title": "Sides",
+                        "catno": "INT-1",
+                        "uri": "/release/1",
+                    }
                 ],
             },
         )
@@ -4017,7 +4062,9 @@ class TestRealSdk:
             cli, ["search", "--json", "--full", "--release-type", "all", "Sides"]
         )
         assert result.exit_code == 0, result.output
-        assert json.loads(result.stdout)["results"][0]["uri"] == "/release/1"
+        row = json.loads(result.stdout)["results"][0]
+        assert row["catalog_number"] == "INT-1"
+        assert row["uri"] == "https://www.discogs.com/release/1"
 
     def test_failed_purge_still_reports_cleared(
         self, caplog: pytest.LogCaptureFixture

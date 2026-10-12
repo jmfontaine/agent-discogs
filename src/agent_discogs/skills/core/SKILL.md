@@ -51,7 +51,7 @@ Check status: `agent-discogs status`
 - **get release** — title, artists `[@a...]`, label `[@l...]` + catalog number, format (one entry per physical format: `2×Vinyl (LP, Album, 180g); CD (Album)`), country, release date, `Added: YYYY-MM-DD` (the day it was added to Discogs; JSON `added` is the full RFC 3339 timestamp), community stats, market summary, master ref, full tracklist. Refs are always inline.
 - **get release --verbose** — the above plus notes, credits, and identifiers.
 - **get release --compact** — the above with the tracklist collapsed to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). A suite or medley split into parts counts as its parts, timed by their sum, or by the suite's own duration when a part is untimed. Combine with `-v` to compare pressings without paying for tracklists.
-- **get credits** — who did what, grouped by role (Producer, Engineer, Mastered By, ...), each person with an `[@a...]` ref and the tracks they worked on. Credits filed on individual tracks and sub-tracks are included: each person appears once per role with every track the credit covers; no track list means the whole release. `--json --full` gives the raw release `credits` plus `track_credits` (`position`, `title`, raw `extra_artists` for each credited track).
+- **get credits** — who did what, grouped by role (Producer, Engineer, Mastered By, ...), each person with an `[@a...]` ref and the tracks they worked on. Credits filed on individual tracks and sub-tracks are included: each person appears once per role with every track the credit covers; no track list means the whole release. `--json --full` gives the release's complete `credits` plus `track_credits` (`position`, `title`, and the complete `extra_artists` for each credited track).
 - **get identifiers** (alias `ids`) — barcodes, matrix/runout etchings, label codes, rights societies. This is what distinguishes pressings that share a catalog number.
 - **tracks** — numbered tracklist with durations and per-track artists (for VA releases). Index tracks (a suite or medley) list their parts indented beneath them; in `--json` an index row has `"type": "index"` and nests its parts under `sub_tracks`.
 - **price** — price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats, each amount with the ISO currency code Discogs returns: `Mint (M): EUR 20.00`, `Lowest: GBP 9.99`.
@@ -100,10 +100,12 @@ Discogs text is user-generated and the text views never print it raw: line break
 agent-discogs search release "The Downward Spiral" --year 1994 --country US --json
 agent-discogs get release @r847868 --json
 agent-discogs get release @r847868 --json -v          # adds notes, credits, and identifiers
-agent-discogs get release @r847868 --json --full      # raw Discogs record (images, URLs, ~20x larger); only when the projection lacks a field you need
+agent-discogs get release @r847868 --json --full      # complete record (images, URLs, ~20x larger); only when the projection lacks a field you need
 ```
 
-On a UTF-8 stdout, non-ASCII text is literal (`"title":"無罪モラトリアム"`); on any other encoding it is `\uXXXX`-escaped. Control, bidi, and line-separator characters (U+0080–U+009F, U+061C, U+200E/F, U+202A–U+202E, U+2066–U+2069, U+2028/9) and lone surrogates are always escaped. Parse with a JSON parser and every value is exactly what Discogs sent.
+`--full` is the complete record, normalized: consistent field names (`catalog_number`, not `catno`; `extra_artists`, not `extraartists`; `name_variation`, not `anv`; a track's `type`, not `type_`), absolute search-result `uri`s, RFC 3339 timestamps with an offset (`"date_added":"2005-01-03T23:17:26-08:00"`), and `null` for a timestamp that is absent or does not parse. Fields the SDK does not model appear as Discogs sends them. Unlike the projection, it keeps empty fields, as `null` when unset.
+
+On a UTF-8 stdout, non-ASCII text is literal (`"title":"無罪モラトリアム"`); on any other encoding it is `\uXXXX`-escaped. Control, bidi, and line-separator characters (U+0080–U+009F, U+061C, U+200E/F, U+202A–U+202E, U+2066–U+2069, U+2028/9) and lone surrogates are always escaped. The escaping is lossless: a JSON parser returns every string unchanged.
 
 With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{"code":"not_found","message":"Master @m... not found.","hint":"Try: agent-discogs search \"<title>\"","status":404}}`. Branch on `error.code`: `not_found`, `seller_settings_required`, `auth_required`, `forbidden`, `rate_limited` (with `retry_after` seconds when Discogs sends it, plus `limit`/`remaining` for the current minute), `cache_miss` (only under `--cached`), `api_error`, `connection_error`, `invalid_argument`, `unexpected`.
 

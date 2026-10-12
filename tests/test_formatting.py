@@ -223,9 +223,9 @@ class TestFormatRelease:
         label = _fake(name="Nothing Records", catalog_number="INT-92346")
         fmt = _fake(name="Vinyl", descriptions=["LP", "Album"])
         track1 = _fake(
-            position="A1", title="Mr. Self Destruct", duration="4:09", type_=None
+            position="A1", title="Mr. Self Destruct", duration="4:09", type=None
         )
-        track2 = _fake(position="A2", title="Piggy", duration="4:24", type_=None)
+        track2 = _fake(position="A2", title="Piggy", duration="4:24", type=None)
         artist = _fake(name="Nine Inch Nails", join=None)
 
         release = _fake(
@@ -307,7 +307,7 @@ class TestFormatMaster:
     def test_master(self) -> None:
         artist = _fake(name="Nine Inch Nails", join=None)
         track = _fake(
-            position="1", title="Mr. Self Destruct", duration="4:09", type_=None
+            position="1", title="Mr. Self Destruct", duration="4:09", type=None
         )
         master = _fake(
             id=4917,
@@ -359,10 +359,8 @@ class TestFormatTracklist:
     def test_tracklist(self) -> None:
         artist = _fake(name="Nine Inch Nails", join=None)
         tracks = [
-            _fake(
-                position="A1", title="Mr. Self Destruct", duration="4:09", type_=None
-            ),
-            _fake(position="A2", title="Piggy", duration="4:24", type_=None),
+            _fake(position="A1", title="Mr. Self Destruct", duration="4:09", type=None),
+            _fake(position="A2", title="Piggy", duration="4:24", type=None),
         ]
         release = _fake(
             id=367113,
@@ -584,7 +582,7 @@ class TestFormatReleaseVerbose:
             position="1",
             title="Hamburger Lady",
             duration="4:12",
-            type_=None,
+            type=None,
             artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
         )
         release = _fake(
@@ -622,7 +620,7 @@ class TestFormatReleaseVerbose:
             lowest_price=None,
             master_id=None,
             notes="Slipcase.",
-            tracklist=[_fake(position="1", title="A", duration="", type_=None)],
+            tracklist=[_fake(position="1", title="A", duration="", type=None)],
             extra_artists=[_fake(id=20661, name="Flood", role="Producer", tracks="")],
             identifiers=[
                 _fake(type="Barcode", value="765449234620", description="Scanned")
@@ -647,48 +645,48 @@ class TestFormatReleaseVerbose:
 class TestTrackSummary:
     def test_counts_tracks_and_sums_durations_past_an_hour(self) -> None:
         tracks = [
-            _fake(position="1", title="A", duration="30:00", type_=None),
-            _fake(position="", title="Side B", duration="", type_="heading"),
-            _fake(position="2", title="B", duration="35:01", type_=None),
+            _fake(position="1", title="A", duration="30:00", type=None),
+            _fake(position="", title="Side B", duration="", type="heading"),
+            _fake(position="2", title="B", duration="35:01", type=None),
         ]
         assert track_summary(tracks) == "2 (65:01)"
 
     def test_any_unknown_duration_drops_the_total(self) -> None:
         """A partial sum would read as the release running time; count only."""
         tracks = [
-            _fake(position="1", title="A", duration="4:30", type_=None),
-            _fake(position="2", title="B", duration="", type_=None),
-            _fake(position="3", title="C", duration="?", type_=None),
+            _fake(position="1", title="A", duration="4:30", type=None),
+            _fake(position="2", title="B", duration="", type=None),
+            _fake(position="3", title="C", duration="?", type=None),
         ]
         assert track_summary(tracks) == "3"
 
     def test_hours_minutes_seconds_durations(self) -> None:
         tracks = [
-            _fake(position="1", title="A", duration="1:02:03", type_=None),
-            _fake(position="2", title="B", duration="0:57", type_=None),
+            _fake(position="1", title="A", duration="1:02:03", type=None),
+            _fake(position="2", title="B", duration="0:57", type=None),
         ]
         assert track_summary(tracks) == "2 (63:00)"
 
     def test_no_known_durations_gives_count_only(self) -> None:
-        tracks = [_fake(position="1", title="A", duration=None, type_=None)]
+        tracks = [_fake(position="1", title="A", duration=None, type=None)]
         assert track_summary(tracks) == "1"
 
     def test_headings_only(self) -> None:
         assert (
-            track_summary([_fake(title="Side A", duration="", type_="heading")]) == "0"
+            track_summary([_fake(title="Side A", duration="", type="heading")]) == "0"
         )
 
     def test_index_track_counts_its_parts_and_sums_their_durations(self) -> None:
         suite = _fake(
             title="Suite",
             duration="",
-            type_="index",
+            type="index",
             sub_tracks=[
-                _fake(title="A", duration="3:00", type_="track"),
-                _fake(title="B", duration="4:00", type_="track"),
+                _fake(title="A", duration="3:00", type="track"),
+                _fake(title="B", duration="4:00", type="track"),
             ],
         )
-        solo = _fake(title="Solo", duration="5:00", type_="track")
+        solo = _fake(title="Solo", duration="5:00", type="track")
         assert track_summary([suite, solo]) == "3 (12:00)"
 
     def test_index_duration_stands_in_for_untimed_parts(self) -> None:
@@ -696,10 +694,10 @@ class TestTrackSummary:
         suite = _fake(
             title="Suite",
             duration="10:00",
-            type_="index",
+            type="index",
             sub_tracks=[
-                _fake(title="A", duration="", type_="track"),
-                _fake(title="B", duration="", type_="track"),
+                _fake(title="A", duration="", type="track"),
+                _fake(title="B", duration="", type="track"),
             ],
         )
         assert track_summary([suite]) == "2 (10:00)"
@@ -708,10 +706,10 @@ class TestTrackSummary:
         suite = _fake(
             title="Suite",
             duration="",
-            type_="index",
+            type="index",
             sub_tracks=[
-                _fake(title="A", duration="3:00", type_="track"),
-                _fake(title="B", duration="", type_="track"),
+                _fake(title="A", duration="3:00", type="track"),
+                _fake(title="B", duration="", type="track"),
             ],
         )
         assert track_summary([suite]) == "2"
@@ -742,9 +740,9 @@ class TestFormatReleaseCompact:
         release = self._release(
             [
                 _fake(
-                    position="1", title="Mr. Self Destruct", duration="4:30", type_=None
+                    position="1", title="Mr. Self Destruct", duration="4:30", type=None
                 ),
-                _fake(position="2", title="Piggy", duration="4:24", type_=None),
+                _fake(position="2", title="Piggy", duration="4:24", type=None),
             ]
         )
         output = format_release(release, compact=True)
@@ -754,7 +752,7 @@ class TestFormatReleaseCompact:
 
     def test_compact_with_verbose_keeps_facets(self) -> None:
         release = self._release(
-            [_fake(position="1", title="A", duration="1:00", type_=None)]
+            [_fake(position="1", title="A", duration="1:00", type=None)]
         )
         output = format_release(release, compact=True, verbose=True)
         order = [
@@ -1002,8 +1000,8 @@ class TestFormatLabelReleases:
 class TestFormatTracklistEdgeCases:
     def test_heading_track(self) -> None:
         tracks = [
-            _fake(position="", title="Side A", duration="", type_="heading"),
-            _fake(position="A1", title="Song", duration="3:00", type_=None),
+            _fake(position="", title="Side A", duration="", type="heading"),
+            _fake(position="A1", title="Song", duration="3:00", type=None),
         ]
         release = _fake(id=1, title="Album", year=None, artists=None, tracklist=tracks)
         output = format_tracklist(release)
@@ -1012,7 +1010,7 @@ class TestFormatTracklistEdgeCases:
 
     def test_track_no_position(self) -> None:
         tracks = [
-            _fake(position="", title="Untitled", duration="2:00", type_=None),
+            _fake(position="", title="Untitled", duration="2:00", type=None),
         ]
         release = _fake(id=1, title="Album", year=None, artists=None, tracklist=tracks)
         output = format_tracklist(release)
@@ -1034,8 +1032,8 @@ class TestFormatMasterEdgeCases:
     def test_heading_track_in_master(self) -> None:
         artist = _fake(name="Artist", join=None)
         tracks = [
-            _fake(position="", title="Side A", duration="", type_="heading"),
-            _fake(position="1", title="Song", duration="3:00", type_=None),
+            _fake(position="", title="Side A", duration="", type="heading"),
+            _fake(position="1", title="Song", duration="3:00", type=None),
         ]
         master = _fake(
             id=1,
@@ -1056,7 +1054,7 @@ class TestFormatMasterEdgeCases:
     def test_track_no_position_in_master(self) -> None:
         artist = _fake(name="Artist", join=None)
         tracks = [
-            _fake(position="", title="Untitled", duration="", type_=None),
+            _fake(position="", title="Untitled", duration="", type=None),
         ]
         master = _fake(
             id=1,
@@ -1095,8 +1093,8 @@ class TestFormatMasterEdgeCases:
 class TestFormatReleaseEdgeCases:
     def test_heading_track_in_release(self) -> None:
         tracks = [
-            _fake(position="", title="Side A", duration="", type_="heading"),
-            _fake(position="A1", title="Song", duration="3:00", type_=None),
+            _fake(position="", title="Side A", duration="", type="heading"),
+            _fake(position="A1", title="Song", duration="3:00", type=None),
         ]
         release = _fake(
             id=1,
@@ -1119,7 +1117,7 @@ class TestFormatReleaseEdgeCases:
 
     def test_track_no_position_in_release(self) -> None:
         tracks = [
-            _fake(position="", title="Untitled", duration="", type_=None),
+            _fake(position="", title="Untitled", duration="", type=None),
         ]
         release = _fake(
             id=1,
@@ -1236,7 +1234,7 @@ class TestTrackArtistPrefix:
         assert _track_artist_prefix(track) == "Trent Reznor & Atticus Ross - "
 
     def test_track_without_artists(self) -> None:
-        track = _fake(position="A1", title="Song", duration="3:00", type_=None)
+        track = _fake(position="A1", title="Song", duration="3:00", type=None)
         assert _track_artist_prefix(track) == ""
 
     def test_track_with_empty_artists(self) -> None:
@@ -1251,14 +1249,14 @@ class TestFormatTrackLines:
                 position="A1",
                 title="Hamburger Lady",
                 duration="4:12",
-                type_=None,
+                type=None,
                 artists=[_fake(name="Throbbing Gristle", join=None)],
             ),
             _fake(
                 position="A2",
                 title="Blue Monday",
                 duration="7:29",
-                type_=None,
+                type=None,
                 artists=[_fake(name="New Order", join=None)],
             ),
         ]
@@ -1270,7 +1268,7 @@ class TestFormatTrackLines:
 
     def test_tracks_without_artists(self) -> None:
         tracks = [
-            _fake(position="A1", title="Song", duration="3:00", type_=None),
+            _fake(position="A1", title="Song", duration="3:00", type=None),
         ]
         lines = _format_track_lines(tracks)
         assert lines == ["  A1. Song (3:00)"]
@@ -1281,7 +1279,7 @@ class TestFormatTrackLines:
                 position="",
                 title="Side A",
                 duration="",
-                type_="heading",
+                type="heading",
                 artists=[_fake(name="Ignored", join=None)],
             ),
         ]
@@ -1297,14 +1295,14 @@ class TestFormatReleaseTrackArtists:
             position="A1",
             title="Hamburger Lady",
             duration="4:12",
-            type_=None,
+            type=None,
             artists=[_fake(name="Throbbing Gristle", join=None)],
         )
         track2 = _fake(
             position="A2",
             title="Blue Monday",
             duration="7:29",
-            type_=None,
+            type=None,
             artists=[_fake(name="New Order", join=None)],
         )
         release = _fake(
@@ -1334,7 +1332,7 @@ class TestFormatTracklistTrackArtists:
             position="1",
             title="Warm Leatherette",
             duration="3:24",
-            type_=None,
+            type=None,
             artists=[_fake(name="The Normal", join=None)],
         )
         release = _fake(
@@ -1355,7 +1353,7 @@ class TestFormatMasterTrackArtists:
             position="1",
             title="Warm Leatherette",
             duration="3:24",
-            type_=None,
+            type=None,
             artists=[_fake(name="The Normal", join=None)],
         )
         master = _fake(

@@ -156,11 +156,13 @@ agent-discogs skills path [core]       # directory holding the bundled skill fil
 ```bash
 agent-discogs get release @r352665 --json            # projection
 agent-discogs get release @r352665 --json -v         # plus notes, credits, and identifiers
-agent-discogs get release @r352665 --json --full     # raw SDK model, when you need a field the projection drops
-agent-discogs get credits @r352665 --json --full     # raw release credits, plus track_credits: [{position, title, extra_artists}]
+agent-discogs get release @r352665 --json --full     # the complete record, when you need a field the projection drops
+agent-discogs get credits @r352665 --json --full     # complete release credits, plus track_credits: [{position, title, extra_artists}]
 ```
 
-On a UTF-8 stdout, non-ASCII text is written as is (`"title":"無罪モラトリアム"`), which keeps Japanese, Cyrillic, or accented titles short. On any other stdout encoding, it is written as `\uXXXX` escapes so the document stays valid. Either way, C1 controls (U+0080–U+009F), bidi controls (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), U+2028/U+2029, and lone surrogates are always escaped. No value is changed: `json.loads` returns exactly what Discogs sent.
+`--full` prints the complete record as the SDK normalizes it, not byte-for-byte what Discogs sends: field names are consistent (`catalog_number` for `catno`, `extra_artists` for `extraartists`, `name_variation` for `anv`, a track's `type` for `type_`), a search result's `uri` is absolute (`https://www.discogs.com/release/1`, not `/release/1`), timestamps are RFC 3339 with an offset (`"date_added":"2005-01-03T23:17:26-08:00"`), and a timestamp that is absent or does not parse is `null`. Fields the SDK does not model appear as Discogs sends them. Unlike the projection, `--full` keeps empty fields, as `null` when unset.
+
+On a UTF-8 stdout, non-ASCII text is written as is (`"title":"無罪モラトリアム"`), which keeps Japanese, Cyrillic, or accented titles short. On any other stdout encoding, it is written as `\uXXXX` escapes so the document stays valid. Either way, C1 controls (U+0080–U+009F), bidi controls (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), U+2028/U+2029, and lone surrogates are always escaped. The escaping is lossless: `json.loads` returns every string unchanged.
 
 Errors under `--json` are a JSON document on stdout with exit code 1:
 

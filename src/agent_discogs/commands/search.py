@@ -119,7 +119,7 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
     "--full",
     is_flag=True,
     default=False,
-    help="With --json: the raw SDK model instead of the projection",
+    help="With --json: the complete, normalized record instead of the projection",
 )
 @click.option("--label", help="Filter by label")
 @click.option(

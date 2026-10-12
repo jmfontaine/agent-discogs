@@ -44,7 +44,7 @@ agent-discogs search [type] <query> [--flags]
 | `--format` | Filter by format (e.g., "Vinyl", "CD") |
 | `--genre` | Filter by genre |
 | `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
-| `--full` | With `--json`: the raw SDK record instead of the projection |
+| `--full` | With `--json`: the complete record instead of the projection, normalized (consistent field names such as `catalog_number`, RFC 3339 timestamps, `null` for an absent or unparseable timestamp; unmodeled fields as Discogs sends them) |
 | `--label` | Filter by label name |
 | `--limit` | Results per page, 1-100 (default: 5) |
 | `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, `--release-type unofficial` (without `--format`), or artist/label searches. Rejected on the client-side filtered path. |
@@ -107,7 +107,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | Flag | Description |
 |------|-------------|
 | `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
-| `--full` | With `--json`: the raw SDK record instead of the projection |
+| `--full` | With `--json`: the complete record instead of the projection, normalized (consistent field names such as `catalog_number` and a track's `type`, RFC 3339 timestamps, `null` for an absent or unparseable timestamp; unmodeled fields as Discogs sends them) |
 | `--limit` | `releases`, `versions` only: results per page, 1-100 (default: 5) |
 | `--page` | Page number, from 1 (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`, one ref only) |

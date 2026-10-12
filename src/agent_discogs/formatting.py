@@ -226,8 +226,7 @@ def _format_track_lines(tracklist: list[Any], depth: int = 1) -> list[str]:
         pos = getattr(track, "position", "") or ""
         title = getattr(track, "title", "") or ""
         dur = getattr(track, "duration", "") or ""
-        type_ = getattr(track, "type_", "") or ""
-        if type_ == "heading":
+        if getattr(track, "type", None) == "heading":
             lines.append(f"{indent}{title}")
             continue
         artist_prefix = _track_artist_prefix(track)
@@ -653,7 +652,7 @@ def _leaf_timing(tracklist: list[Any]) -> tuple[int, int | None]:
     count = 0
     total: int | None = 0
     for track in tracklist:
-        if (getattr(track, "type_", None) or "track") == "heading":
+        if (getattr(track, "type", None) or "track") == "heading":
             continue
         own = _duration_seconds(getattr(track, "duration", None))
         sub_tracks = getattr(track, "sub_tracks", None) or []

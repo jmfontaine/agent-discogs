@@ -25,7 +25,7 @@ from agent_discogs.formatting import (
     format_tracklist,
     iter_tracks,
 )
-from agent_discogs.json_output import Mode, dump, raw, tracks_as_sent
+from agent_discogs.json_output import Mode, dump, full_dump
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
     fetch_filtered_page,
@@ -118,12 +118,12 @@ def _get_credits(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
         return {
-            "credits": [c.model_dump() for c in release.extra_artists or []],
+            "credits": [full_dump(c) for c in release.extra_artists or []],
             "track_credits": [
                 {
                     "position": track.position,
                     "title": track.title,
-                    "extra_artists": [c.model_dump() for c in track.extra_artists],
+                    "extra_artists": [full_dump(c) for c in track.extra_artists],
                 }
                 for track in iter_tracks(release.tracklist)
                 if track.extra_artists
@@ -139,7 +139,7 @@ def _get_credits(client: Discogs, entity_id: int, mode: Mode) -> Any:
 def _get_identifiers(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
-        return {"identifiers": [i.model_dump() for i in release.identifiers or []]}
+        return {"identifiers": [full_dump(i) for i in release.identifiers or []]}
     if mode.json:
         return drop_empty(
             {
@@ -169,7 +169,10 @@ def _get_price(client: Discogs, entity_id: int, mode: Mode) -> Any:
     price_suggestions = release.price_suggestions.get()
     marketplace_stats = release.marketplace_stats.get()
     if mode.full:
-        return {**raw(price_suggestions), "marketplace_stats": raw(marketplace_stats)}
+        return {
+            **full_dump(price_suggestions),
+            "marketplace_stats": full_dump(marketplace_stats),
+        }
     if mode.json:
         return project_price(release, price_suggestions, marketplace_stats)
     return format_price_guide(release, price_suggestions, marketplace_stats)
@@ -318,8 +321,7 @@ def _get_releases(
 def _get_tracklist(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
-        tracks = [t.model_dump() for t in release.tracklist or []]
-        return tracks_as_sent({"tracklist": tracks})
+        return {"tracklist": [full_dump(t) for t in release.tracklist or []]}
     if mode.json:
         return project_tracklist(release)
     return format_tracklist(release)
@@ -723,7 +725,7 @@ _JSON_OPTIONS = [
         "--full",
         is_flag=True,
         default=False,
-        help="With --json: the raw SDK model instead of the projection",
+        help="With --json: the complete, normalized record instead of the projection",
     ),
 ]
 

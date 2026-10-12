@@ -72,7 +72,9 @@ Options:
                    shows as 'unknown (no home directory)'
   --json           JSON output: a compact projection of the text view (search, get);
                    non-ASCII is literal on a UTF-8 stdout, \\uXXXX escapes otherwise
-  --full           With --json: the raw SDK record instead of the projection
+  --full           With --json: the complete record instead of the projection,
+                   normalized: consistent field names, RFC 3339 timestamps (null when
+                   absent or unparseable), unmodeled fields as Discogs sends them
   --limit N        Results per page, 1-100 (search, get)
   --page N         Page number, from 1, for server-side pages (search, get)
   --after CURSOR   Continue a client-side filtered list; copy from Next page /

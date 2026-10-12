@@ -2,8 +2,9 @@
 
 Each text view in `formatting.py` has a sibling projector here that returns
 exactly the fields that view shows, plus refs. `--json` serializes these;
-`--json --full` bypasses them for the raw SDK `model_dump()`. A raw release is
-~33 KB of image URLs and bookkeeping; its projection is ~1.5 KB.
+`--json --full` bypasses them for the SDK's complete, normalized record
+(`json_output.full_dump()`). A full release is ~33 KB of image URLs and
+bookkeeping; its projection is ~1.5 KB.
 """
 
 from __future__ import annotations
@@ -43,11 +44,7 @@ _DATETIME: TypeAdapter[datetime] = TypeAdapter(datetime)
 
 
 def _timestamp(value: datetime | None) -> str | None:
-    """RFC 3339, exactly as `model_dump(mode="json")` serializes it.
-
-    Matches `--full` once that dumps in JSON mode (issue #17); until then
-    `--full` prints the same instant with a space instead of `T`.
-    """
+    """RFC 3339, exactly as `--full` (`model_dump(mode="json")`) serializes it."""
     return _DATETIME.dump_python(value, mode="json") if value else None
 
 
@@ -69,8 +66,8 @@ def _tracks(tracklist: list[Any] | None) -> list[dict[str, Any]]:
             "pos": getattr(t, "position", None),
             "title": getattr(t, "title", None),
             "duration": getattr(t, "duration", None),
-            "type": getattr(t, "type_", None)
-            if getattr(t, "type_", None) in ("heading", "index")
+            "type": getattr(t, "type", None)
+            if getattr(t, "type", None) in ("heading", "index")
             else None,
             "artists": _artist_refs(getattr(t, "artists", None)),
             "sub_tracks": _tracks(getattr(t, "sub_tracks", None)),

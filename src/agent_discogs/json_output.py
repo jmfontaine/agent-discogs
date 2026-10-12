@@ -6,7 +6,7 @@ import codecs
 import json
 import re
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any, NamedTuple
 
 from agent_discogs.pagination import PageResult
@@ -26,14 +26,14 @@ Projector = Callable[[Any], Any]
 
 
 class Mode(NamedTuple):
-    """How a command should emit: text, projected JSON, or raw SDK JSON."""
+    """How a command should emit: text, projected JSON, or the full SDK record."""
 
     json: bool = False
     full: bool = False
 
     def entity(self, obj: Any, project: Projector) -> Any:
         """The JSON document for one entity under this mode."""
-        return raw(obj) if self.full else project(obj)
+        return full_dump(obj) if self.full else project(obj)
 
     def page(self, result: PageResult, project: Projector) -> dict[str, Any]:
         """The JSON envelope for one page under this mode."""
@@ -60,43 +60,15 @@ def _emit(data: Any) -> None:
     print(dumps(data))
 
 
-def raw(obj: Any) -> Any:
-    """The SDK `model_dump()` of an object, or the object itself if it has none.
+def full_dump(model: Any) -> dict[str, Any]:
+    """The `--full` document for one SDK model (or lazy proxy): its JSON-mode dump.
 
-    The dump keeps the shape discogs-sdk 0.7.0 gave it. 0.8.0 renamed
-    `Track.type_` to `type` (see `tracks_as_sent()`) and completes a search
-    result's site-relative `uri`; `raw` sends that `uri` as Discogs sent it.
+    That is the SDK's normalized record: its field names (`catalog_number`,
+    `extra_artists`, a track's `type`), RFC 3339 timestamps with an offset,
+    `None` for a timestamp that is absent or does not parse, and any field the
+    SDK does not model as Discogs sent it.
     """
-    data = tracks_as_sent(obj.model_dump() if hasattr(obj, "model_dump") else obj)
-    sent = getattr(obj, "raw", None)
-    if isinstance(sent, Mapping) and isinstance(sent.get("uri"), str):
-        data["uri"] = sent["uri"]
-    return data
-
-
-_TRACK_LISTS = frozenset({"tracklist", "sub_tracks"})
-
-
-def tracks_as_sent(data: Any) -> Any:
-    """`data` with every dumped track's `type` key named `type_` again, the
-    name Discogs sends and discogs-sdk 0.7.0 kept; 0.8.0 renamed the field."""
-    if isinstance(data, list):
-        return [tracks_as_sent(item) for item in data]
-    if not isinstance(data, dict):
-        return data
-    return {
-        key: [_track_as_sent(t) for t in value]
-        if key in _TRACK_LISTS and isinstance(value, list)
-        else tracks_as_sent(value)
-        for key, value in data.items()
-    }
-
-
-def _track_as_sent(track: Any) -> Any:
-    track = tracks_as_sent(track)
-    if not isinstance(track, dict):
-        return track
-    return {("type_" if key == "type" else key): v for key, v in track.items()}
+    return model.model_dump(mode="json")
 
 
 def dump(data: Any) -> None:
@@ -121,5 +93,5 @@ def page_document(
         pagination["filtered"] = True
         pagination["capped"] = result.capped
         pagination["next_cursor"] = result.next_cursor
-    rows = [raw(item) if full else project(item) for item in result.items]
+    rows = [full_dump(item) if full else project(item) for item in result.items]
     return {"pagination": pagination, "results": rows}
