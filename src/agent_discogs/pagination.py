@@ -118,11 +118,12 @@ def next_page_cmd(
 
 
 def _cache_flags() -> list[str]:
-    """The global cache flag (`--cached`/`--fresh`) this invocation runs under."""
-    ctx = click.get_current_context(silent=True)
-    if ctx is None:
-        return []
-    params = ctx.find_root().params
+    """The global cache flag (`--cached`/`--fresh`) this invocation runs under.
+
+    Every caller builds a footer inside a click command, so there is always a
+    current context.
+    """
+    params = click.get_current_context().find_root().params
     return [f"--{name}" for name in ("cached", "fresh") if params.get(name)]
 
 
