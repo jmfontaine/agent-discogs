@@ -35,7 +35,7 @@ Run a single test: `uv run pytest tests/test_cli.py -k test_version`
 
 ### CLI (click)
 
-Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `AliasGroup` for command aliases (`find`→`search`, `query`→`search`, `fetch`→`get`, `show`→`get`). Top-level shortcuts `tracks` and `price` delegate to `get` logic. The group callback owns the global flags: `--debug` (also `AGENT_DISCOGS_DEBUG`) starts the trace, `--cached` / `--fresh` wrap the whole subcommand in the SDK's `cache_only()` / `no_cache()` via `ctx.with_resource()`.
+Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `AliasGroup` for command aliases (`find`→`search`, `query`→`search`, `fetch`→`get`, `show`→`get`). Top-level shortcuts `tracks` and `price` delegate to `get` logic. The group callback owns the global flags: `--debug` (also `AGENT_DISCOGS_DEBUG`) starts the trace, `--cached` / `--fresh` record a pending SDK `cache_only()` / `no_cache()` scope with `client.request_cache_scope()`. The callback runs before the subcommand validates its flags, so it never builds the client itself: the first `get_client()` call enters the scope on the root context (`ctx.with_resource()`), and it lasts until the command ends. A rejected flag therefore builds no client.
 
 ### Command Modules
 
@@ -48,7 +48,7 @@ Entry point: `src/agent_discogs/__init__.py`. Defines a `click.Group` with `Alia
 ### Core Modules
 
 - `config.py` — Leaf module (imports nothing from the package) holding shared configuration: `cache_dir()`, `CACHE_TTL` (and `CACHE_TTL_LABEL`, the `1h` that `status` and the `--debug` panel print), `MAX_API_CALLS`, and `has_token()`. `cache_dir()` is `$XDG_CACHE_HOME/agent-discogs` when that is non-empty and absolute, else `~/.cache/agent-discogs`; it resolves on each call and looks up home only on the fallback, so nothing touches home at import. Put new shared constants here rather than in a module that needs them, so the package stays free of import cycles.
-- `client.py` — Singleton `Discogs` client. Reads `DISCOGS_TOKEN` from env; cache settings come from `config.py`.
+- `client.py` — Singleton `Discogs` client. Reads `DISCOGS_TOKEN` from env; cache settings come from `config.py`. `get_client()` also enters the cache scope the global flags requested.
 - `refs.py` — Typed ref system (`@a3857`, `@r847868`, `@m3719`, `@l647`). `make_ref()` creates refs, `parse_ref()` parses them. Raw numeric IDs return type `"unknown"`.
 - `pagination.py` — Bypasses SDK's `SyncPage` auto-paging to fetch exactly one page with full metadata (`total_items`, `total_pages`). Uses SDK internals (`_build_url`, `_send`). `_send()` is the SDK's HTTP-error boundary — it raises the mapped `DiscogsAPIError` subclass before returning, so callers never re-check the status.
 - `formatting.py` — All output formatting. Returns plain strings, callers `print()` them. Every view returns `_text(lines)`, which runs each line through `sanitize.line()`; build new views the same way so a Discogs field can never add a line or print a raw control character.

@@ -218,9 +218,9 @@ def cli(ctx: click.Context, debug: bool, cached: bool, fresh: bool) -> None:
         raise click.UsageError(msg)
     trace.begin(ctx, debug=debug)
     if cached:
-        ctx.with_resource(client.get_client().cache_only())
+        client.request_cache_scope(ctx, "cache_only")
     elif fresh:
-        ctx.with_resource(client.get_client().no_cache())
+        client.request_cache_scope(ctx, "no_cache")
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 

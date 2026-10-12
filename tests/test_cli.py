@@ -1469,16 +1469,21 @@ class TestGetCommand:
         ],
     )
     @pytest.mark.parametrize("json_output", [False, True], ids=["text", "json"])
+    @pytest.mark.parametrize("mode", [[], ["--cached"], ["--fresh"]], ids=str)
     def test_inapplicable_flags_rejected_before_client(
-        self, argv: list[str], message: str, json_output: bool
+        self, argv: list[str], message: str, json_output: bool, mode: list[str]
     ) -> None:
-        built: list[None] = []
+        built: list[str] = []
         self._monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client", lambda: built.append(None)
+            "agent_discogs.client.get_client", lambda: built.append("client")
         )
-        result = CliRunner().invoke(cli, [*argv, "--json"] if json_output else argv)
+        self._monkeypatch.setattr(
+            "agent_discogs.commands.get.get_client", lambda: built.append("command")
+        )
+        args = [*mode, *argv, *(["--json"] if json_output else [])]
+        result = CliRunner().invoke(cli, args)
         assert result.exit_code == 1
-        assert built == []  # rejected before the client exists: no request
+        assert built == []  # rejected before any client exists: no request
         if json_output:
             error = json.loads(result.output)["error"]
             assert error["code"] == "invalid_argument"
@@ -2994,10 +2999,8 @@ def _network_event(remaining: int = 59, limit: int = 60) -> RequestEvent:
     )
 
 
-def _tracks_client(
-    recorder: Callable[[], None], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`tracks @r123` served by a fake whose lookup also runs `recorder`, the
+def _tracks_fake(recorder: Callable[[], None]) -> SimpleNamespace:
+    """A client serving `tracks @r123` whose lookup also runs `recorder`, the
     way the real client's `on_request` hook fires inside the SDK call."""
     track = _fake_model(position="1", title="Song", duration="3:00", type_=None)
     release = _fake(id=123, title="Album", year=2020, artists=None, tracklist=[track])
@@ -3006,10 +3009,14 @@ def _tracks_client(
         recorder()
         return release
 
-    monkeypatch.setattr(
-        "agent_discogs.commands.get.get_client",
-        lambda: _fake_client(releases_get=_get),
-    )
+    return _fake_client(releases_get=_get)
+
+
+def _tracks_client(
+    recorder: Callable[[], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _tracks_fake(recorder)
+    monkeypatch.setattr("agent_discogs.commands.get.get_client", lambda: client)
 
 
 def _no_home() -> Path:
@@ -3087,13 +3094,13 @@ class _CacheScope:
 class TestCacheFlags:
     @pytest.fixture(autouse=True)
     def _scoped_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The real get_client() over a fake singleton, so the pending scope
+        is entered the way a real run enters it."""
         self.log: list[str] = []
-        scoped = SimpleNamespace(
-            cache_only=_CacheScope(self.log, "cache_only"),
-            no_cache=_CacheScope(self.log, "no_cache"),
-        )
-        monkeypatch.setattr("agent_discogs.client.get_client", lambda: scoped)
-        _tracks_client(lambda: self.log.append("request"), monkeypatch)
+        self.scoped = _tracks_fake(lambda: self.log.append("request"))
+        self.scoped.cache_only = _CacheScope(self.log, "cache_only")
+        self.scoped.no_cache = _CacheScope(self.log, "no_cache")
+        monkeypatch.setattr("agent_discogs.client._client", self.scoped)
 
     def test_both_flags_is_a_usage_error(self) -> None:
         result = CliRunner().invoke(cli, ["--cached", "--fresh", "status"])
@@ -3101,15 +3108,25 @@ class TestCacheFlags:
         assert "--cached and --fresh are mutually exclusive." in result.stderr
         assert self.log == []
 
-    def test_cached_wraps_the_whole_command(self) -> None:
-        result = CliRunner().invoke(cli, ["--cached", "tracks", "@r123"])
+    def test_scope_waits_for_a_client(self) -> None:
+        result = CliRunner().invoke(cli, ["--cached", "status"])
         assert result.exit_code == 0
-        assert self.log == ["enter cache_only", "request", "exit cache_only"]
+        assert self.log == []
+
+    def test_cached_wraps_the_whole_command(self) -> None:
+        result = CliRunner().invoke(cli, ["--cached", "tracks", "@r123", "@r456"])
+        assert result.exit_code == 0
+        assert self.log == [
+            "enter cache_only",
+            "request",
+            "request",
+            "exit cache_only",
+        ]
 
     def test_fresh_wraps_the_whole_command(self) -> None:
-        result = CliRunner().invoke(cli, ["--fresh", "tracks", "@r123"])
+        result = CliRunner().invoke(cli, ["--fresh", "tracks", "@r123", "@r456"])
         assert result.exit_code == 0
-        assert self.log == ["enter no_cache", "request", "exit no_cache"]
+        assert self.log == ["enter no_cache", "request", "request", "exit no_cache"]
 
     def test_cache_miss_is_a_per_ref_error(
         self, monkeypatch: pytest.MonkeyPatch
@@ -3139,10 +3156,7 @@ class TestCacheFlags:
                 marketplace_stats=_fake(get=lambda: stats),
             )
 
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=_get),
-        )
+        monkeypatch.setattr(self.scoped.releases, "get", _get)
         result = CliRunner().invoke(cli, ["--cached", "price", "@r10", "@r1", "@r20"])
         assert result.exit_code == 1
         out = result.stdout
@@ -3175,10 +3189,7 @@ class TestCacheFlags:
                 "GET", f"https://api.discogs.com/releases/{release_id}?curr_abbr=USD"
             )
 
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=_miss),
-        )
+        monkeypatch.setattr(self.scoped.releases, "get", _miss)
         result = CliRunner().invoke(cli, ["--cached", "price", "@r847868"])
         assert result.exit_code == 1
         assert result.stdout == ""
