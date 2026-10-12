@@ -41,6 +41,9 @@ Search Types:  artist, label, master, release
 Get Nouns:     artist, credits, identifiers (ids), label, master, price, release,
                releases, tracklist, versions
                (artist/label 'URLs:' lists site domains, empty entries omitted)
+Get Credits:   release, track, and sub-track credits by role; each person once
+               per role with the tracks covered (none = whole release);
+               --json --full adds track_credits
 
 Refs:
   Search results return typed refs: @a3857 (artist), @r847868 (release),
