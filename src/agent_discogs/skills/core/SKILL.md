@@ -126,6 +126,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 - **Unexpected cost or a stall?** Re-run once with `--debug` to see each request, retries and cache hits on stderr. Do not leave it on.
 - **"Continue scan:" instead of "Next page:"** — the filter was sparse and the scan stopped at 5 API calls before filling the page. The next window may also be short or empty; keep pasting the printed command until it disappears (no footer = nothing left to scan). Counts shown as `≤N` are the unfiltered upper bound.
 - **Exit 1 with no message after `| head`** — the reader closed the pipe early; the CLI stops quietly. Nothing failed: rerun without the pipe, or with `--limit`, if you need the full output.
+- **Out-of-range `--limit`/`--page`, or an empty search** — `--limit` takes 1-100, `--page` starts at 1, and a search needs a query or at least one non-blank search filter (`--year`, `--catno`, ...; a type prefix or `--release-type` alone is not enough). These fail with `invalid_argument` before any request, so a rejected command spent nothing.
 
 ## Refs
 

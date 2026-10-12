@@ -64,7 +64,7 @@ When a search returns many similar results (common for popular albums with hundr
 
 ## Pagination Strategy
 
-- Default: 5 results per page (token-efficient for quick lookups)
+- Default: 5 results per page (token-efficient for quick lookups); `--limit` accepts 1-100
 - Use `--limit 10` or `--limit 20` when browsing larger result sets
 - Always prefer adding filters over paginating through hundreds of results
 - Discogs does not paginate beyond 10,000 results. If a query is that broad, add filters to narrow it.

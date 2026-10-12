@@ -28,7 +28,7 @@ agent-discogs search [type] <query> [--flags]
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `type` | No | Entity type: `release`, `master`, `artist`, `label`. If omitted, searches all types. |
-| `query` | No | Search query string. Required unless filters are provided (e.g., `--catno`, `--barcode`). |
+| `query` | No | Search query string. Required unless at least one non-blank filter is given (e.g., `--catno`, `--barcode`); otherwise `invalid_argument` before any request. |
 
 **Flags:**
 
@@ -43,8 +43,8 @@ agent-discogs search [type] <query> [--flags]
 | `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
 | `--full` | With `--json`: the raw SDK record instead of the projection |
 | `--label` | Filter by label name |
-| `--limit` | Results per page (default: 5) |
-| `--page` | Page number. Only for server-side pages: `--release-type all`, or artist/label searches. Rejected on the default filtered path. |
+| `--limit` | Results per page, 1-100 (default: 5) |
+| `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, or artist/label searches. Rejected on the default filtered path. |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (filtered searches only) |
 | `--release-type` | Filter by release type: `official` (default), `unofficial`, `all` |
 | `--style` | Filter by style |
@@ -103,8 +103,8 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 |------|-------------|
 | `--json` | JSON output: a compact projection of the text view. Errors become `{"error":{"code",...}}` on stdout |
 | `--full` | With `--json`: the raw SDK record instead of the projection |
-| `--limit` | `releases`, `versions` only: results per page (default: 5) |
-| `--page` | Page number (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
+| `--limit` | `releases`, `versions` only: results per page, 1-100 (default: 5) |
+| `--page` | Page number, from 1 (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`, one ref only) |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 | `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; an index track counts as its parts, timed by their sum or, when a part is untimed, by the index track's own duration; otherwise the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |

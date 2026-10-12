@@ -31,6 +31,7 @@ from agent_discogs.pagination import (
     fetch_filtered_page,
     fetch_page,
     next_page_cmd,
+    paging_error,
     parse_cursor,
 )
 from agent_discogs.projections import (
@@ -467,6 +468,7 @@ def _flag_error(
     refs: tuple[str, ...],
     *,
     explicit: frozenset[str],
+    limit: int,
     page: int | None,
     after: str | None,
     role: str | None,
@@ -519,6 +521,11 @@ def _flag_error(
             f"{', '.join(rejected)} {verb} not apply to 'get {noun}'. "
             f"'get {noun}' takes {takes}."
         )
+    # After the applicability check, so a flag the noun does not take is
+    # reported as such rather than as out of range.
+    bad_paging = paging_error(limit, page)
+    if bad_paging:
+        return bad_paging
     if year and artist_refs:
         return (
             "--year filters versions and label catalogues; for an artist "
@@ -652,6 +659,7 @@ def _dispatch(
         noun,
         refs,
         explicit=_explicit_options(),
+        limit=limit,
         page=page,
         after=after,
         role=role,
@@ -761,8 +769,10 @@ def _json_options(command: Any) -> Any:
 @click.option("--format", "format_", help="Filter versions by format")
 @_json_options
 @click.option("--label", help="Filter versions by label")
-@click.option("--limit", type=int, default=DEFAULT_LIMIT, help="Results per page")
-@click.option("--page", type=int, help="Page number (server-side pages only)")
+@click.option(
+    "--limit", type=int, default=DEFAULT_LIMIT, help="Results per page (1-100)"
+)
+@click.option("--page", type=int, help="Page number, from 1 (server-side pages only)")
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
 @click.option(
     "--sort",

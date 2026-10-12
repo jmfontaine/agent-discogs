@@ -58,6 +58,48 @@ def _fake_client(
     )
 
 
+class _FakeAPI:
+    """The real SDK client, with its in-memory cache and real `cache_only()` /
+    `no_cache()`, over a mock transport: `sends` lists every request that
+    reached the network as `(path, query params)`. `respond(path, params)`
+    returns the JSON body."""
+
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        respond: Callable[[str, dict[str, str]], object],
+    ) -> None:
+        self.sends: list[tuple[str, dict[str, str]]] = []
+        self._respond = respond
+        http = httpx2.Client(transport=httpx2.MockTransport(self._handle))
+        # The SDK caches nothing for an injected http_client without SDK
+        # credentials, so the fake needs a token for cache flags to mean anything.
+        client = Discogs(
+            token="fake",  # noqa: S106  # placeholder, never reaches Discogs
+            cache=True,
+            http_client=http,
+            on_request=trace.record,
+        )
+        monkeypatch.setattr("agent_discogs.client._client", client)
+
+    def _handle(self, request: httpx2.Request) -> httpx2.Response:
+        params = dict(request.url.params)
+        self.sends.append((request.url.path, params))
+        return httpx2.Response(200, json=self._respond(request.url.path, params))
+
+
+_LISTING_KEYS = {"search": "results", "releases": "releases", "versions": "versions"}
+
+
+def _empty_listing(path: str, params: dict[str, str]) -> object:
+    """Every listing is an empty page; every entity is `{"id": 1, ...}`."""
+    key = _LISTING_KEYS.get(path.rsplit("/", 1)[-1])
+    if key is None:
+        return {"id": 1, "name": "Entity", "title": "Entity"}
+    page = {"page": int(params.get("page", 1)), "pages": 1, "items": 0}
+    return {"pagination": page, key: []}
+
+
 class TestCacheCommand:
     def test_cache_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
@@ -675,6 +717,76 @@ class TestSearchCommand:
         assert "Official 2" in result.output
         assert "Official 3" in result.output
         assert "Bootleg" not in result.output
+
+
+class TestPagingBounds:
+    """`--limit` must fit one Discogs page (1-100) and `--page` counts from 1.
+    Anything else, or a search with nothing left to search for, fails before
+    the first request."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.api = _FakeAPI(monkeypatch, _empty_listing)
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["search", "Limit", "--limit", "0"],
+            ["search", "Limit", "--limit", "-1"],
+            ["search", "Limit", "--limit", "101"],
+            ["search", "Limit", "--release-type", "all", "--limit", "0"],
+            ["search", "Limit", "--release-type", "all", "--page", "0"],
+            ["search", "--year", ""],
+            ["search", "release", "--year", "", "--label", " "],
+            ["search", " ", "--artist", ""],
+            ["get", "releases", "@a1", "--limit", "0"],
+            ["get", "releases", "@a1", "--page", "-1"],
+            ["get", "versions", "@m1", "--limit", "101"],
+            ["get", "versions", "@m1", "--page", "0"],
+        ],
+    )
+    def test_rejected_before_any_request(self, args: list[str]) -> None:
+        result = CliRunner().invoke(cli, [*args, "--json"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "invalid_argument"
+        assert self.api.sends == []
+
+    def test_text_errors_name_the_bound(self) -> None:
+        result = CliRunner().invoke(cli, ["search", "Limit", "--limit", "0"])
+        assert result.exit_code == 1
+        assert "--limit must be between 1 and 100" in result.stderr
+        result = CliRunner().invoke(cli, ["get", "versions", "@m1", "--page", "0"])
+        assert result.exit_code == 1
+        assert "--page must be 1 or more" in result.stderr
+        assert self.api.sends == []
+
+    @pytest.mark.parametrize("limit", ["1", "100"])
+    @pytest.mark.parametrize(
+        ("args", "path"),
+        [
+            (["search", "Limit", "--release-type", "all"], "/database/search"),
+            (["get", "versions", "@m1"], "/masters/1/versions"),
+            (["get", "releases", "@a1"], "/artists/1/releases"),
+        ],
+    )
+    def test_boundary_values_page_server_side(
+        self, args: list[str], path: str, limit: str
+    ) -> None:
+        result = CliRunner().invoke(cli, [*args, "--limit", limit, "--page", "1"])
+        assert result.exit_code == 0, result.output
+        (listing,) = [params for sent, params in self.api.sends if sent == path]
+        assert listing["per_page"] == limit
+        assert listing["page"] == "1"
+
+    def test_whitespace_filters_do_not_count_but_real_ones_do(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["search", "release", "--year", "", "--catno", "INT-92346"]
+        )
+        assert result.exit_code == 0, result.output
+        assert len(self.api.sends) == 1
+        params = self.api.sends[0][1]
+        assert params["catno"] == "INT-92346"
+        assert "year" not in params
 
 
 class TestGetCommand:

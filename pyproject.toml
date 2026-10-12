@@ -127,6 +127,7 @@ run.source = [ "src", "tests" ]
 
 [tool.deadcode]
 ignore-names = [
+  "_fake_api",
   "_isolate_env",
   "_patch_clients",
   "_patch_get",

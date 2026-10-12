@@ -247,10 +247,15 @@ class TestFetchFilteredPage:
         assert result.next_cursor == "2:6.0"
         assert len(client.calls) == MAX_API_CALLS
 
-    def test_overfetches_three_times_the_limit(self) -> None:
+    @pytest.mark.parametrize(("limit", "per_page"), [(4, 12), (34, 100), (100, 100)])
+    def test_overfetches_three_times_the_limit_up_to_a_full_page(
+        self, limit: int, per_page: int
+    ) -> None:
         seen: list[int] = []
-        _scan(_paged_client(1, seen.append), limit=4, keep=lambda _: True, cursor=None)
-        assert seen == [12]
+        _scan(
+            _paged_client(1, seen.append), limit=limit, keep=lambda _: True, cursor=None
+        )
+        assert seen == [per_page]
 
     def test_records_a_scan_note(self, monkeypatch: pytest.MonkeyPatch) -> None:
         notes: list[trace.ScanNote] = []

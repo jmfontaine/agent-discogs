@@ -73,8 +73,8 @@ Options:
   --json           JSON output: a compact projection of the text view (search, get);
                    non-ASCII is literal on a UTF-8 stdout, \\uXXXX escapes otherwise
   --full           With --json: the raw SDK record instead of the projection
-  --limit N        Results per page (search, get)
-  --page N         Page number for server-side pages (search, get)
+  --limit N        Results per page, 1-100 (search, get)
+  --page N         Page number, from 1, for server-side pages (search, get)
   --after CURSOR   Continue a client-side filtered list; copy from Next page /
                    Continue scan (search with --release-type official|unofficial,
                    get releases --role, get releases @l --year)

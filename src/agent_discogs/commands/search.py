@@ -16,6 +16,7 @@ from agent_discogs.pagination import (
     fetch_filtered_page,
     fetch_page,
     next_page_cmd,
+    paging_error,
     parse_cursor,
 )
 from agent_discogs.projections import project_search_result
@@ -37,7 +38,11 @@ def _build_search_params(
     style: str | None,
     year: str | None,
 ) -> dict[str, Any]:
-    """Build Discogs API search parameters from CLI args (without pagination)."""
+    """Build Discogs API search parameters from CLI args (without pagination).
+
+    Blank values are dropped: they constrain nothing, so they must not count
+    as a query or filter either.
+    """
     params: dict[str, Any] = {"q": query} if query else {}
 
     if type_filter:
@@ -57,7 +62,7 @@ def _build_search_params(
                 ("artist", artist),
                 ("label", label),
             ]
-            if value
+            if value and value.strip()
         }
     )
 
@@ -77,11 +82,11 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
     """Extract optional type filter and query from positional args.
 
     If the first word matches a known type, treat it as the type filter.
-    Everything else is the query.
+    Everything else is the query, stripped so a blank one counts as none.
     """
     if args_list and args_list[0].lower() in KNOWN_TYPES:
-        return args_list[0].lower(), " ".join(args_list[1:])
-    return None, " ".join(args_list)
+        return args_list[0].lower(), " ".join(args_list[1:]).strip()
+    return None, " ".join(args_list).strip()
 
 
 @click.command()
@@ -110,11 +115,13 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
     help="With --json: the raw SDK model instead of the projection",
 )
 @click.option("--label", help="Filter by label")
-@click.option("--limit", type=int, default=DEFAULT_LIMIT, help="Results per page")
+@click.option(
+    "--limit", type=int, default=DEFAULT_LIMIT, help="Results per page (1-100)"
+)
 @click.option(
     "--page",
     type=int,
-    help="Page number (server-side pages only; see --release-type all)",
+    help="Page number, from 1 (server-side pages only; see --release-type all)",
 )
 @click.option(
     "--release-type",
@@ -148,16 +155,6 @@ def search(
     """
     type_filter, query = _parse_type_and_query(args)
 
-    has_filters = any(
-        v is not None
-        for v in (artist, barcode, catno, country, format_, genre, label, style, year)
-    )
-    if not query and not has_filters:
-        fail(
-            ValueError("No search query or filters provided."),
-            json_output=json_output,
-        )
-
     params = _build_search_params(
         query=query,
         type_filter=type_filter,
@@ -171,6 +168,14 @@ def search(
         style=style,
         year=year,
     )
+    if not params.keys() - {"type"}:
+        fail(
+            ValueError("No search query or filters provided."),
+            json_output=json_output,
+        )
+    bad_paging = paging_error(limit, page)
+    if bad_paging:
+        fail(ValueError(bad_paging), json_output=json_output)
 
     # Release-type filtering only applies to release/master searches.
     # Artist and label results never have format metadata, so filtering
@@ -244,27 +249,19 @@ def search(
         dump(document)
         return
 
+    filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}
     footer_cmd = None
     if result.has_next:
         argv = ["search", *filter(None, (type_filter, query))]
         footer_cmd = next_page_cmd(
             argv,
-            artist=artist,
-            barcode=barcode,
-            catno=catno,
-            country=country,
-            format=format_,
-            genre=genre,
-            label=label,
-            style=style,
-            year=year,
+            **filters,
             release_type=release_type if release_type != "official" else None,
             limit=limit if limit != DEFAULT_LIMIT else None,
             after=result.next_cursor,
             page=None if result.filtered else result.page + 1,
         )
 
-    filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}
     if release_type != "official" and type_filter in (None, "release", "master"):
         filters["release-type"] = release_type
     try:

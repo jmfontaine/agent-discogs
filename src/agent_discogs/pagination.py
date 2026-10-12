@@ -14,6 +14,18 @@ from agent_discogs import trace
 from agent_discogs.config import MAX_API_CALLS
 
 DEFAULT_LIMIT = 5
+MAX_LIMIT = 100  # Discogs' largest per_page
+
+
+def paging_error(limit: int, page: int | None) -> str | None:
+    """Why `--limit`/`--page` cannot be sent, or None. Checked before any
+    request: a non-positive limit can never fill a page, so a filtered scan
+    would spend its whole request budget on it."""
+    if not 1 <= limit <= MAX_LIMIT:
+        return f"--limit must be between 1 and {MAX_LIMIT} ({limit} given)."
+    if page is not None and page < 1:
+        return f"--page must be 1 or more ({page} given)."
+    return None
 
 
 @dataclass
@@ -141,7 +153,8 @@ def fetch_filtered_page(
     """Fetch one page of client-side filtered results, resuming from `cursor`.
 
     The API has no server-side filter for these cases, so we scan raw API
-    pages (overfetching 3x) and keep matching items. Scanning resumes exactly
+    pages (overfetching 3x, at most Discogs' 100 rows per page) and keep
+    matching items. Scanning resumes exactly
     where the previous call stopped, never rescanning from page 1. At most
     `MAX_API_CALLS` requests per call: a sparse filter can return a short (even
     empty) page with `capped=True` and a cursor to continue from.
@@ -150,7 +163,7 @@ def fetch_filtered_page(
     match `keep`.
     """
     page, api_page, offset = parse_cursor(cursor)
-    api_per_page = limit * 3
+    api_per_page = min(limit * 3, MAX_LIMIT)
     collected: list[Any] = []
     next_cursor: str | None = None
     capped = False
