@@ -66,8 +66,9 @@ def _describe(exc: BaseException) -> str:
 
 
 def _cache_error(exc: CacheError) -> ErrorInfo:
-    """A cache the SDK could not create, vet or open. The CLI deletes nothing:
-    the hint tells the user what to fix, or which file to remove by hand."""
+    """A cache the SDK could not create, vet, open or purge. The CLI deletes
+    nothing: the hint tells the user what to fix, or which file to remove by
+    hand."""
     cause = exc.__cause__
     reason = _describe(cause) if cause is not None else str(exc)
     action = f"could not {exc.operation}: " if exc.operation else ""
@@ -78,6 +79,18 @@ def _cache_error(exc: CacheError) -> ErrorInfo:
             "Check the cache's permissions and ownership. --fresh skips the cache.",
         )
     path = exc.path
+    sidecars = f"any {path.name}-wal or {path.name}-shm beside it"
+    if exc.operation == "clear the cache":
+        # The purge ran on an open database: it is locked, read-only or damaged,
+        # and --fresh would not purge anything.
+        return ErrorInfo(
+            "cache_error",
+            f"Cache error at {path}: {action}{reason}",
+            "Retry once no other process is using the cache. If it keeps "
+            f"failing, fix the permissions of {path.parent} and the files in it, "
+            f"or delete {path} and {sidecars} by hand.",
+            path=str(path),
+        )
     if exc.operation == "create the cache directory":
         # Nothing exists yet to delete: the path leading to it is the problem.
         hint = (
@@ -90,8 +103,7 @@ def _cache_error(exc: CacheError) -> ErrorInfo:
         # the one refused, and the cause names which.
         hint = (
             f"Fix the permissions or ownership of {path.parent} and the files in "
-            f"it, or delete {path} and any {path.name}-wal or {path.name}-shm "
-            "beside it by hand."
+            f"it, or delete {path} and {sidecars} by hand."
         )
     return ErrorInfo(
         "cache_error",

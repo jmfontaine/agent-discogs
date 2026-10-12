@@ -33,7 +33,7 @@ Commands:
   get <noun> <ref>...         Get entity details, 1-10 refs (aliases: fetch, show)
   tracks <ref>...             Shortcut: get tracklist <ref>...
   price <ref>...              Shortcut: get price <ref>...
-  cache clear                 Clear HTTP cache
+  cache clear [--json]        Clear HTTP cache; a failed purge exits 1 (cache_error)
   skills [get <name>]         Print the bundled agent guide (start: skills get core)
   status                      Show version, auth mode, and cache location
 
@@ -73,7 +73,8 @@ Options:
                    or the exit code; an unresolvable cache location shows as
                    'unknown (no home directory)'
   --json           JSON output: a compact projection of the text view (search, get);
-                   non-ASCII is literal on a UTF-8 stdout, \\uXXXX escapes otherwise
+                   cache clear prints {"cleared":true}. Non-ASCII is literal on a
+                   UTF-8 stdout, \\uXXXX escapes otherwise
   --full           With --json: the complete record instead of the projection,
                    normalized: consistent field names, RFC 3339 timestamps (null when
                    absent or unparseable), unmodeled fields as Discogs sends them

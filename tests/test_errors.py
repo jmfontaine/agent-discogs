@@ -219,6 +219,19 @@ class TestCacheError:
         assert "XDG_CACHE_HOME" in info.hint
         assert "delete" not in info.hint
 
+    def test_failed_purge_points_at_the_lock_or_the_file(self) -> None:
+        """A purge fails on a locked or corrupt database; --fresh cannot help."""
+        exc = self._error(
+            sqlite3.OperationalError("database is locked"), "clear the cache"
+        )
+        info = classify(exc)
+        assert info.code == "cache_error"
+        assert "clear the cache" in info.message
+        assert "sqlite3.OperationalError: database is locked" in info.message
+        assert info.hint is not None
+        assert f"delete {self.PATH}" in info.hint
+        assert "--fresh" not in info.hint
+
     def test_text_and_json_carry_the_same_error(self) -> None:
         exc = self._error(sqlite3.OperationalError("unable to open database file"))
         info = classify(exc)

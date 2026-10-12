@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import functools
 import importlib
@@ -12,6 +13,7 @@ import logging
 import os
 import re
 import shlex
+import sqlite3
 import sys
 from collections.abc import Callable, Iterator
 from datetime import datetime
@@ -4134,17 +4136,68 @@ class TestRealSdk:
         assert row["catalog_number"] == "INT-1"
         assert row["uri"] == "https://www.discogs.com/release/1"
 
-    def test_failed_purge_still_reports_cleared(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        directory = self.cache_home / "agent-discogs"
-        directory.mkdir(mode=0o700)
-        (directory / "cache.db").write_bytes(b"not a sqlite database " * 8)
-        (directory / "cache.db").chmod(0o600)
+    def _database(self) -> Path:
+        return self.cache_home / "agent-discogs" / "cache.db"
+
+    def _rows(self) -> int:
+        with contextlib.closing(sqlite3.connect(self._database())) as db:
+            return db.execute("SELECT COUNT(*) FROM cache_entries").fetchone()[0]
+
+    def _assert_purge_failed(self, args: list[str]) -> None:
+        """`cache clear` failed with `cache_error`, the same in text and JSON."""
+        database = self._database()
+        result = CliRunner().invoke(cli, [*args, "--json"])
+        assert result.exit_code == 1
+        # stderr may hold the SDK's own warnings, but never the error itself.
+        assert "✗" not in result.stderr
+        error = json.loads(result.stdout)["error"]
+        assert error["code"] == "cache_error"
+        assert error["path"] == str(database)
+        assert error["message"].startswith(
+            f"Cache error at {database}: could not clear the cache: sqlite3."
+        )
+        assert f"delete {database}" in error["hint"]
+        assert "--fresh" not in error["hint"]  # it does not help a purge
+
+        result = CliRunner().invoke(cli, args)
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        assert result.stderr.endswith(f"✗ {error['message']}\n  {error['hint']}\n")
+
+    def test_cache_clear_purges_a_healthy_cache(self) -> None:
+        assert CliRunner().invoke(cli, ["tracks", "@r1"]).exit_code == 0
+        assert self._rows() == 1
         result = CliRunner().invoke(cli, ["cache", "clear"])
         assert result.exit_code == 0
         assert result.stdout == "Cache cleared.\n"
-        assert "could not clear the cache" in caplog.text  # a logged warning
+        assert self._rows() == 0
+
+        result = CliRunner().invoke(cli, ["cache", "clear", "--json"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == {"cleared": True}
+
+    def test_cache_clear_fails_on_a_corrupt_database(self) -> None:
+        database = self._database()
+        database.parent.mkdir(mode=0o700)
+        garbage = b"not a sqlite database " * 8
+        database.write_bytes(garbage)
+        database.chmod(0o600)
+        self._assert_purge_failed(["cache", "clear"])
+        assert database.read_bytes() == garbage  # untouched, not unlinked
+
+    def test_cache_clear_fails_on_a_locked_database(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No busy wait: SQLite's default 5s timeout would only slow the test.
+        monkeypatch.setattr(
+            sqlite3, "connect", functools.partial(sqlite3.connect, timeout=0)
+        )
+        assert CliRunner().invoke(cli, ["tracks", "@r1"]).exit_code == 0
+        with contextlib.closing(sqlite3.connect(self._database())) as holder:
+            holder.execute("BEGIN EXCLUSIVE")
+            self._assert_purge_failed(["cache", "clear"])
+            holder.rollback()
+        assert self._rows() == 1  # the entry is still there
 
     def _break_cache(self, kind: str, monkeypatch: pytest.MonkeyPatch) -> Path:
         """Make the cache unusable one way; return the database path it names."""
@@ -4232,3 +4285,7 @@ class TestRealSdk:
         assert result.stdout == ""
         assert result.stderr.startswith(f"✗ Cache error at {database}: could not ")
         assert str(database.parent) in result.stderr
+        result = CliRunner().invoke(cli, ["cache", "clear", "--json"])
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "cache_error"
+        assert os.path.lexists(database) == (kind != "uncreatable dir")

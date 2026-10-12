@@ -137,8 +137,11 @@ agent-discogs status
 Manage the HTTP response cache:
 
 ```bash
-agent-discogs cache clear
+agent-discogs cache clear          # Cache cleared.
+agent-discogs cache clear --json   # {"cleared":true}
 ```
+
+`cache clear` reports success only when the purge succeeded. If the cache cannot be opened, or the purge fails (the database is locked by another process, read-only, or damaged), it exits 1 with a `cache_error` (the JSON envelope on stdout under `--json`) and leaves the database exactly as it was. The hint says whether to retry, fix permissions, or delete the file by hand; the CLI never deletes it.
 
 ### skills
 
@@ -153,7 +156,7 @@ agent-discogs skills path [core]       # directory holding the bundled skill fil
 
 ## JSON output
 
-`search`, `get`, `tracks`, and `price` accept `--json`. The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping. Empty fields are omitted, so test for a key rather than for null (the `pagination` envelope is the exception: its keys are always present, and `next_cursor` is `null` when nothing remains). `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`. Lists are wrapped as `{"pagination":{...},"results":[...]}`.
+`search`, `get`, `tracks`, and `price` accept `--json` (as does `cache clear`, which prints `{"cleared":true}` or the error envelope). The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping. Empty fields are omitted, so test for a key rather than for null (the `pagination` envelope is the exception: its keys are always present, and `next_cursor` is `null` when nothing remains). `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`. Lists are wrapped as `{"pagination":{...},"results":[...]}`.
 
 ```bash
 agent-discogs get release @r352665 --json            # projection

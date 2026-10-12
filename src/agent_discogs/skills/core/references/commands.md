@@ -185,10 +185,11 @@ agent-discogs status
 Manage the HTTP response cache. It lives at `$XDG_CACHE_HOME/agent-discogs` when `XDG_CACHE_HOME` is set to an absolute path, and at `~/.cache/agent-discogs` otherwise (an empty or relative value is ignored). `agent-discogs status` prints the path in use.
 
 ```bash
-agent-discogs cache clear
+agent-discogs cache clear          # prints "Cache cleared."
+agent-discogs cache clear --json   # prints {"cleared":true}
 ```
 
-A cache that cannot be opened makes `cache clear` fail with `cache_error` (exit 1); nothing is deleted.
+It reports success only when every entry was purged. A cache that cannot be opened, or a purge that fails (the database is locked by another process, read-only, or damaged), exits 1 with `cache_error`: text on stderr, or the JSON error envelope on stdout under `--json`. The database is left exactly as it was; nothing is deleted. The hint says what to do: retry once the other process is done, fix the permissions, or delete the file by hand.
 
 ## Aliases
 
