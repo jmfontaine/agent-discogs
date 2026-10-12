@@ -51,4 +51,4 @@ def test_cache_free_commands_work_without_a_home_directory(
     importlib.reload(config)
     result = CliRunner().invoke(cli, args)
     assert result.exit_code == 0, result.output
-    assert "agent-discogs" in result.output
+    assert "agent-discogs" in result.stdout

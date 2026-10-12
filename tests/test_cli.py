@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import runpy
 import shlex
 import sqlite3
 import sys
@@ -44,45 +45,17 @@ import agent_discogs.client as client_module
 from agent_discogs import cli, main, trace
 from agent_discogs.json_output import dumps
 from agent_discogs.pagination import PageResult
-
-
-def _fake(**kwargs: object) -> SimpleNamespace:
-    return SimpleNamespace(**kwargs)
-
-
-class _Listing:
-    """A fake SDK listing method (`client.search`, `<proxy>.releases.list`) for
-    tests that fake `fetch_page`: it records the params of each call."""
-
-    def __init__(self) -> None:
-        self.calls: list[dict[str, object]] = []
-
-    def __call__(self, **params: object) -> None:
-        self.calls.append(params)
-
-
-def _listed(**kwargs: object) -> SimpleNamespace:
-    """A fake artist, label or master proxy with fake `releases`/`versions`."""
-    return SimpleNamespace(
-        **kwargs, releases=_fake(list=_Listing()), versions=_fake(list=_Listing())
-    )
-
-
-def _fake_client(
-    *,
-    artists_get: object = None,
-    labels_get: object = None,
-    masters_get: object = None,
-    releases_get: object = None,
-) -> SimpleNamespace:
-    """Build a fake Discogs client with specified resource getters."""
-    return SimpleNamespace(
-        artists=SimpleNamespace(get=artists_get or (lambda _id: _listed())),
-        labels=SimpleNamespace(get=labels_get or (lambda _id: _listed())),
-        masters=SimpleNamespace(get=masters_get or (lambda _id: _listed())),
-        releases=SimpleNamespace(get=releases_get or (lambda _id: None)),
-        search=_Listing(),
-    )
+from tests.conftest import (
+    RealSdk,
+    ServePage,
+    UseClient,
+    fake,
+    fake_client,
+    fake_model,
+    json_error,
+    listed,
+    text_error,
+)
 
 
 class _FakeAPI:
@@ -170,82 +143,79 @@ class TestCacheCommand:
     def test_cache_clear(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "agent_discogs.commands.cache.get_client",
-            lambda: _fake(clear_cache=lambda: None),
+            lambda: fake(clear_cache=lambda: None),
         )
         result = CliRunner().invoke(cli, ["cache", "clear"])
         assert result.exit_code == 0
-        assert "Cache cleared" in result.output
+        assert "Cache cleared" in result.stdout
 
     def test_cache_help(self) -> None:
         result = CliRunner().invoke(cli, ["cache", "--help"])
         assert result.exit_code == 0
-        assert "clear" in result.output
+        assert "clear" in result.stdout
 
 
 class TestCLIBasics:
     def test_version(self) -> None:
         result = CliRunner().invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "agent-discogs" in result.output
+        assert "agent-discogs" in result.stdout
         expected = importlib.metadata.version("agent-discogs")
-        assert expected in result.output
+        assert expected in result.stdout
 
     def test_help(self) -> None:
         result = CliRunner().invoke(cli, ["--help"])
         assert result.exit_code == 0
         # Commands section
-        assert "search [type] <query>" in result.output
-        assert "get <noun> <ref>" in result.output
-        assert "tracks <ref>" in result.output
-        assert "price <ref>" in result.output
-        assert "cache clear" in result.output
-        assert "status" in result.output
+        assert "search [type] <query>" in result.stdout
+        assert "get <noun> <ref>" in result.stdout
+        assert "tracks <ref>" in result.stdout
+        assert "price <ref>" in result.stdout
+        assert "cache clear" in result.stdout
+        assert "status" in result.stdout
         # Aliases
-        assert "aliases: find, query" in result.output
-        assert "aliases: fetch, show" in result.output
+        assert "aliases: find, query" in result.stdout
+        assert "aliases: fetch, show" in result.stdout
         # Search types and get nouns
-        assert "Search Types:" in result.output
-        assert "Get Nouns:" in result.output
+        assert "Search Types:" in result.stdout
+        assert "Get Nouns:" in result.stdout
         # Ref system explanation
-        assert "@a3857 (artist)" in result.output
-        assert "@r847868 (release)" in result.output
+        assert "@a3857 (artist)" in result.stdout
+        assert "@r847868 (release)" in result.stdout
         # Environment
-        assert "DISCOGS_TOKEN" in result.output
+        assert "DISCOGS_TOKEN" in result.stdout
         # Examples
-        assert "Examples:" in result.output
-        assert 'agent-discogs search "The Downward Spiral"' in result.output
+        assert "Examples:" in result.stdout
+        assert 'agent-discogs search "The Downward Spiral"' in result.stdout
 
     def test_no_args_shows_help(self) -> None:
         result = CliRunner().invoke(cli, [])
         assert result.exit_code == 0
-        assert "agent-discogs - token-efficient Discogs CLI" in result.output
-        assert "Commands:" in result.output
-        assert "Refs:" in result.output
-        assert "Examples:" in result.output
+        assert "agent-discogs - token-efficient Discogs CLI" in result.stdout
+        assert "Commands:" in result.stdout
+        assert "Refs:" in result.stdout
+        assert "Examples:" in result.stdout
 
     def test_search_help(self) -> None:
         result = CliRunner().invoke(cli, ["search", "--help"])
         assert result.exit_code == 0
-        assert "--year" in result.output
-        assert "--genre" in result.output
-        assert "--limit" in result.output
+        assert "--year" in result.stdout
+        assert "--genre" in result.stdout
+        assert "--limit" in result.stdout
 
     def test_get_help(self) -> None:
         result = CliRunner().invoke(cli, ["get", "--help"])
         assert result.exit_code == 0
-        assert "release" in result.output
-        assert "artist" in result.output
-        assert "tracklist" in result.output
-        assert "price" in result.output
+        assert "release" in result.stdout
+        assert "artist" in result.stdout
+        assert "tracklist" in result.stdout
+        assert "price" in result.stdout
 
     def test_unknown_command(self) -> None:
         result = CliRunner().invoke(cli, ["nonexistent"])
-        assert result.exit_code != 0
-
-    def test_main_entry_point(self) -> None:
-        result = CliRunner().invoke(cli, ["--help"])
-        assert result.exit_code == 0
-        assert main is not None
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert result.stderr.endswith("\n\nError: No such command 'nonexistent'.\n")
 
 
 class TestStatusCommand:
@@ -253,9 +223,9 @@ class TestStatusCommand:
         result = CliRunner().invoke(cli, ["status"])
         assert result.exit_code == 0
         version = importlib.metadata.version("agent-discogs")
-        assert f"agent-discogs v{version}" in result.output
-        assert "Auth:" in result.output
-        assert "Cache:" in result.output
+        assert f"agent-discogs v{version}" in result.stdout
+        assert "Auth:" in result.stdout
+        assert "Cache:" in result.stdout
 
     @pytest.mark.parametrize(
         ("env", "auth"),
@@ -310,43 +280,112 @@ class TestAliases:
     def test_find_alias(self) -> None:
         result = CliRunner().invoke(cli, ["find", "--help"])
         assert result.exit_code == 0
-        assert "--year" in result.output
-        assert result.output.startswith("Usage: cli search ")  # canonical name
+        assert "--year" in result.stdout
+        assert result.stdout.startswith("Usage: cli search ")  # canonical name
 
     def test_fetch_alias(self) -> None:
         result = CliRunner().invoke(cli, ["fetch", "--help"])
         assert result.exit_code == 0
-        assert "release" in result.output
-        assert result.output.startswith("Usage: cli get ")
+        assert "release" in result.stdout
+        assert result.stdout.startswith("Usage: cli get ")
 
     def test_query_alias(self) -> None:
         result = CliRunner().invoke(cli, ["query", "--help"])
         assert result.exit_code == 0
-        assert "--year" in result.output
-        assert result.output.startswith("Usage: cli search ")
+        assert "--year" in result.stdout
+        assert result.stdout.startswith("Usage: cli search ")
 
     def test_show_alias(self) -> None:
         result = CliRunner().invoke(cli, ["show", "--help"])
         assert result.exit_code == 0
-        assert "release" in result.output
-        assert result.output.startswith("Usage: cli get ")
+        assert "release" in result.stdout
+        assert result.stdout.startswith("Usage: cli get ")
+
+
+class TestSearchRequest:
+    """Each search argument reaches Discogs as its query parameter."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.api = _FakeAPI(monkeypatch, _empty_listing)
+
+    def _sent(self, *args: str) -> dict[str, str]:
+        """The params of the one request `search <args>` sends, server-side."""
+        result = CliRunner().invoke(cli, ["search", *args, "--release-type", "all"])
+        assert result.exit_code == 0, result.output
+        ((path, params),) = self.api.sends
+        assert path == "/database/search"
+        return params
+
+    @pytest.mark.parametrize(
+        ("flag", "param"),
+        [
+            ("--artist", "artist"),
+            ("--barcode", "barcode"),
+            ("--catno", "catno"),
+            ("--country", "country"),
+            ("--format", "format"),
+            ("--genre", "genre"),
+            ("--label", "label"),
+            ("--style", "style"),
+            ("--year", "year"),
+        ],
+    )
+    def test_each_filter_is_its_own_parameter(self, flag: str, param: str) -> None:
+        assert self._sent("Spiral", flag, "Value") == {
+            "q": "Spiral",
+            param: "Value",
+            "page": "1",
+            "per_page": "5",
+        }
+
+    @pytest.mark.parametrize("kind", ["release", "master", "artist", "label"])
+    def test_type_prefix_is_the_type_parameter(self, kind: str) -> None:
+        assert self._sent(kind, "Nine", "Inch", "Nails") == {
+            "q": "Nine Inch Nails",
+            "type": kind,
+            "page": "1",
+            "per_page": "5",
+        }
+
+    def test_every_filter_at_once_without_a_query(self) -> None:
+        sent = self._sent(
+            "release",
+            *("--artist", "Nine Inch Nails", "--barcode", "765449234620"),
+            *("--catno", "INT-92346", "--country", "US", "--format", "CD"),
+            *("--genre", "Rock", "--label", "Nothing", "--style", "Industrial"),
+            *("--year", "1994", "--limit", "10"),
+        )
+        assert sent == {
+            "type": "release",
+            "artist": "Nine Inch Nails",
+            "barcode": "765449234620",
+            "catno": "INT-92346",
+            "country": "US",
+            "format": "CD",
+            "genre": "Rock",
+            "label": "Nothing",
+            "style": "Industrial",
+            "year": "1994",
+            "page": "1",
+            "per_page": "10",
+        }
 
 
 class TestSearchCommand:
     @pytest.fixture(autouse=True)
-    def _patch_search(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_search(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        use_client: UseClient,
+        serve_page: ServePage,
+    ) -> None:
         self._monkeypatch = monkeypatch
-        monkeypatch.setattr("agent_discogs.commands.search.get_client", _fake_client)
-
-    def _set_fetch_result(self, result: PageResult) -> None:
-        def mock(*_a: object, **_kw: object) -> PageResult:
-            return result
-
-        self._monkeypatch.setattr("agent_discogs.commands.search.fetch_page", mock)
-        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", mock)
+        use_client(fake_client())
+        self._serve_page = serve_page
 
     def test_basic_search(self) -> None:
-        result_item = _fake(
+        result_item = SearchResult(
             id=367113,
             type="release",
             title="The Downward Spiral",
@@ -354,63 +393,45 @@ class TestSearchCommand:
             label=["Nothing Records"],
             format=["Vinyl"],
         )
-        self._set_fetch_result(
+        self._serve_page(
             PageResult(items=[result_item], page=1, total_items=1, total_pages=1)
         )
 
         result = CliRunner().invoke(cli, ["search", "downward spiral"])
         assert result.exit_code == 0
-        assert "Search:" in result.output
-        assert "The Downward Spiral" in result.output
+        assert result.stdout == (
+            'Search: all "downward spiral" (page 1, 1 of ≤1 results)\n'
+            "\n"
+            '@r367113 [release] "The Downward Spiral" 1994 · Nothing Records · Vinyl\n'
+        )
 
     def test_search_with_type_prefix(self) -> None:
-        result_item = _fake(
-            id=3857,
-            type="artist",
-            title="Nine Inch Nails",
-            year=None,
-            label=None,
-            format=None,
-        )
-        self._set_fetch_result(
+        result_item = SearchResult(id=3857, type="artist", title="Nine Inch Nails")
+        self._serve_page(
             PageResult(items=[result_item], page=1, total_items=1, total_pages=1)
         )
 
         result = CliRunner().invoke(cli, ["search", "artist", "Nine Inch Nails"])
         assert result.exit_code == 0
-        assert "Nine Inch Nails" in result.output
-
-    def test_search_with_filters(self) -> None:
-        self._set_fetch_result(
-            PageResult(items=[], page=1, total_items=0, total_pages=1)
-        )
-        result = CliRunner().invoke(
-            cli,
-            ["search", "test", "--year", "1994", "--genre", "Rock", "--country", "US"],
-        )
-        assert result.exit_code == 0
+        assert result.stdout.splitlines() == [
+            'Search: artist "Nine Inch Nails" (page 1, 1 of 1 results)',
+            "",
+            '@a3857 "Nine Inch Nails"',  # typed search: no per-row [type]
+        ]
 
     def test_search_empty_query_after_type_no_filters(self) -> None:
         result = CliRunner().invoke(cli, ["search", "release"])
-        assert result.exit_code == 1
-        assert "No search query or filters" in result.output
+        assert text_error(result) == "✗ No search query or filters provided.\n"
 
     def test_search_no_args_no_filters(self) -> None:
         result = CliRunner().invoke(cli, ["search"])
-        assert result.exit_code == 1
-        assert "No search query or filters" in result.output
+        assert text_error(result) == "✗ No search query or filters provided.\n"
 
         result = CliRunner().invoke(cli, ["search", "--json"])
-        assert result.exit_code == 1
-        assert json.loads(result.output)["error"]["code"] == "invalid_argument"
-
-    def test_search_filter_only(self) -> None:
-        """Filter-only search without query text (e.g. --catno)."""
-        self._set_fetch_result(
-            PageResult(items=[], page=1, total_items=0, total_pages=1)
-        )
-        result = CliRunner().invoke(cli, ["search", "release", "--catno", "INT-92346"])
-        assert result.exit_code == 0
+        assert json_error(result) == {
+            "code": "invalid_argument",
+            "message": "No search query or filters provided.",
+        }
 
     def test_search_error(self) -> None:
         def _raise(*_a: object, **_kw: object) -> None:
@@ -418,20 +439,19 @@ class TestSearchCommand:
 
         self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _raise)
         result = CliRunner().invoke(cli, ["search", "test query"])
-        assert result.exit_code == 1
-        assert "error" in result.output.lower()
+        assert text_error(result) == (
+            "✗ Unexpected error: RuntimeError: connection failed\n"
+        )
 
     def test_search_header_marks_the_filtered_bound(self) -> None:
         """Default (official) search filters client-side; the total is a bound."""
-        result_item = _fake(
-            id=1, type="release", title="Test", year=None, label=None, format=None
-        )
-        self._set_fetch_result(
+        result_item = SearchResult(id=1, type="release", title="Test")
+        self._serve_page(
             PageResult(items=[result_item], page=1, total_items=50, total_pages=10)
         )
         result = CliRunner().invoke(cli, ["search", "test"])
         assert result.exit_code == 0
-        assert "of ≤50 results" in result.output
+        assert "of ≤50 results" in result.stdout
 
     def _forbid_fetch(self) -> None:
         def _boom(*_a: object, **_kw: object) -> None:
@@ -443,162 +463,106 @@ class TestSearchCommand:
     def test_search_page_rejected_on_filtered_path(self) -> None:
         self._forbid_fetch()
         result = CliRunner().invoke(cli, ["search", "test", "--page", "2"])
-        assert result.exit_code == 1
-        assert "--page is not available" in result.output
-        assert "--release-type all" in result.output
+        error = text_error(result)
+        assert error.startswith("✗ --page is not available")
+        assert "--release-type all" in error
 
     def test_search_after_rejected_on_server_side_path(self) -> None:
         self._forbid_fetch()
         result = CliRunner().invoke(cli, ["search", "artist", "test", "--after", "2:0"])
-        assert result.exit_code == 1
-        assert "--after only continues" in result.output
+        assert text_error(result).startswith("✗ --after only continues")
 
     def test_search_invalid_cursor_rejected_before_request(self) -> None:
         self._forbid_fetch()
         result = CliRunner().invoke(cli, ["search", "test", "--after", "garbage"])
-        assert result.exit_code == 1
-        assert "Invalid --after cursor" in result.output
+        assert text_error(result).startswith("✗ Invalid --after cursor")
 
     def test_search_server_side_pagination(self) -> None:
         """--release-type all pages server-side with --page and no ≤ bound."""
-        self._set_fetch_result(
-            PageResult(items=[], page=3, total_items=15, total_pages=3)
-        )
+        self._serve_page(PageResult(items=[], page=3, total_items=15, total_pages=3))
         result = CliRunner().invoke(
             cli, ["search", "test", "--release-type", "all", "--page", "3"]
         )
         assert result.exit_code == 0
-        assert "(page 3, 0 of 15 results)" in result.output
-        assert "Next page:" not in result.output
+        assert "(page 3, 0 of 15 results)" in result.stdout
+        assert "Next page:" not in result.stdout
 
     def test_search_sparse_scan_reads_to_the_end(self) -> None:
         """Sparse filter: no cap, so every API page is read and a page with
         no match ends the listing without a footer."""
-        bootleg = _fake(
-            id=1,
-            type="release",
-            title="Boot",
-            year=None,
-            label=None,
-            format=["Unofficial Release"],
+        bootleg = SearchResult(
+            id=1, type="release", title="Boot", format=["Unofficial Release"]
         )
-        self._set_fetch_result(
+        self._serve_page(
             PageResult(items=[bootleg], page=1, total_items=500, total_pages=34)
         )
         result = CliRunner().invoke(cli, ["search", "test"])
         assert result.exit_code == 0
-        assert "(page 1, 0 of ≤500 results)\n" in result.output
-        assert "Continue scan" not in result.output
-        assert "Next page" not in result.output
-
-    def test_search_all_filters(self) -> None:
-        self._set_fetch_result(
-            PageResult(items=[], page=1, total_items=0, total_pages=1)
-        )
-        result = CliRunner().invoke(
-            cli,
-            [
-                "search",
-                "test",
-                "--artist",
-                "NIN",
-                "--barcode",
-                "123",
-                "--catno",
-                "ABC",
-                "--format",
-                "Vinyl",
-                "--label",
-                "Nothing",
-                "--style",
-                "Industrial",
-                "--limit",
-                "10",
-                "--release-type",
-                "all",
-            ],
-        )
-        assert result.exit_code == 0
+        assert "(page 1, 0 of ≤500 results)\n" in result.stdout
+        assert "Continue scan" not in result.stdout
+        assert "Next page" not in result.stdout
 
     def test_release_type_official_filters_unofficial(self) -> None:
         """Default --release-type official excludes unofficial releases."""
-        official = _fake(
-            id=1,
-            type="release",
-            title="Official",
-            year=None,
-            label=None,
-            format=["Vinyl"],
+        official = SearchResult(
+            id=1, type="release", title="Official", format=["Vinyl"]
         )
-        unofficial = _fake(
+        unofficial = SearchResult(
             id=2,
             type="release",
             title="Bootleg",
-            year=None,
-            label=None,
             format=["Vinyl", "Unofficial Release"],
         )
-        self._set_fetch_result(
+        self._serve_page(
             PageResult(
                 items=[official, unofficial], page=1, total_items=2, total_pages=1
             )
         )
         result = CliRunner().invoke(cli, ["search", "test"])
         assert result.exit_code == 0
-        assert "Official" in result.output
-        assert "Bootleg" not in result.output
+        assert "Official" in result.stdout
+        assert "Bootleg" not in result.stdout
 
     def test_release_type_all_shows_everything(self) -> None:
-        official = _fake(
-            id=1,
-            type="release",
-            title="Official",
-            year=None,
-            label=None,
-            format=["Vinyl"],
+        official = SearchResult(
+            id=1, type="release", title="Official", format=["Vinyl"]
         )
-        unofficial = _fake(
+        unofficial = SearchResult(
             id=2,
             type="release",
             title="Bootleg",
-            year=None,
-            label=None,
             format=["Vinyl", "Unofficial Release"],
         )
-        self._set_fetch_result(
+        self._serve_page(
             PageResult(
                 items=[official, unofficial], page=1, total_items=2, total_pages=1
             )
         )
         result = CliRunner().invoke(cli, ["search", "test", "--release-type", "all"])
         assert result.exit_code == 0
-        assert "Official" in result.output
-        assert "Bootleg" in result.output
+        assert "Official" in result.stdout
+        assert "Bootleg" in result.stdout
 
     def test_release_type_header_echo_only_when_it_applies(self) -> None:
         """Header shows release-type when non-default on release/master searches,
         never on artist/label searches where the option is a no-op."""
-        item = _fake(
-            id=1, type="release", title="Test", year=None, label=None, format=["Vinyl"]
-        )
-        self._set_fetch_result(
-            PageResult(items=[item], page=1, total_items=1, total_pages=1)
-        )
+        item = SearchResult(id=1, type="release", title="Test", format=["Vinyl"])
+        self._serve_page(PageResult(items=[item], page=1, total_items=1, total_pages=1))
         result = CliRunner().invoke(cli, ["search", "test", "--release-type", "all"])
-        assert 'Search: all "test" release-type=all' in result.output
+        assert 'Search: all "test" release-type=all' in result.stdout
 
         result = CliRunner().invoke(cli, ["search", "release", "test"])
-        assert "release-type" not in result.output.split("\n")[0]
+        assert "release-type" not in result.stdout.split("\n")[0]
 
-        artist = _fake(id=1, type="artist", title="Test")
-        self._set_fetch_result(
+        artist = SearchResult(id=1, type="artist", title="Test")
+        self._serve_page(
             PageResult(items=[artist], page=1, total_items=1, total_pages=1)
         )
         result = CliRunner().invoke(
             cli, ["search", "artist", "test", "--release-type", "unofficial"]
         )
         assert result.exit_code == 0
-        assert "release-type" not in result.output.split("\n")[0]
+        assert "release-type" not in result.stdout.split("\n")[0]
 
     def test_artist_search_skips_release_filter(self) -> None:
         """Artist type search uses direct fetch, not a filtered scan."""
@@ -606,9 +570,7 @@ class TestSearchCommand:
 
         def _capture_fetch(_listing: object, *, page: int, per_page: int) -> PageResult:
             pages.append((page, per_page))
-            item = _fake(
-                id=1, type="artist", title="Test", year=None, label=None, format=None
-            )
+            item = SearchResult(id=1, type="artist", title="Test")
             return PageResult(items=[item], page=1, total_items=1, total_pages=1)
 
         self._monkeypatch.setattr(
@@ -626,12 +588,10 @@ class TestSearchCommand:
         def _mock_fetch(_listing: object, *, page: int, per_page: int) -> PageResult:
             seen.append((page, per_page))
             items = [
-                _fake(
+                SearchResult(
                     id=page * 10 + i,
                     type="release",
                     title=f"Official {page}-{i}",
-                    year=None,
-                    label=None,
                     format=["Vinyl"],
                 )
                 for i in range(9)
@@ -644,10 +604,10 @@ class TestSearchCommand:
         )
         assert result.exit_code == 0
         assert seen == [(1, 100)]
-        assert "(page 2, 3 of ≤30 results)" in result.output
-        assert "Official 1-3" in result.output
-        assert "Official 1-5" in result.output
-        assert "Official 1-2" not in result.output
+        assert "(page 2, 3 of ≤30 results)" in result.stdout
+        assert "Official 1-3" in result.stdout
+        assert "Official 1-5" in result.stdout
+        assert "Official 1-2" not in result.stdout
 
     def test_filtered_search_multi_page(self) -> None:
         """Filtering consumes multiple API pages to fill the limit."""
@@ -657,20 +617,16 @@ class TestSearchCommand:
             nonlocal call_count
             call_count += 1
             # Each API page has 1 official + 1 unofficial
-            official = _fake(
+            official = SearchResult(
                 id=call_count * 10,
                 type="release",
                 title=f"Official {call_count}",
-                year=None,
-                label=None,
                 format=["Vinyl"],
             )
-            unofficial = _fake(
+            unofficial = SearchResult(
                 id=call_count * 10 + 1,
                 type="release",
                 title=f"Bootleg {call_count}",
-                year=None,
-                label=None,
                 format=["Unofficial Release"],
             )
             return PageResult(
@@ -684,10 +640,10 @@ class TestSearchCommand:
         result = CliRunner().invoke(cli, ["search", "test", "--limit", "3"])
         assert result.exit_code == 0
         assert call_count == 3  # needed 3 API calls to get 3 official items
-        assert "Official 1" in result.output
-        assert "Official 2" in result.output
-        assert "Official 3" in result.output
-        assert "Bootleg" not in result.output
+        assert "Official 1" in result.stdout
+        assert "Official 2" in result.stdout
+        assert "Official 3" in result.stdout
+        assert "Bootleg" not in result.stdout
 
 
 class TestPagingBounds:
@@ -892,45 +848,114 @@ class TestUnofficialServerSide:
         assert len(self.api.sends) == sent
 
 
+class TestVersionsRequest:
+    """Each `get versions` filter and sort reaches Discogs as its query
+    parameter, on the master's versions listing."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.api = _FakeAPI(monkeypatch, _empty_listing)
+
+    def _sent(self, *args: str) -> dict[str, str]:
+        """The params of the one versions request `get versions @m4917 <args>`
+        sends; the text header's title lookup is the other request."""
+        result = CliRunner().invoke(cli, ["get", "versions", "@m4917", *args])
+        assert result.exit_code == 0, result.output
+        (params,) = [p for path, p in self.api.sends if path.endswith("/versions")]
+        assert {path for path, _ in self.api.sends} == {
+            "/masters/4917/versions",
+            "/masters/4917",
+        }
+        return params
+
+    @pytest.mark.parametrize(
+        ("flag", "param"),
+        [
+            ("--country", "country"),
+            ("--format", "format"),
+            ("--label", "label"),
+            ("--year", "released"),
+        ],
+    )
+    def test_each_filter_is_its_own_parameter(self, flag: str, param: str) -> None:
+        assert self._sent(flag, "Value") == {
+            param: "Value",
+            "page": "1",
+            "per_page": "5",
+        }
+
+    @pytest.mark.parametrize(("desc", "order"), [(["--desc"], "desc"), ([], "asc")])
+    def test_sort_and_order(self, desc: list[str], order: str) -> None:
+        assert self._sent("--sort", "released", *desc) == {
+            "sort": "released",
+            "sort_order": order,
+            "page": "1",
+            "per_page": "5",
+        }
+
+    def test_get_versions_with_filters(self) -> None:
+        args = ["--country", "US", "--format", "Vinyl", "--label", "Nothing"]
+        result = CliRunner().invoke(cli, ["get", "versions", "@m4917", *args])
+        assert result.exit_code == 0, result.output
+        assert result.stdout == (
+            'Versions of @m4917 "Entity" (page 1, 0 of 0 versions)\n\n'
+        )
+        assert self.api.sends == [
+            (
+                "/masters/4917/versions",
+                {
+                    "country": "US",
+                    "format": "Vinyl",
+                    "label": "Nothing",
+                    "page": "1",
+                    "per_page": "5",
+                },
+            ),
+            ("/masters/4917", {}),
+        ]
+
+
 class TestGetCommand:
     @pytest.fixture(autouse=True)
-    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_get(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        use_client: UseClient,
+        serve_page: ServePage,
+    ) -> None:
         self._monkeypatch = monkeypatch
-
-    def _set_client(self, client: SimpleNamespace) -> None:
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client", lambda: client
-        )
+        self._set_client = use_client
+        self._serve_page = serve_page
 
     def test_get_artist(self) -> None:
-        artist = _fake(
+        artist = fake(
             id=3857,
             name="Nine Inch Nails",
             profile="Industrial",
             urls=None,
             members=None,
         )
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        self._set_client(fake_client(artists_get=lambda _id: artist))
         result = CliRunner().invoke(cli, ["get", "artist", "@a3857"])
         assert result.exit_code == 0
-        assert "Nine Inch Nails" in result.output
+        assert "Nine Inch Nails" in result.stdout
 
     def test_get_label(self) -> None:
-        label = _fake(
+        label = fake(
             id=2919,
             name="Nothing Records",
             profile="Label",
             urls=None,
             sub_labels=None,
         )
-        self._set_client(_fake_client(labels_get=lambda _id: label))
+        self._set_client(fake_client(labels_get=lambda _id: label))
         result = CliRunner().invoke(cli, ["get", "label", "@l2919"])
         assert result.exit_code == 0
-        assert "Nothing Records" in result.output
+        assert "Nothing Records" in result.stdout
 
     def test_get_master(self) -> None:
-        artist = _fake(name="NIN", join=None)
-        master = _fake(
+        artist = fake(name="NIN", join=None)
+        master = fake(
             id=4917,
             title="The Downward Spiral",
             year=1994,
@@ -942,13 +967,13 @@ class TestGetCommand:
             lowest_price=None,
             tracklist=None,
         )
-        self._set_client(_fake_client(masters_get=lambda _id: master))
+        self._set_client(fake_client(masters_get=lambda _id: master))
         result = CliRunner().invoke(cli, ["get", "master", "@m4917"])
         assert result.exit_code == 0
-        assert "The Downward Spiral" in result.output
+        assert "The Downward Spiral" in result.stdout
 
     def test_get_release(self) -> None:
-        release = _fake(
+        release = fake(
             id=367113,
             title="The Downward Spiral",
             year=1994,
@@ -963,10 +988,10 @@ class TestGetCommand:
             master_id=None,
             tracklist=None,
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "release", "@r367113"])
         assert result.exit_code == 0
-        assert "The Downward Spiral" in result.output
+        assert "The Downward Spiral" in result.stdout
 
     def test_get_price(self) -> None:
         suggestions = PriceSuggestions.model_validate(
@@ -975,96 +1000,94 @@ class TestGetCommand:
         stats = MarketplaceReleaseStats.model_validate(
             {"num_for_sale": 100, "lowest_price": {"currency": "GBP", "value": 5.0}}
         )
-        release = _fake(
+        release = fake(
             id=367113,
             title="TDS",
             year=1994,
             artists=None,
-            price_suggestions=_fake(get=lambda: suggestions),
-            marketplace_stats=_fake(get=lambda: stats),
+            price_suggestions=fake(get=lambda: suggestions),
+            marketplace_stats=fake(get=lambda: stats),
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "price", "@r367113"])
         assert result.exit_code == 0
-        assert "Price Guide:" in result.output
-        assert "EUR 100.00" in result.output
-        assert "Lowest: GBP 5.00" in result.output
-        assert "$" not in result.output
+        assert "Price Guide:" in result.stdout
+        assert "EUR 100.00" in result.stdout
+        assert "Lowest: GBP 5.00" in result.stdout
+        assert "$" not in result.stdout
 
     def test_get_credits(self) -> None:
-        release = _fake(
+        release = fake(
             id=847868,
             title="The Downward Spiral",
             extra_artists=[
-                _fake(id=20661, name="Flood", role="Producer [Production]", tracks="")
+                fake(id=20661, name="Flood", role="Producer [Production]", tracks="")
             ],
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "credits", "@r847868"])
         assert result.exit_code == 0
-        assert 'Credits: @r847868 "The Downward Spiral" (1)' in result.output
-        assert "Producer [Production]: Flood [@a20661]" in result.output
+        assert 'Credits: @r847868 "The Downward Spiral" (1)' in result.stdout
+        assert "Producer [Production]: Flood [@a20661]" in result.stdout
 
     def test_get_identifiers_and_ids_alias(self) -> None:
-        release = _fake(
+        release = fake(
             id=847868,
             title="The Downward Spiral",
             identifiers=[
-                _fake(type="Barcode", value="765449234620", description="Scanned")
+                fake(type="Barcode", value="765449234620", description="Scanned")
             ],
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         full = CliRunner().invoke(cli, ["get", "identifiers", "@r847868"])
         alias = CliRunner().invoke(cli, ["get", "ids", "@r847868"])
         assert full.exit_code == 0
-        assert "Barcode: 765449234620 (Scanned)" in full.output
-        assert alias.output == full.output
+        assert "Barcode: 765449234620 (Scanned)" in full.stdout
+        assert alias.stdout == full.stdout
 
     def test_get_credits_rejects_non_release_ref(self) -> None:
-        self._set_client(_fake_client())
+        self._set_client(fake_client())
         result = CliRunner().invoke(cli, ["get", "credits", "@a3857"])
-        assert result.exit_code == 1
-        assert "@a3857 is an artist, not a release" in result.output
-        assert "Use a release ref or ID with 'get credits'" in result.output
+        assert text_error(result) == (
+            "✗ @a3857 is an artist, not a release. "
+            "Use a release ref or ID with 'get credits'.\n"
+        )
 
     def test_get_tracklist(self) -> None:
-        track = _fake(
+        track = fake(
             position="A1", title="Mr. Self Destruct", duration="4:09", type=None
         )
-        release = _fake(
+        release = fake(
             id=367113,
             title="TDS",
             year=1994,
             artists=None,
             tracklist=[track],
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "tracklist", "@r367113"])
         assert result.exit_code == 0
-        assert "A1. Mr. Self Destruct" in result.output
+        assert "A1. Mr. Self Destruct" in result.stdout
 
     def test_get_releases(self) -> None:
-        artist = _listed(id=3857, name="Nine Inch Nails")
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        artist = listed(id=3857, name="Nine Inch Nails")
+        self._set_client(fake_client(artists_get=lambda _id: artist))
 
-        rel = _fake(id=4917, type="master", title="TDS", year=1994, role="Main")
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[rel], page=1, total_items=100, total_pages=20
-            ),
+        rel = fake(id=4917, type="master", title="TDS", year=1994, role="Main")
+        self._serve_page(
+            PageResult(items=[rel], page=1, total_items=100, total_pages=20)
         )
 
         result = CliRunner().invoke(cli, ["get", "releases", "@a3857"])
         assert result.exit_code == 0
-        assert "Nine Inch Nails" in result.output
-        assert "Next page:" in result.output
+        assert "Nine Inch Nails" in result.stdout
+        assert "Next page:" in result.stdout
 
     def test_get_versions_master(self) -> None:
-        master = _listed(id=4917, title="The Downward Spiral")
-        self._set_client(_fake_client(masters_get=lambda _id: master))
+        master = listed(id=4917, title="The Downward Spiral")
+        self._set_client(fake_client(masters_get=lambda _id: master))
 
-        ver = _fake(
+        ver = fake(
             id=367113,
             released="1994",
             country="US",
@@ -1072,24 +1095,21 @@ class TestGetCommand:
             catalog_number="INT-92346",
             format="Vinyl",
         )
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[ver], page=1, total_items=500, total_pages=100
-            ),
+        self._serve_page(
+            PageResult(items=[ver], page=1, total_items=500, total_pages=100)
         )
 
         result = CliRunner().invoke(cli, ["get", "versions", "@m4917"])
         assert result.exit_code == 0
-        assert "Versions of" in result.output
-        assert "Next page:" in result.output
+        assert "Versions of" in result.stdout
+        assert "Next page:" in result.stdout
 
     def test_get_versions_release_smart_resolution(self) -> None:
         """Release ref with master_id resolves to master versions."""
-        release = _fake(id=367113, master_id=4917, title="The Downward Spiral")
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        release = fake(id=367113, master_id=4917, title="The Downward Spiral")
+        self._set_client(fake_client(releases_get=lambda _id: release))
 
-        ver = _fake(
+        ver = fake(
             id=999,
             released="2020",
             country="UK",
@@ -1097,52 +1117,47 @@ class TestGetCommand:
             catalog_number="C",
             format="CD",
         )
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[ver], page=1, total_items=1, total_pages=1
-            ),
-        )
+        self._serve_page(PageResult(items=[ver], page=1, total_items=1, total_pages=1))
 
         result = CliRunner().invoke(cli, ["get", "versions", "@r367113"])
         assert result.exit_code == 0
-        assert "Versions of" in result.output
+        assert "Versions of" in result.stdout
 
     def test_get_versions_release_no_master(self) -> None:
         """Release ref with no master_id produces error."""
-        release = _fake(id=367113, master_id=None, title="Some Single")
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        release = fake(id=367113, master_id=None, title="Some Single")
+        self._set_client(fake_client(releases_get=lambda _id: release))
 
         result = CliRunner().invoke(cli, ["get", "versions", "@r367113"])
-        assert result.exit_code == 1
-        assert "no master" in result.output.lower()
+        assert text_error(result).startswith("✗ @r367113 is a release with no master. ")
 
     def test_get_type_mismatch(self) -> None:
-        self._set_client(_fake_client())
+        self._set_client(fake_client())
         result = CliRunner().invoke(cli, ["get", "artist", "@r367113"])
-        assert result.exit_code == 1
-        assert "not an artist" in result.output.lower()
+        assert text_error(result) == (
+            "✗ @r367113 is a release, not an artist. "
+            "Use an artist ref or ID with 'get artist'.\n"
+        )
 
     def test_get_error_handling(self) -> None:
         def _raise(_id: int) -> None:
             raise RuntimeError("API down")
 
-        self._set_client(_fake_client(artists_get=_raise))
+        self._set_client(fake_client(artists_get=_raise))
         result = CliRunner().invoke(cli, ["get", "artist", "@a1"])
-        assert result.exit_code == 1
-        assert "error" in result.output.lower()
+        assert text_error(result) == "✗ Unexpected error: RuntimeError: API down\n"
 
     def test_get_release_verbose(self) -> None:
-        artist = _fake(id=3857, name="Nine Inch Nails", join=None)
-        label = _fake(id=33244, name="Rhino Records (2)", catalog_number="R2 75933")
-        track = _fake(
+        artist = fake(id=3857, name="Nine Inch Nails", join=None)
+        label = fake(id=33244, name="Rhino Records (2)", catalog_number="R2 75933")
+        track = fake(
             position="1",
             title="Hamburger Lady",
             duration="4:12",
             type=None,
-            artists=[_fake(id=12589, name="Throbbing Gristle", join=None)],
+            artists=[fake(id=12589, name="Throbbing Gristle", join=None)],
         )
-        release = _fake(
+        release = fake(
             id=367113,
             title="The Downward Spiral",
             year=1994,
@@ -1158,16 +1173,16 @@ class TestGetCommand:
             tracklist=[track],
             notes="Pressed at Sterling Sound.",
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "release", "@r367113", "--verbose"])
         assert result.exit_code == 0
-        assert "Notes: Pressed at Sterling Sound." in result.output
-        assert "[@a3857]" in result.output
-        assert "[@l33244]" in result.output
-        assert "[@a12589]" in result.output
+        assert "Notes: Pressed at Sterling Sound." in result.stdout
+        assert "[@a3857]" in result.stdout
+        assert "[@l33244]" in result.stdout
+        assert "[@a12589]" in result.stdout
 
     def test_get_release_no_verbose_hides_notes(self) -> None:
-        release = _fake(
+        release = fake(
             id=367113,
             title="The Downward Spiral",
             year=1994,
@@ -1183,13 +1198,13 @@ class TestGetCommand:
             tracklist=None,
             notes="Pressed at Sterling Sound.",
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "release", "@r367113"])
         assert result.exit_code == 0
-        assert "Notes:" not in result.output
+        assert "Notes:" not in result.stdout
 
     def test_get_release_compact_text_and_json(self) -> None:
-        release = _fake_model(
+        release = fake_model(
             id=847868,
             title="The Downward Spiral",
             year=1994,
@@ -1203,30 +1218,26 @@ class TestGetCommand:
             lowest_price=None,
             master_id=None,
             tracklist=[
-                _fake(
-                    position="1", title="A", duration="4:30", type=None, artists=None
-                ),
-                _fake(
-                    position="2", title="B", duration="4:24", type=None, artists=None
-                ),
+                fake(position="1", title="A", duration="4:30", type=None, artists=None),
+                fake(position="2", title="B", duration="4:24", type=None, artists=None),
             ],
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         text = CliRunner().invoke(cli, ["get", "release", "@r847868", "-c"])
         assert text.exit_code == 0
-        assert "Tracks: 2 (8:54)" in text.output
-        assert "Tracklist:" not in text.output
+        assert "Tracks: 2 (8:54)" in text.stdout
+        assert "Tracklist:" not in text.stdout
 
         data = json.loads(
             CliRunner()
             .invoke(cli, ["get", "release", "@r847868", "-c", "--json"])
-            .output
+            .stdout
         )
         assert data["tracks"] == "2 (8:54)"
         assert "tracklist" not in data
 
     def test_get_with_raw_id(self) -> None:
-        release = _fake(
+        release = fake(
             id=367113,
             title="Test",
             year=None,
@@ -1241,81 +1252,79 @@ class TestGetCommand:
             master_id=None,
             tracklist=None,
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
-        result = CliRunner().invoke(cli, ["get", "release", "367113"])
-        assert result.exit_code == 0
+        requested: list[int] = []
+        self._set_client(
+            fake_client(releases_get=lambda id_: requested.append(id_) or release)
+        )
+        raw = CliRunner().invoke(cli, ["get", "release", "367113"])
+        ref = CliRunner().invoke(cli, ["get", "release", "@r367113"])
+        assert raw.exit_code == 0
+        assert requested == [367113, 367113]
+        assert raw.stdout == ref.stdout
+        assert raw.stdout.startswith('@r367113 [release] "Test"')
 
     def test_get_releases_role_filter(self) -> None:
         """--role filters releases by credit role (case-insensitive substring)."""
-        artist = _listed(id=3857, name="Nine Inch Nails")
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        artist = listed(id=3857, name="Nine Inch Nails")
+        self._set_client(fake_client(artists_get=lambda _id: artist))
 
-        main_rel = _fake(id=100, type="master", title="TDS", year=1994, role="Main")
-        remix_rel = _fake(
+        main_rel = fake(id=100, type="master", title="TDS", year=1994, role="Main")
+        remix_rel = fake(
             id=200, type="master", title="Remix Album", year=1995, role="Remix"
         )
-        compound_rel = _fake(
+        compound_rel = fake(
             id=300,
             type="master",
             title="Collab",
             year=1996,
             role="Producer, Written-By",
         )
-        self._monkeypatch.setattr(
-            "agent_discogs.pagination.fetch_page",
-            lambda *_a, **_kw: PageResult(
+        self._serve_page(
+            PageResult(
                 items=[main_rel, remix_rel, compound_rel],
                 page=1,
                 total_items=3,
                 total_pages=1,
-            ),
+            )
         )
 
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--role", "producer"]
         )
         assert result.exit_code == 0
-        assert "Collab" in result.output
-        assert "TDS" not in result.output
-        assert "Remix Album" not in result.output
+        assert "Collab" in result.stdout
+        assert "TDS" not in result.stdout
+        assert "Remix Album" not in result.stdout
 
     def test_get_releases_role_no_match(self) -> None:
         """--role with no matching releases shows empty results."""
-        artist = _listed(id=3857, name="Nine Inch Nails")
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        artist = listed(id=3857, name="Nine Inch Nails")
+        self._set_client(fake_client(artists_get=lambda _id: artist))
 
-        rel = _fake(id=100, type="master", title="TDS", year=1994, role="Main")
-        self._monkeypatch.setattr(
-            "agent_discogs.pagination.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[rel], page=1, total_items=1, total_pages=1
-            ),
-        )
+        rel = fake(id=100, type="master", title="TDS", year=1994, role="Main")
+        self._serve_page(PageResult(items=[rel], page=1, total_items=1, total_pages=1))
 
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--role", "DJ Mix"]
         )
         assert result.exit_code == 0
-        assert "TDS" not in result.output
+        assert "TDS" not in result.stdout
 
     def test_get_releases_role_header_marks_the_filtered_bound(self) -> None:
         """--role filters client-side, so the total is an upper bound."""
-        artist = _listed(id=3857, name="Nine Inch Nails")
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        artist = listed(id=3857, name="Nine Inch Nails")
+        self._set_client(fake_client(artists_get=lambda _id: artist))
 
-        rel = _fake(id=100, type="master", title="TDS", year=1994, role="Main")
-        self._monkeypatch.setattr(
-            "agent_discogs.pagination.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[rel], page=1, total_items=50, total_pages=10
-            ),
+        rel = fake(id=100, type="master", title="TDS", year=1994, role="Main")
+        self._serve_page(
+            PageResult(items=[rel], page=1, total_items=50, total_pages=10)
         )
 
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--role", "Main"]
         )
         assert result.exit_code == 0
-        assert "of ≤50 results" in result.output
+        assert "of ≤50 results" in result.stdout
 
     def _set_exploding_client(self) -> None:
         """Any resource access proves validation ran after I/O started."""
@@ -1324,7 +1333,7 @@ class TestGetCommand:
             raise AssertionError("API call made before flag validation")
 
         self._set_client(
-            _fake_client(
+            fake_client(
                 artists_get=_boom,
                 labels_get=_boom,
                 masters_get=_boom,
@@ -1339,8 +1348,7 @@ class TestGetCommand:
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--role", "Main", "--page", "2"]
         )
-        assert result.exit_code == 1
-        assert "--page is not available" in result.output
+        assert text_error(result).startswith("✗ --page is not available")
 
     @pytest.mark.parametrize(
         "argv",
@@ -1354,47 +1362,14 @@ class TestGetCommand:
     def test_get_after_rejected_unless_role_filtered(self, argv: list[str]) -> None:
         self._set_exploding_client()
         result = CliRunner().invoke(cli, argv)
-        assert result.exit_code == 1
-        assert "--after only continues" in result.output
+        assert text_error(result).startswith("✗ --after only continues")
 
     def test_get_invalid_cursor_rejected_before_io(self) -> None:
         self._set_exploding_client()
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--role", "Main", "--after", "nope"]
         )
-        assert result.exit_code == 1
-        assert "Invalid --after cursor" in result.output
-
-    def test_get_versions_with_filters(self) -> None:
-        master = _listed(id=4917, title="TDS")
-        self._set_client(_fake_client(masters_get=lambda _id: master))
-        self._capture_fetch()
-
-        result = CliRunner().invoke(
-            cli,
-            [
-                "get",
-                "versions",
-                "@m4917",
-                "--country",
-                "US",
-                "--format",
-                "Vinyl",
-                "--label",
-                "Nothing",
-            ],
-        )
-        assert result.exit_code == 0
-        assert master.versions.list.calls == [
-            {
-                "country": "US",
-                "format": "Vinyl",
-                "label": "Nothing",
-                "released": None,
-                "page": 1,
-                "per_page": 5,
-            }
-        ]
+        assert text_error(result).startswith("✗ Invalid --after cursor")
 
     def _capture_fetch(self) -> None:
         """Fake `fetch_page` to request its page from the listing it is given,
@@ -1408,9 +1383,9 @@ class TestGetCommand:
         self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _fetch)
 
     def test_get_releases_for_a_label(self) -> None:
-        label = _listed(id=647, name="Nothing Records")
-        self._set_client(_fake_client(labels_get=lambda _id: label))
-        rel = _fake_model(
+        label = listed(id=647, name="Nothing Records")
+        self._set_client(fake_client(labels_get=lambda _id: label))
+        rel = fake_model(
             id=4401,
             title="Pretty Hate Machine",
             artist="Nine Inch Nails",
@@ -1428,15 +1403,15 @@ class TestGetCommand:
         assert result.exit_code == 0
         assert label.releases.list.calls == [{"page": 1, "per_page": 5}]
         assert 'Releases on @l647 "Nothing Records" (page 1, 1 of 2,718 results)' in (
-            result.output
+            result.stdout
         )
         assert (
             '@r4401 "Pretty Hate Machine" by Nine Inch Nails · 0694903742 · CD, Album'
-            in result.output
+            in result.stdout
         )
 
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "releases", "@l647"]).output
+            CliRunner().invoke(cli, ["get", "--json", "releases", "@l647"]).stdout
         )
         assert data["results"] == [
             {
@@ -1449,8 +1424,8 @@ class TestGetCommand:
         ]  # year 0 is "unknown" on Discogs and is dropped
 
     def test_get_releases_sort_reaches_api(self) -> None:
-        artist = _listed(id=3857, name="NIN")
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        artist = listed(id=3857, name="NIN")
+        self._set_client(fake_client(artists_get=lambda _id: artist))
         self._capture_fetch()
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--sort", "year", "--desc"]
@@ -1461,8 +1436,8 @@ class TestGetCommand:
         ]
 
     def test_get_releases_role_with_sort_passes_sort_to_scan(self) -> None:
-        artist = _listed(id=3857, name="NIN")
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        artist = listed(id=3857, name="NIN")
+        self._set_client(fake_client(artists_get=lambda _id: artist))
         self._capture_fetch()
         result = CliRunner().invoke(
             cli, ["get", "releases", "@a3857", "--role", "Main", "--sort", "title"]
@@ -1471,28 +1446,6 @@ class TestGetCommand:
         # The client-side scan reads Discogs' largest pages.
         assert artist.releases.list.calls == [
             {"sort": "title", "sort_order": "asc", "page": 1, "per_page": 100}
-        ]
-
-    def test_get_versions_year_and_sort_reach_api(self) -> None:
-        master = _listed(id=3719, title="TDS")
-        self._set_client(_fake_client(masters_get=lambda _id: master))
-        self._capture_fetch()
-        result = CliRunner().invoke(
-            cli,
-            ["get", "versions", "@m3719", "--year", "1994", "--sort", "released"],
-        )
-        assert result.exit_code == 0
-        assert master.versions.list.calls == [
-            {
-                "country": None,
-                "format": None,
-                "label": None,
-                "released": "1994",
-                "sort": "released",
-                "sort_order": "asc",
-                "page": 1,
-                "per_page": 5,
-            }
         ]
 
     @pytest.mark.parametrize(
@@ -1536,8 +1489,7 @@ class TestGetCommand:
     def test_sort_flag_errors_before_io(self, argv: list[str], message: str) -> None:
         self._set_exploding_client()
         result = CliRunner().invoke(cli, argv)
-        assert result.exit_code == 1
-        assert message in result.output
+        assert message in text_error(result)
 
     @pytest.mark.parametrize(
         ("argv", "message"),
@@ -1638,24 +1590,23 @@ class TestGetCommand:
         )
         args = [*mode, *argv, *(["--json"] if json_output else [])]
         result = CliRunner().invoke(cli, args)
-        assert result.exit_code == 1
-        assert built == []  # rejected before any client exists: no request
         if json_output:
-            error = json.loads(result.output)["error"]
+            error = json_error(result)
             assert error["code"] == "invalid_argument"
             assert message in error["message"]
         else:
-            assert message in result.output
+            assert message in text_error(result)
+        assert built == []  # rejected before any client exists: no request
 
     def test_get_releases_label_year_scans_client_side_with_cursor(self) -> None:
-        label = _listed(id=647, name="Nothing Records")
-        self._set_client(_fake_client(labels_get=lambda _id: label))
+        label = listed(id=647, name="Nothing Records")
+        self._set_client(fake_client(labels_get=lambda _id: label))
 
         def _fetch(listing: Any, *, page: int, per_page: int) -> PageResult:
             listing(page=page, per_page=per_page)
             api_page = page
             rows = [
-                _fake_model(
+                fake_model(
                     id=api_page * 100 + i,
                     title=f"T{api_page}-{i}",
                     artist="A",
@@ -1674,58 +1625,52 @@ class TestGetCommand:
         assert result.exit_code == 0
         assert label.releases.list.calls == [{"page": 1, "per_page": 100}]
         assert 'Releases on @l647 "Nothing Records" (page 1, 2 of ≤60 results)' in (
-            result.output
+            result.stdout
         )
-        assert '@r100 "T1-0" by A 1999 · CD' in result.output
-        assert '@r103 "T1-3" by A 1999 · CD' in result.output
-        assert "2001" not in result.output
+        assert '@r100 "T1-0" by A 1999 · CD' in result.stdout
+        assert '@r103 "T1-3" by A 1999 · CD' in result.stdout
+        assert "2001" not in result.stdout
 
         data = json.loads(
             CliRunner()
             .invoke(cli, ["get", "--json", "releases", "@l647", "--year", "1999"])
-            .output
+            .stdout
         )
         assert data["pagination"]["filtered"] is True
         assert all(r["year"] == 1999 for r in data["results"])
 
 
 class TestShortcutCommands:
-    def test_tracks_shortcut(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        track = _fake(position="1", title="Track One", duration="3:00", type=None)
-        release = _fake(
+    def test_tracks_shortcut(self, use_client: UseClient) -> None:
+        track = fake(position="1", title="Track One", duration="3:00", type=None)
+        release = fake(
             id=123,
             title="Album",
             year=2020,
             artists=None,
             tracklist=[track],
         )
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=lambda _id: release),
-        )
+        use_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["tracks", "@r123"])
         assert result.exit_code == 0
-        assert "Track One" in result.output
+        assert "Track One" in result.stdout
 
-    def test_price_shortcut(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        price = _fake(value=50.00)
-        release = _fake(
+    def test_price_shortcut(self, use_client: UseClient) -> None:
+        price = fake(value=50.00, currency="USD")
+        release = fake(
             id=123,
             title="Album",
             year=2020,
             artists=None,
-            price_suggestions=_fake(get=lambda: _fake(conditions={"Mint (M)": price})),
-            marketplace_stats=_fake(
-                get=lambda: _fake(num_for_sale=10, lowest_price=None)
+            price_suggestions=fake(get=lambda: fake(conditions={"Mint (M)": price})),
+            marketplace_stats=fake(
+                get=lambda: fake(num_for_sale=10, lowest_price=None)
             ),
         )
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=lambda _id: release),
-        )
+        use_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["price", "@r123"])
         assert result.exit_code == 0
-        assert "Price Guide:" in result.output
+        assert "Price Guide:" in result.stdout
 
 
 class TestMainEntry:
@@ -1737,46 +1682,42 @@ class TestMainEntry:
         assert len(calls) == 1
 
     def test_dunder_main(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """__main__.py runs main()."""
+        """`python -m agent_discogs` runs main()."""
         calls: list[object] = []
         monkeypatch.setattr("agent_discogs.main", lambda: calls.append(1))
-
-        dunder_main = importlib.import_module("agent_discogs.__main__")
-        importlib.reload(dunder_main)
-        assert len(calls) >= 1
+        runpy.run_module("agent_discogs", run_name="__main__")
+        assert calls == [1]
 
 
 class TestMultiRef:
     """`get`, `tracks`, and `price` accept several refs: one command, N blocks."""
 
     @pytest.fixture(autouse=True)
-    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_get(self, use_client: UseClient) -> None:
         releases = {
-            847868: _fake_model(
+            847868: fake_model(
                 id=847868,
                 title="The Downward Spiral",
                 year=1994,
                 artists=None,
                 community=None,
-                labels=[
-                    _fake(id=647, name="Nothing Records", catalog_number="92346-2")
-                ],
+                labels=[fake(id=647, name="Nothing Records", catalog_number="92346-2")],
                 formats=None,
                 genres=None,
                 styles=None,
                 num_for_sale=None,
                 lowest_price=None,
                 master_id=None,
-                tracklist=[_fake(position="1", title="A", duration="1:00", type=None)],
+                tracklist=[fake(position="1", title="A", duration="1:00", type=None)],
             ),
-            12453760: _fake_model(
+            12453760: fake_model(
                 id=12453760,
                 title="The Downward Spiral",
                 year=1994,
                 artists=None,
                 community=None,
                 labels=[
-                    _fake(id=647, name="Nothing Records", catalog_number="7 92346-2")
+                    fake(id=647, name="Nothing Records", catalog_number="7 92346-2")
                 ],
                 formats=None,
                 genres=None,
@@ -1784,7 +1725,7 @@ class TestMultiRef:
                 num_for_sale=None,
                 lowest_price=None,
                 master_id=None,
-                tracklist=[_fake(position="1", title="A", duration="1:00", type=None)],
+                tracklist=[fake(position="1", title="A", duration="1:00", type=None)],
             ),
         }
         self.calls: list[int] = []
@@ -1795,10 +1736,7 @@ class TestMultiRef:
                 raise NotFoundError("nope", status_code=404, response_body={})
             return releases[release_id]
 
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=_get),
-        )
+        use_client(fake_client(releases_get=_get))
 
     def test_text_blocks_in_order_separated_by_blank_line(self) -> None:
         result = CliRunner().invoke(
@@ -1806,7 +1744,7 @@ class TestMultiRef:
         )
         assert result.exit_code == 0
         assert self.calls == [847868, 12453760]
-        first, second = result.output.strip().split("\n\n")
+        first, second = result.stdout.strip().split("\n\n")
         assert first.startswith("@r847868 [release]")
         assert "Label: Nothing Records [@l647] (92346-2)" in first
         assert second.startswith("@r12453760 [release]")
@@ -1834,7 +1772,7 @@ class TestMultiRef:
             cli, ["get", "--json", "-c", "release", "@r847868", "@r1"]
         )
         assert result.exit_code == 1
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         assert isinstance(data, list)
         assert data[0]["ref"] == "@r847868"
         assert data[0]["tracks"] == "1 (1:00)"
@@ -1850,41 +1788,38 @@ class TestMultiRef:
 
     def test_single_ref_json_shape_is_unchanged(self) -> None:
         result = CliRunner().invoke(cli, ["get", "--json", "release", "@r847868"])
-        assert isinstance(json.loads(result.output), dict)
+        assert isinstance(json.loads(result.stdout), dict)
 
         result = CliRunner().invoke(cli, ["get", "--json", "release", "@r1"])
         assert result.exit_code == 1
-        assert set(json.loads(result.output)) == {"error"}
+        assert set(json.loads(result.stdout)) == {"error"}
 
-    def test_shortcuts_take_several_refs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_shortcuts_take_several_refs(self, use_client: UseClient) -> None:
         result = CliRunner().invoke(cli, ["tracks", "@r847868", "@r12453760"])
         assert result.exit_code == 0
-        assert result.output.count("Tracklist: ") == 2
+        assert result.stdout.count("Tracklist: ") == 2
 
         def _release(release_id: int) -> object:
             if release_id == 1:
                 raise NotFoundError("nope", status_code=404, response_body={})
-            return _fake(
+            return fake(
                 id=release_id,
                 title=f"R{release_id}",
                 artists=None,
                 year=None,
-                price_suggestions=_fake(
-                    get=lambda: _fake(
+                price_suggestions=fake(
+                    get=lambda: fake(
                         conditions={
-                            "Mint (M)": _fake(value=float(release_id), currency="USD")
+                            "Mint (M)": fake(value=float(release_id), currency="USD")
                         }
                     )
                 ),
-                marketplace_stats=_fake(
-                    get=lambda: _fake(num_for_sale=1, lowest_price=None)
+                marketplace_stats=fake(
+                    get=lambda: fake(num_for_sale=1, lowest_price=None)
                 ),
             )
 
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=_release),
-        )
+        use_client(fake_client(releases_get=_release))
         result = CliRunner().invoke(cli, ["price", "@r10", "@r1", "@r20"])
         assert result.exit_code == 1
         out = result.stdout
@@ -1901,7 +1836,7 @@ class TestMultiRef:
         assert result.stderr == ""
 
         data = json.loads(
-            CliRunner().invoke(cli, ["price", "--json", "@r10", "@r1"]).output
+            CliRunner().invoke(cli, ["price", "--json", "@r10", "@r1"]).stdout
         )
         assert data[0]["suggestions"] == {
             "Mint (M)": {"value": 10.0, "currency": "USD"}
@@ -1911,14 +1846,14 @@ class TestMultiRef:
     def test_ref_cap(self) -> None:
         refs = [f"@r{n}" for n in range(11)]
         result = CliRunner().invoke(cli, ["get", "release", *refs])
-        assert result.exit_code == 1
-        assert "At most 10 refs per command (11 given)" in result.output
+        assert text_error(result) == "✗ At most 10 refs per command (11 given).\n"
         assert self.calls == []
 
     def test_no_ref_is_a_usage_error(self) -> None:
         result = CliRunner().invoke(cli, ["get", "release"])
         assert result.exit_code == 2
-        assert "Missing argument" in result.output
+        assert result.stdout == ""
+        assert result.stderr.endswith("\n\nError: Missing argument 'REF...'.\n")
 
 
 class TestExceptionHandling:
@@ -1931,18 +1866,17 @@ class TestExceptionHandling:
 
         monkeypatch.setattr("agent_discogs.commands.get._dispatch", _raise_abort)
         result = CliRunner().invoke(cli, ["get", "artist", "@a1"])
-        assert result.exit_code != 0
+        # click's own abort, not reported as an unexpected error
+        assert text_error(result) == "Aborted!\n"
 
-    def test_keyboard_interrupt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_keyboard_interrupt(self, use_client: UseClient) -> None:
         def _raise(_id: int) -> None:
             raise KeyboardInterrupt
 
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(artists_get=_raise),
-        )
+        use_client(fake_client(artists_get=_raise))
         result = CliRunner().invoke(cli, ["get", "artist", "@a1"])
         assert result.exit_code == 130
+        assert (result.stdout, result.stderr) == ("", "")  # no traceback
 
     def test_generic_exception_in_invoke(
         self,
@@ -1991,22 +1925,15 @@ class TestExceptionHandling:
 
         monkeypatch.setattr("agent_discogs.commands.get.get_client", _raise)
         result = CliRunner().invoke(cli, ["get", "--json", "artist", "@a1"])
-        assert result.exit_code == 1
-        error = json.loads(result.output)["error"]
-        assert error["code"] == "unexpected"
-        assert "RuntimeError" in error["message"]
-        assert "client setup failed" in error["message"]
+        error = json_error(result)
+        assert error == {
+            "code": "unexpected",
+            "message": "Unexpected error: RuntimeError: client setup failed",
+        }
 
         monkeypatch.setattr("agent_discogs.commands.search.get_client", _raise)
         result = CliRunner().invoke(cli, ["search", "--json", "x"])
-        assert json.loads(result.output)["error"]["code"] == "unexpected"
-
-
-def _fake_model(**kwargs: object) -> SimpleNamespace:
-    """Fake SDK model with model_dump() support (any `mode`)."""
-    ns = SimpleNamespace(**kwargs)
-    ns.model_dump = lambda **_: dict(kwargs)
-    return ns
+        assert json_error(result) == error
 
 
 def _via_json(data: object) -> object:
@@ -2041,33 +1968,36 @@ def _mock_api(
 
 class TestJsonSearch:
     @pytest.fixture(autouse=True)
-    def _patch_search(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_search(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        use_client: UseClient,
+        serve_page: ServePage,
+    ) -> None:
         self._monkeypatch = monkeypatch
-        monkeypatch.setattr("agent_discogs.commands.search.get_client", _fake_client)
+        use_client(fake_client())
+        self._serve_page = serve_page
 
     def test_search_json(self) -> None:
-        item = _fake_model(
-            id=847868,
-            type="release",
-            title="Nine Inch Nails - The Downward Spiral",
-            year="1994",
-            country="US",
-            label=["Nothing Records"],
-            catalog_number="92346-2",
-            format=["CD", "Album"],
-            master_id=3719,
-            community=_fake(have=7544),
-            thumb="https://img.discogs.com/…",
+        item = SearchResult.model_validate(
+            {
+                "id": 847868,
+                "type": "release",
+                "title": "Nine Inch Nails - The Downward Spiral",
+                "year": "1994",
+                "country": "US",
+                "label": ["Nothing Records"],
+                "catno": "92346-2",
+                "format": ["CD", "Album"],
+                "master_id": 3719,
+                "community": {"have": 7544, "want": 900},
+                "thumb": "https://img.discogs.com/…",
+            }
         )
-
-        def mock(*_a: object, **_kw: object) -> PageResult:
-            return PageResult(items=[item], page=1, total_items=1, total_pages=1)
-
-        self._monkeypatch.setattr("agent_discogs.commands.search.fetch_page", mock)
-        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", mock)
+        self._serve_page(PageResult(items=[item], page=1, total_items=1, total_pages=1))
         result = CliRunner().invoke(cli, ["search", "--json", "test"])
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         assert data["pagination"] == {
             "page": 1,
             "total_items": 1,
@@ -2090,22 +2020,20 @@ class TestJsonSearch:
                 "master": "@m3719",
             }
         ]
-        assert "\n" not in result.output.strip()  # compact, one document
+        assert result.stdout.count("\n") == 1  # compact, one document
 
         full = CliRunner().invoke(cli, ["search", "--json", "--full", "test"])
-        assert json.loads(full.output)["results"] == [_via_json(item.model_dump())]
+        assert json.loads(full.stdout)["results"] == [item.model_dump(mode="json")]
 
     def test_full_requires_json(self) -> None:
         result = CliRunner().invoke(cli, ["search", "--full", "test"])
-        assert result.exit_code == 1
-        assert "--full requires --json" in result.output
+        assert text_error(result) == "✗ --full requires --json.\n"
 
     def test_json_error_envelope_for_flag_errors(self) -> None:
         result = CliRunner().invoke(cli, ["search", "--json", "test", "--page", "2"])
-        assert result.exit_code == 1
-        data = json.loads(result.output)
-        assert data["error"]["code"] == "invalid_argument"
-        assert "--page is not available" in data["error"]["message"]
+        error = json_error(result)
+        assert error["code"] == "invalid_argument"
+        assert error["message"].startswith("--page is not available")
 
     def test_json_error_envelope_for_api_errors(self) -> None:
         def _raise(*_a: object, **_kw: object) -> None:
@@ -2119,72 +2047,52 @@ class TestJsonSearch:
 
         self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", _raise)
         result = CliRunner().invoke(cli, ["search", "--json", "test"])
-        assert result.exit_code == 1
-        assert json.loads(result.output) == {
-            "error": {
-                "code": "rate_limited",
-                "message": "Rate limit exceeded.",
-                "hint": "Retry in 12s. 60 req/min with DISCOGS_TOKEN, 25 without.",
-                "retry_after": 12,
-                "status": 429,
-            }
+        assert json_error(result) == {
+            "code": "rate_limited",
+            "message": "Rate limit exceeded.",
+            "hint": "Retry in 12s. 60 req/min with DISCOGS_TOKEN, 25 without.",
+            "retry_after": 12,
+            "status": 429,
         }
 
         text = CliRunner().invoke(cli, ["search", "test"])
-        assert text.exit_code == 1
-        assert "✗ Rate limit exceeded.\n  Retry in 12s." in text.output
+        assert text_error(text) == (
+            "✗ Rate limit exceeded.\n"
+            "  Retry in 12s. 60 req/min with DISCOGS_TOKEN, 25 without.\n"
+        )
 
     def test_search_json_filtered_cursor(self) -> None:
         """Agents consume the cursor from JSON: present when more rows remain,
         absent once a scan has read every page."""
-        item = _fake_model(id=1, type="release", title="X", format=None)
-        bootleg = _fake_model(
+        item = SearchResult(id=1, type="release", title="X")
+        bootleg = SearchResult(
             id=2, type="release", title="B", format=["Unofficial Release"]
         )
 
-        def more(*_a: object, **_kw: object) -> PageResult:
-            return PageResult(items=[item] * 15, page=1, total_items=30, total_pages=2)
-
-        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", more)
-        data = json.loads(CliRunner().invoke(cli, ["search", "--json", "t"]).output)
+        self._serve_page(
+            PageResult(items=[item] * 15, page=1, total_items=30, total_pages=2)
+        )
+        result = CliRunner().invoke(cli, ["search", "--json", "t"])
+        data = json.loads(result.stdout)
         assert data["pagination"]["filtered"] is True
         assert data["pagination"]["capped"] is False
         assert data["pagination"]["next_cursor"] == "2:5"
 
-        def sparse(*_a: object, **_kw: object) -> PageResult:
-            return PageResult(items=[bootleg], page=1, total_items=500, total_pages=34)
-
-        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", sparse)
-        data = json.loads(CliRunner().invoke(cli, ["search", "--json", "t"]).output)
+        self._serve_page(
+            PageResult(items=[bootleg], page=1, total_items=500, total_pages=34)
+        )
+        result = CliRunner().invoke(cli, ["search", "--json", "t"])
+        data = json.loads(result.stdout)
         assert data["results"] == []
         assert data["pagination"]["capped"] is False
         assert data["pagination"]["next_cursor"] is None
 
     def test_search_json_server_side_has_no_cursor_keys(self) -> None:
-        item = _fake_model(id=1, type="artist", title="X")
-
-        def mock(*_a: object, **_kw: object) -> PageResult:
-            return PageResult(items=[item], page=1, total_items=9, total_pages=2)
-
-        self._monkeypatch.setattr("agent_discogs.commands.search.fetch_page", mock)
-        data = json.loads(
-            CliRunner().invoke(cli, ["search", "--json", "artist", "x"]).output
-        )
+        item = SearchResult(id=1, type="artist", title="X")
+        self._serve_page(PageResult(items=[item], page=1, total_items=9, total_pages=2))
+        result = CliRunner().invoke(cli, ["search", "--json", "artist", "x"])
+        data = json.loads(result.stdout)
         assert data["pagination"] == {"page": 1, "total_items": 9, "total_pages": 2}
-
-    def test_search_json_no_text_formatting(self) -> None:
-        """--json should not contain text formatting artifacts."""
-        item = _fake_model(id=1, type="release", title="X", format=None)
-
-        def mock(*_a: object, **_kw: object) -> PageResult:
-            return PageResult(items=[item], page=1, total_items=1, total_pages=1)
-
-        self._monkeypatch.setattr("agent_discogs.commands.search.fetch_page", mock)
-        self._monkeypatch.setattr("agent_discogs.pagination.fetch_page", mock)
-        result = CliRunner().invoke(cli, ["search", "--json", "test"])
-        assert result.exit_code == 0
-        assert "Search:" not in result.output
-        assert "Next page:" not in result.output
 
 
 class TestUnknownSearchTypes:
@@ -2535,35 +2443,35 @@ class TestControlCharacters:
 
 class TestJsonGet:
     @pytest.fixture(autouse=True)
-    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_get(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        use_client: UseClient,
+        serve_page: ServePage,
+    ) -> None:
         self._monkeypatch = monkeypatch
-
-    def _set_client(self, client: SimpleNamespace) -> None:
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client", lambda: client
-        )
+        self._set_client = use_client
+        self._serve_page = serve_page
 
     def test_get_release_json_projection(self) -> None:
-        release = _fake_model(
+        release = fake_model(
             id=847868,
             title="The Downward Spiral",
             year=1994,
             released="1994-03-08",
             country="US",
-            artists=[_fake(id=3857, name="Nine Inch Nails", join=None)],
-            labels=[_fake(id=647, name="Nothing Records", catalog_number="92346-2")],
-            formats=[_fake(name="CD", descriptions=["Album"])],
+            artists=[fake(id=3857, name="Nine Inch Nails", join=None)],
+            labels=[fake(id=647, name="Nothing Records", catalog_number="92346-2")],
+            formats=[fake(name="CD", descriptions=["Album"])],
             genres=["Electronic", "Rock"],
             styles=None,
             master_id=3719,
-            community=_fake(
-                have=7545, want=1342, rating=_fake(average=4.42, count=593)
-            ),
+            community=fake(have=7545, want=1342, rating=fake(average=4.42, count=593)),
             num_for_sale=49,
             lowest_price=2.45,
             notes="  Slipcase. ",
             tracklist=[
-                _fake(
+                fake(
                     position="1",
                     title="Mr. Self Destruct",
                     duration="4:30",
@@ -2572,16 +2480,16 @@ class TestJsonGet:
                 )
             ],
             extra_artists=[
-                _fake(id=20661, name="Flood", role="Producer", tracks="1, 2")
+                fake(id=20661, name="Flood", role="Producer", tracks="1, 2")
             ],
-            identifiers=[_fake(type="Barcode", value="765449234620", description=None)],
+            identifiers=[fake(type="Barcode", value="765449234620", description=None)],
             images=[{"uri": "https://img…"}],
             videos=[{"uri": "https://youtube…"}],
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["get", "--json", "release", "@r847868"])
         assert result.exit_code == 0
-        assert json.loads(result.output) == {
+        assert json.loads(result.stdout) == {
             "ref": "@r847868",
             "title": "The Downward Spiral",
             "artists": [{"ref": "@a3857", "name": "Nine Inch Nails"}],
@@ -2603,7 +2511,7 @@ class TestJsonGet:
         verbose = json.loads(
             CliRunner()
             .invoke(cli, ["get", "--json", "-v", "release", "@r847868"])
-            .output
+            .stdout
         )
         assert verbose["notes"] == "Slipcase."
         assert verbose["credits"] == {
@@ -2614,26 +2522,26 @@ class TestJsonGet:
         full = json.loads(
             CliRunner()
             .invoke(cli, ["get", "--json", "--full", "release", "@r847868"])
-            .output
+            .stdout
         )
         assert full["id"] == 847868
         assert full["images"] == [{"uri": "https://img…"}]
 
     def test_get_artist_json_projection(self) -> None:
-        artist = _fake_model(
+        artist = fake_model(
             id=3857,
             name="Nine Inch Nails",
             profile="Industrial rock project.",
             urls=["https://www.nin.com/", "https://twitter.com/nin"],
             members=[
-                _fake(id=27457, name="Trent Reznor", active=True),
-                _fake(id=4237, name="Chris Vrenna", active=False),
+                fake(id=27457, name="Trent Reznor", active=True),
+                fake(id=4237, name="Chris Vrenna", active=False),
             ],
             images=[{"uri": "x"}],
         )
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        self._set_client(fake_client(artists_get=lambda _id: artist))
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "artist", "@a3857"]).output
+            CliRunner().invoke(cli, ["get", "--json", "artist", "@a3857"]).stdout
         )
         assert data == {
             "ref": "@a3857",
@@ -2659,16 +2567,16 @@ class TestJsonGet:
         )
         assert artist.members is not None
         assert artist.members[2].active is None
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
+        self._set_client(fake_client(artists_get=lambda _id: artist))
 
-        text = CliRunner().invoke(cli, ["get", "artist", "@a3857"]).output
+        text = CliRunner().invoke(cli, ["get", "artist", "@a3857"]).stdout
         assert (
             "Members: Trent Reznor [@a27457], Unknown Status [@a5555]\n"
             "Former: Chris Vrenna [@a4237]\n"
         ) in text
 
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "artist", "@a3857"]).output
+            CliRunner().invoke(cli, ["get", "--json", "artist", "@a3857"]).stdout
         )
         assert data["members"] == [
             {"ref": "@a27457", "name": "Trent Reznor"},
@@ -2677,17 +2585,17 @@ class TestJsonGet:
         assert data["former"] == [{"ref": "@a4237", "name": "Chris Vrenna"}]
 
     def test_get_label_json_projection(self) -> None:
-        label = _fake_model(
+        label = fake_model(
             id=647,
             name="Nothing Records",
             profile=None,
             urls=None,
-            parent_label=_fake(id=2311, name="Interscope Records"),
-            sub_labels=[_fake(id=561260, name="NIN")],
+            parent_label=fake(id=2311, name="Interscope Records"),
+            sub_labels=[fake(id=561260, name="NIN")],
         )
-        self._set_client(_fake_client(labels_get=lambda _id: label))
+        self._set_client(fake_client(labels_get=lambda _id: label))
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "label", "@l647"]).output
+            CliRunner().invoke(cli, ["get", "--json", "label", "@l647"]).stdout
         )
         assert data == {
             "ref": "@l647",
@@ -2697,23 +2605,23 @@ class TestJsonGet:
         }
 
     def test_get_master_json_projection(self) -> None:
-        master = _fake_model(
+        master = fake_model(
             id=3719,
             title="The Downward Spiral",
             year=1994,
-            artists=[_fake(id=3857, name="Nine Inch Nails", join=None)],
+            artists=[fake(id=3857, name="Nine Inch Nails", join=None)],
             genres=["Rock"],
             styles=["Industrial"],
             main_release=847868,
             num_for_sale=200,
             lowest_price=1.5,
             tracklist=[
-                _fake(position="1", title="A", duration="", type=None, artists=None)
+                fake(position="1", title="A", duration="", type=None, artists=None)
             ],
         )
-        self._set_client(_fake_client(masters_get=lambda _id: master))
+        self._set_client(fake_client(masters_get=lambda _id: master))
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "master", "@m3719"]).output
+            CliRunner().invoke(cli, ["get", "--json", "master", "@m3719"]).stdout
         )
         assert data == {
             "ref": "@m3719",
@@ -2735,23 +2643,23 @@ class TestJsonGet:
         release = Release.model_validate({"id": 1, "title": "R", **market})
         master = Master.model_validate({"id": 2, "title": "M", **market})
         self._set_client(
-            _fake_client(
+            fake_client(
                 releases_get=lambda _id: release, masters_get=lambda _id: master
             )
         )
         for noun, ref in (("release", "@r1"), ("master", "@m2")):
-            text = CliRunner().invoke(cli, ["get", noun, ref]).output
+            text = CliRunner().invoke(cli, ["get", noun, ref]).stdout
             assert "Market: 9 for sale from 9.36" in text
             assert "$" not in text
             data = json.loads(
-                CliRunner().invoke(cli, ["get", "--json", noun, ref]).output
+                CliRunner().invoke(cli, ["get", "--json", noun, ref]).stdout
             )
             assert data["market"] == {"for_sale": 9, "lowest": 9.36}
 
     def test_get_releases_json_projection(self) -> None:
-        artist = _listed(id=3857, name="NIN")
-        self._set_client(_fake_client(artists_get=lambda _id: artist))
-        rel = _fake_model(
+        artist = listed(id=3857, name="NIN")
+        self._set_client(fake_client(artists_get=lambda _id: artist))
+        rel = fake_model(
             id=3373,
             type="master",
             title="Down In It",
@@ -2759,14 +2667,9 @@ class TestJsonGet:
             role="Main",
             thumb="x",
         )
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[rel], page=1, total_items=1, total_pages=1
-            ),
-        )
+        self._serve_page(PageResult(items=[rel], page=1, total_items=1, total_pages=1))
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "releases", "@a3857"]).output
+            CliRunner().invoke(cli, ["get", "--json", "releases", "@a3857"]).stdout
         )
         assert data["pagination"]["page"] == 1
         assert data["results"] == [
@@ -2780,9 +2683,9 @@ class TestJsonGet:
         ]
 
     def test_get_versions_json_projection(self) -> None:
-        master = _listed(id=3719, title="TDS")
-        self._set_client(_fake_client(masters_get=lambda _id: master))
-        ver = _fake_model(
+        master = listed(id=3719, title="TDS")
+        self._set_client(fake_client(masters_get=lambda _id: master))
+        ver = fake_model(
             id=847868,
             title="The Downward Spiral",
             released="1994",
@@ -2790,17 +2693,12 @@ class TestJsonGet:
             label="Nothing Records",
             catalog_number="92346-2",
             format="CD, Album",
-            stats=_fake(community=_fake(in_collection=7544, in_wantlist=1)),
+            stats=fake(community=fake(in_collection=7544, in_wantlist=1)),
             thumb="x",
         )
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.fetch_page",
-            lambda *_a, **_kw: PageResult(
-                items=[ver], page=1, total_items=1, total_pages=1
-            ),
-        )
+        self._serve_page(PageResult(items=[ver], page=1, total_items=1, total_pages=1))
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "versions", "@m3719"]).output
+            CliRunner().invoke(cli, ["get", "--json", "versions", "@m3719"]).stdout
         )
         assert data["results"] == [
             {
@@ -2816,17 +2714,17 @@ class TestJsonGet:
         ]
 
     def test_get_tracklist_json_projection_and_full(self) -> None:
-        track = _fake_model(
+        track = fake_model(
             position="A1",
             title="Track One",
             duration="4:00",
             type="track",
-            artists=[_fake(id=1, name="X", join=None)],
+            artists=[fake(id=1, name="X", join=None)],
         )
-        release = _fake(id=123, title="R", tracklist=[track])
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        release = fake(id=123, title="R", tracklist=[track])
+        self._set_client(fake_client(releases_get=lambda _id: release))
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "tracklist", "@r123"]).output
+            CliRunner().invoke(cli, ["get", "--json", "tracklist", "@r123"]).stdout
         )
         assert data == {
             "ref": "@r123",
@@ -2843,47 +2741,47 @@ class TestJsonGet:
         full = json.loads(
             CliRunner()
             .invoke(cli, ["get", "--json", "--full", "tracklist", "@r123"])
-            .output
+            .stdout
         )
         assert full == {"tracklist": [_via_json(track.model_dump())]}
 
     def test_get_credits_and_identifiers_json(self) -> None:
-        credit = _fake_model(id=20661, name="Flood", role="Producer", tracks="")
-        ident = _fake_model(type="Barcode", value="765449234620", description=None)
-        release = _fake(
+        credit = fake_model(id=20661, name="Flood", role="Producer", tracks="")
+        ident = fake_model(type="Barcode", value="765449234620", description=None)
+        release = fake(
             id=123, extra_artists=[credit], identifiers=[ident], tracklist=None
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
 
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "credits", "@r123"]).output
+            CliRunner().invoke(cli, ["get", "--json", "credits", "@r123"]).stdout
         )
         assert data == {
             "ref": "@r123",
             "credits": {"Producer": [{"ref": "@a20661", "name": "Flood"}]},
         }
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "ids", "@r123"]).output
+            CliRunner().invoke(cli, ["get", "--json", "ids", "@r123"]).stdout
         )
         assert data == {
             "ref": "@r123",
             "identifiers": [{"type": "Barcode", "value": "765449234620"}],
         }
         full = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "--full", "ids", "@r123"]).output
+            CliRunner().invoke(cli, ["get", "--json", "--full", "ids", "@r123"]).stdout
         )
         assert full == {"identifiers": [ident.model_dump()]}
         full = json.loads(
             CliRunner()
             .invoke(cli, ["get", "--json", "--full", "credits", "@r123"])
-            .output
+            .stdout
         )
         assert full == {"credits": [credit.model_dump()], "track_credits": []}
 
-        empty = _fake(id=123, extra_artists=None, identifiers=None)
-        self._set_client(_fake_client(releases_get=lambda _id: empty))
+        empty = fake(id=123, extra_artists=None, identifiers=None)
+        self._set_client(fake_client(releases_get=lambda _id: empty))
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "credits", "@r123"]).output
+            CliRunner().invoke(cli, ["get", "--json", "credits", "@r123"]).stdout
         )
         assert data == {"ref": "@r123"}  # empty facets are omitted, per contract
 
@@ -2897,15 +2795,15 @@ class TestJsonGet:
         marketplace_stats = MarketplaceReleaseStats.model_validate(
             {"num_for_sale": 50, "lowest_price": {"currency": "GBP", "value": 5.0}}
         )
-        release = _fake(
+        release = fake(
             id=123,
             title="R",
-            price_suggestions=_fake(get=lambda: price_suggestions),
-            marketplace_stats=_fake(get=lambda: marketplace_stats),
+            price_suggestions=fake(get=lambda: price_suggestions),
+            marketplace_stats=fake(get=lambda: marketplace_stats),
         )
-        self._set_client(_fake_client(releases_get=lambda _id: release))
+        self._set_client(fake_client(releases_get=lambda _id: release))
         data = json.loads(
-            CliRunner().invoke(cli, ["get", "--json", "price", "@r123"]).output
+            CliRunner().invoke(cli, ["get", "--json", "price", "@r123"]).stdout
         )
         assert data == {
             "ref": "@r123",
@@ -2919,7 +2817,7 @@ class TestJsonGet:
         full = json.loads(
             CliRunner()
             .invoke(cli, ["get", "--json", "--full", "price", "@r123"])
-            .output
+            .stdout
         )
         assert full == _via_json(
             {
@@ -2932,10 +2830,10 @@ class TestJsonGet:
         def _missing(_id: int) -> None:
             raise NotFoundError("nope", status_code=404, response_body={})
 
-        self._set_client(_fake_client(masters_get=_missing))
+        self._set_client(fake_client(masters_get=_missing))
         result = CliRunner().invoke(cli, ["get", "--json", "master", "@m4917"])
         assert result.exit_code == 1
-        assert json.loads(result.output) == {
+        assert json.loads(result.stdout) == {
             "error": {
                 "code": "not_found",
                 "message": "Master @m4917 not found.",
@@ -2945,57 +2843,47 @@ class TestJsonGet:
         }
 
         result = CliRunner().invoke(cli, ["get", "--json", "credits", "@a3857"])
-        assert json.loads(result.output)["error"]["code"] == "invalid_argument"
+        assert json_error(result)["code"] == "invalid_argument"
 
         result = CliRunner().invoke(
             cli, ["get", "--json", "versions", "@m3719", "--after", "2:0"]
         )
-        assert json.loads(result.output)["error"]["code"] == "invalid_argument"
+        assert json_error(result)["code"] == "invalid_argument"
 
     def test_get_full_requires_json(self) -> None:
-        self._set_client(_fake_client())
+        self._set_client(fake_client())
         result = CliRunner().invoke(cli, ["get", "--full", "master", "@m3719"])
-        assert result.exit_code == 1
-        assert "--full requires --json" in result.output
+        assert text_error(result) == "✗ --full requires --json.\n"
 
 
 class TestJsonShortcuts:
-    def test_tracks_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        track = _fake_model(position="1", title="Song", duration="3:00")
-        release = _fake(id=123, tracklist=[track])
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=lambda _id: release),
-        )
+    def test_tracks_json(self, use_client: UseClient) -> None:
+        track = fake_model(position="1", title="Song", duration="3:00")
+        release = fake(id=123, tracklist=[track])
+        use_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["tracks", "--json", "@r123"])
         assert result.exit_code == 0
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         assert isinstance(data["tracklist"], list)
         assert data["tracklist"][0]["title"] == "Song"
 
-    def test_price_json(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # A suggestion without a value is omitted whole, as in the text view,
-        # not left behind as a bare {"currency": ...}.
-        price_suggestions = _fake_model(
-            conditions={
-                "Mint (M)": _fake(value=50.0, currency="USD"),
-                "Good (G)": _fake(value=None, currency="USD"),
-            }
+    def test_price_json(self, use_client: UseClient) -> None:
+        price_suggestions = PriceSuggestions.model_validate(
+            {"Mint (M)": {"value": 50.0, "currency": "USD"}}
         )
-        marketplace_stats = _fake_model(num_for_sale=10, lowest_price=None)
-        release = _fake(
+        marketplace_stats = MarketplaceReleaseStats.model_validate(
+            {"num_for_sale": 10, "lowest_price": None}
+        )
+        release = fake(
             id=123,
             title="R",
-            price_suggestions=_fake(get=lambda: price_suggestions),
-            marketplace_stats=_fake(get=lambda: marketplace_stats),
+            price_suggestions=fake(get=lambda: price_suggestions),
+            marketplace_stats=fake(get=lambda: marketplace_stats),
         )
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=lambda _id: release),
-        )
+        use_client(fake_client(releases_get=lambda _id: release))
         result = CliRunner().invoke(cli, ["price", "--json", "@r123"])
         assert result.exit_code == 0
-        assert json.loads(result.output) == {
+        assert json.loads(result.stdout) == {
             "ref": "@r123",
             "title": "R",
             "suggestions": {"Mint (M)": {"value": 50.0, "currency": "USD"}},
@@ -3003,8 +2891,7 @@ class TestJsonShortcuts:
         }
 
         result = CliRunner().invoke(cli, ["price", "--full", "@r123"])
-        assert result.exit_code == 1
-        assert "--full requires --json" in result.output
+        assert text_error(result) == "✗ --full requires --json.\n"
 
 
 class TestUnknownDates:
@@ -3012,16 +2899,17 @@ class TestUnknownDates:
     with `-00`; neither may reach an agent."""
 
     @pytest.fixture(autouse=True)
-    def _patch_clients(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_clients(
+        self, monkeypatch: pytest.MonkeyPatch, use_client: UseClient
+    ) -> None:
         release = Release.model_validate(
             {"id": 1, "title": "R", "year": 0, "released": "1994-05-00"}
         )
         master = Master.model_validate({"id": 3, "title": "M", "year": 0})
-        client = _fake_client(
+        client = fake_client(
             releases_get=lambda _id: release, masters_get=lambda _id: master
         )
-        monkeypatch.setattr("agent_discogs.commands.get.get_client", lambda: client)
-        monkeypatch.setattr("agent_discogs.commands.search.get_client", lambda: client)
+        use_client(client)
         item = SearchResult.model_validate(
             {"id": 10, "type": "release", "title": "R", "year": "0"}
         )
@@ -3034,15 +2922,15 @@ class TestUnknownDates:
 
     def test_year_zero_is_omitted_from_text(self) -> None:
         release = CliRunner().invoke(cli, ["get", "release", "@r1"])
-        assert release.output.splitlines()[0] == '@r1 [release] "R" by Unknown Artist'
+        assert release.stdout.splitlines()[0] == '@r1 [release] "R" by Unknown Artist'
         master = CliRunner().invoke(cli, ["get", "master", "@m3"])
-        assert master.output.splitlines()[0] == '@m3 [master] "M" by Unknown Artist'
+        assert master.stdout.splitlines()[0] == '@m3 [master] "M" by Unknown Artist'
         search = CliRunner().invoke(cli, ["search", "release", "R"])
-        assert search.output.splitlines()[2] == '@r10 "R"'
+        assert search.stdout.splitlines()[2] == '@r10 "R"'
 
     def test_unknown_parts_are_omitted_from_json(self) -> None:
         def run(*args: str) -> object:
-            return json.loads(CliRunner().invoke(cli, list(args)).output)
+            return json.loads(CliRunner().invoke(cli, list(args)).stdout)
 
         assert run("get", "--json", "release", "@r1") == {
             "ref": "@r1",
@@ -3068,7 +2956,7 @@ class TestFormatEntries:
     entries stay separate: a double LP plus a CD is not one flat list."""
 
     @pytest.fixture(autouse=True)
-    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_get(self, use_client: UseClient) -> None:
         release = Release.model_validate(
             {
                 "id": 1,
@@ -3086,10 +2974,7 @@ class TestFormatEntries:
                 ],
             }
         )
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=lambda _id: release),
-        )
+        use_client(fake_client(releases_get=lambda _id: release))
 
     expected = (
         "2×Vinyl (LP, Album, 180g, Gatefold); "  # noqa: RUF001
@@ -3097,19 +2982,19 @@ class TestFormatEntries:
     )
 
     def test_text(self) -> None:
-        output = CliRunner().invoke(cli, ["get", "release", "@r1"]).output
+        output = CliRunner().invoke(cli, ["get", "release", "@r1"]).stdout
         assert f"Format: {self.expected}" in output.splitlines()
 
     def test_json(self) -> None:
         result = CliRunner().invoke(cli, ["get", "--json", "release", "@r1"])
-        assert json.loads(result.output)["formats"] == self.expected
+        assert json.loads(result.stdout)["formats"] == self.expected
 
 
 class TestDateAdded:
     """`date_added` is when the release joined Discogs; shown in its own offset."""
 
     @pytest.fixture(autouse=True)
-    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_get(self, use_client: UseClient) -> None:
         base = {"title": "R", "country": "US", "released": "1994-03-08"}
         releases = {
             # 23:30 at -07:00 is already 2026-10-04 in UTC.
@@ -3118,13 +3003,10 @@ class TestDateAdded:
             ),
             2: Release.model_validate({**base, "id": 2}),
         }
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=releases.__getitem__),
-        )
+        use_client(fake_client(releases_get=releases.__getitem__))
 
     def test_text_shows_the_date_beside_the_release_date(self) -> None:
-        output = CliRunner().invoke(cli, ["get", "release", "@r1"]).output
+        output = CliRunner().invoke(cli, ["get", "release", "@r1"]).stdout
         assert (
             "Country: US · Released: 1994-03-08 · Added: 2026-10-03"
             in output.splitlines()
@@ -3132,13 +3014,13 @@ class TestDateAdded:
 
     def test_json_carries_rfc3339_timestamp(self) -> None:
         result = CliRunner().invoke(cli, ["get", "--json", "release", "@r1"])
-        assert json.loads(result.output)["added"] == "2026-10-03T23:30:00-07:00"
+        assert json.loads(result.stdout)["added"] == "2026-10-03T23:30:00-07:00"
 
     def test_missing_date_is_omitted(self) -> None:
-        output = CliRunner().invoke(cli, ["get", "release", "@r2"]).output
+        output = CliRunner().invoke(cli, ["get", "release", "@r2"]).stdout
         assert "Country: US · Released: 1994-03-08" in output.splitlines()
         result = CliRunner().invoke(cli, ["get", "--json", "release", "@r2"])
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
         assert data["released"] == "1994-03-08"
         assert "added" not in data
 
@@ -3159,21 +3041,14 @@ def _network_event(remaining: int = 59, limit: int = 60) -> RequestEvent:
 def _tracks_fake(recorder: Callable[[], None]) -> SimpleNamespace:
     """A client serving `tracks @r123` whose lookup also runs `recorder`, the
     way the real client's `on_request` hook fires inside the SDK call."""
-    track = _fake_model(position="1", title="Song", duration="3:00", type=None)
-    release = _fake(id=123, title="Album", year=2020, artists=None, tracklist=[track])
+    track = fake_model(position="1", title="Song", duration="3:00", type=None)
+    release = fake(id=123, title="Album", year=2020, artists=None, tracklist=[track])
 
     def _get(_id: int) -> object:
         recorder()
         return release
 
-    return _fake_client(releases_get=_get)
-
-
-def _tracks_client(
-    recorder: Callable[[], None], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    client = _tracks_fake(recorder)
-    monkeypatch.setattr("agent_discogs.commands.get.get_client", lambda: client)
+    return fake_client(releases_get=_get)
 
 
 def _no_home() -> Path:
@@ -3184,9 +3059,11 @@ def _no_home() -> Path:
 class TestBudgetFooter:
     """The footer is stderr-only, printed after the command, in every mode."""
 
-    def test_footer_on_stderr_not_stdout(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_footer_on_stderr_not_stdout(
+        self, monkeypatch: pytest.MonkeyPatch, use_client: UseClient
+    ) -> None:
         monkeypatch.setenv("DISCOGS_TOKEN", "t")
-        _tracks_client(lambda: trace.record(_network_event(43)), monkeypatch)
+        use_client(_tracks_fake(lambda: trace.record(_network_event(43))))
         footer = "api: 1 request · 43/60 left this minute\n"
 
         result = CliRunner().invoke(cli, ["tracks", "@r123"])
@@ -3201,14 +3078,14 @@ class TestBudgetFooter:
         assert result.stderr == footer
 
     def test_footer_survives_a_failing_ref(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, use_client: UseClient
     ) -> None:
         def _boom() -> None:
             trace.record(_network_event(5))
             raise RuntimeError("after the request")
 
         monkeypatch.setenv("DISCOGS_TOKEN", "t")
-        _tracks_client(_boom, monkeypatch)
+        use_client(_tracks_fake(_boom))
         result = CliRunner().invoke(cli, ["tracks", "--json", "@r123"])
         assert result.exit_code == 1
         assert json.loads(result.stdout)["error"]["code"] == "unexpected"
@@ -3217,20 +3094,19 @@ class TestBudgetFooter:
             " ⚠ pause ~60s before uncached calls\n"
         )
 
-    def test_unauthenticated_wording(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("DISCOGS_TOKEN", raising=False)
-        _tracks_client(lambda: trace.record(_network_event(3, 25)), monkeypatch)
+    def test_unauthenticated_wording(self, use_client: UseClient) -> None:
+        use_client(_tracks_fake(lambda: trace.record(_network_event(3, 25))))
         result = CliRunner().invoke(cli, ["tracks", "@r123"])
         assert result.stderr.endswith(
             "3/25 left this minute ⚠ set DISCOGS_TOKEN for 60/min, or pause ~60s\n"
         )
 
     def test_consumer_credentials_are_not_told_to_set_a_token(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, use_client: UseClient
     ) -> None:
         monkeypatch.setenv("DISCOGS_CONSUMER_KEY", "k")
         monkeypatch.setenv("DISCOGS_CONSUMER_SECRET", "s")
-        _tracks_client(lambda: trace.record(_network_event(3, 60)), monkeypatch)
+        use_client(_tracks_fake(lambda: trace.record(_network_event(3, 60))))
         result = CliRunner().invoke(cli, ["tracks", "@r123"])
         assert result.stderr == (
             "api: 1 request · 3/60 left this minute"
@@ -3300,8 +3176,8 @@ class TestCacheFlags:
     def test_cache_miss_is_a_per_ref_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        price = _fake_model(conditions={"Mint (M)": _fake(value=50.0)})
-        stats = _fake_model(num_for_sale=10, lowest_price=None)
+        price = fake_model(conditions={"Mint (M)": fake(value=50.0, currency="USD")})
+        stats = fake_model(num_for_sale=10, lowest_price=None)
 
         def _get(release_id: int) -> object:
             if release_id == 1:
@@ -3318,11 +3194,11 @@ class TestCacheFlags:
                     ratelimit=None,
                 )
             )
-            return _fake(
+            return fake(
                 id=release_id,
                 title=f"R{release_id}",
-                price_suggestions=_fake(get=lambda: price),
-                marketplace_stats=_fake(get=lambda: stats),
+                price_suggestions=fake(get=lambda: price),
+                marketplace_stats=fake(get=lambda: stats),
             )
 
         monkeypatch.setattr(self.scoped.releases, "get", _get)
@@ -3390,12 +3266,9 @@ class TestIndexTracks:
     """Index tracks (suites, medleys) carry their parts in `sub_tracks`."""
 
     @pytest.fixture(autouse=True)
-    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _patch_get(self, use_client: UseClient) -> None:
         release = _suite_release()
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=lambda _id: release),
-        )
+        use_client(fake_client(releases_get=lambda _id: release))
 
     def test_text_tracklist_indents_sub_tracks(self) -> None:
         result = CliRunner().invoke(cli, ["get", "tracklist", "@r1"])
@@ -3485,14 +3358,11 @@ class TestTrackCredits:
     """Credits on tracks and sub-tracks appear wherever release credits do."""
 
     @pytest.fixture(autouse=True)
-    def _patch_get(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._monkeypatch = monkeypatch
+    def _patch_get(self, use_client: UseClient) -> None:
+        self._use_client = use_client
 
     def _serve(self, release: object) -> None:
-        self._monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=lambda _id: release),
-        )
+        self._use_client(fake_client(releases_get=lambda _id: release))
 
     def _invoke(self, *args: str) -> str:
         result = CliRunner().invoke(cli, list(args))
@@ -3583,10 +3453,8 @@ class TestTrackCredits:
 
 
 class TestDebug:
-    def test_panel_on_stderr_stdout_identical(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _tracks_client(lambda: trace.record(_network_event()), monkeypatch)
+    def test_panel_on_stderr_stdout_identical(self, use_client: UseClient) -> None:
+        use_client(_tracks_fake(lambda: trace.record(_network_event())))
         plain = CliRunner().invoke(cli, ["tracks", "@r123"])
         debug = CliRunner().invoke(cli, ["--debug", "tracks", "@r123"])
         assert debug.exit_code == 0
@@ -3604,8 +3472,8 @@ class TestDebug:
         )
         assert not isinstance(sys.stdout, trace._CountingWriter)  # proxy removed
 
-    def test_env_var_enables_debug(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _tracks_client(lambda: None, monkeypatch)
+    def test_env_var_enables_debug(self, use_client: UseClient) -> None:
+        use_client(_tracks_fake(lambda: None))
         result = CliRunner(env={"AGENT_DISCOGS_DEBUG": "1"}).invoke(
             cli, ["tracks", "@r123"]
         )
@@ -3613,11 +3481,9 @@ class TestDebug:
         assert "── debug ──" in result.stderr
         assert "── debug ──" not in result.stdout
 
-    def test_sdk_log_passthrough_only_with_debug(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_sdk_log_passthrough_only_with_debug(self, use_client: UseClient) -> None:
         sdk_logger = logging.getLogger("discogs_sdk")
-        _tracks_client(lambda: sdk_logger.debug("Cache hit: GET /x"), monkeypatch)
+        use_client(_tracks_fake(lambda: sdk_logger.debug("Cache hit: GET /x")))
 
         result = CliRunner().invoke(cli, ["--debug", "tracks", "@r123"])
         assert "[sdk] Cache hit: GET /x\n" in result.stderr
@@ -3670,15 +3536,12 @@ class TestDebug:
         assert "cache     unknown (no home directory)  ttl 1h" in result.stderr
 
     def test_failed_command_keeps_its_exit_code(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, use_client: UseClient
     ) -> None:
         def _missing(_id: int) -> object:
             raise NotFoundError("nope", status_code=404, response_body={})
 
-        monkeypatch.setattr(
-            "agent_discogs.commands.get.get_client",
-            lambda: _fake_client(releases_get=_missing),
-        )
+        use_client(fake_client(releases_get=_missing))
         monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
         monkeypatch.setattr(Path, "home", _no_home)
         result = CliRunner().invoke(cli, ["--debug", "tracks", "@r1"])
@@ -3720,7 +3583,7 @@ class TestRequestCost:
     """Network sends per command, counted at the transport (the cost tables)."""
 
     @pytest.fixture(autouse=True)
-    def _client(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _client(self, use_client: UseClient) -> None:
         self.sent: list[str] = []
 
         def _handle(request: httpx2.Request) -> httpx2.Response:
@@ -3750,8 +3613,7 @@ class TestRequestCost:
             on_request=trace.record,
             max_retries=0,
         )
-        monkeypatch.setattr("agent_discogs.commands.get.get_client", lambda: client)
-        monkeypatch.setattr("agent_discogs.commands.search.get_client", lambda: client)
+        use_client(client)
 
     @pytest.mark.parametrize(
         ("argv", "sends"),
@@ -4527,40 +4389,20 @@ class TestRealSdk:
     upgrade that changes the events it emits or the models it returns."""
 
     @pytest.fixture(autouse=True)
-    def _real_client(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> Iterator[None]:
-        self.sends: list[str] = []
-        self.respond: Callable[[httpx2.Request], httpx2.Response] = lambda _request: (
-            httpx2.Response(
-                200,
-                json=_RELEASE_WITH_HEADINGS,
-                headers={
-                    "X-Discogs-Ratelimit": "60",
-                    "X-Discogs-Ratelimit-Used": "1",
-                    "X-Discogs-Ratelimit-Remaining": "59",
-                },
-            )
-        )
-
-        def _transport(request: httpx2.Request) -> httpx2.Response:
-            self.sends.append(request.url.path)
-            return self.respond(request)
-
-        http = httpx2.Client(transport=httpx2.MockTransport(_transport))
-        monkeypatch.setenv("DISCOGS_TOKEN", "test-token")
-        self.sleeps: list[float] = []
-        monkeypatch.setattr("time.sleep", self.sleeps.append)
-        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-        self.cache_home = tmp_path
-        monkeypatch.setattr(client_module, "_client", None)
-        monkeypatch.setattr(
-            client_module, "Discogs", functools.partial(Discogs, http_client=http)
+    def _real_client(self, real_sdk: RealSdk) -> Iterator[None]:
+        self.sdk = real_sdk
+        self.sends, self.sleeps = real_sdk.sends, real_sdk.sleeps
+        self.cache_home = real_sdk.cache_home
+        real_sdk.respond = lambda _request: httpx2.Response(
+            200,
+            json=_RELEASE_WITH_HEADINGS,
+            headers={
+                "X-Discogs-Ratelimit": "60",
+                "X-Discogs-Ratelimit-Used": "1",
+                "X-Discogs-Ratelimit-Remaining": "59",
+            },
         )
         yield
-        if client_module._client is not None:
-            client_module._client.close()
-        http.close()
         assert self.sleeps == []  # the CLI never sleeps on the caller's behalf
 
     def test_repeat_lookup_is_served_from_cache(self) -> None:
@@ -4603,7 +4445,7 @@ class TestRealSdk:
 
     def _respond_in_turn(self, *responses: httpx2.Response) -> None:
         replies = iter(responses)
-        self.respond = lambda _request: next(replies)
+        self.sdk.respond = lambda _request: next(replies)
 
     def test_server_error_is_sent_once(self) -> None:
         self._respond_in_turn(
@@ -4692,7 +4534,7 @@ class TestRealSdk:
         self, mode: str, message: str, hint: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._use_credentials(mode, monkeypatch)
-        self.respond = lambda _request: httpx2.Response(
+        self.sdk.respond = lambda _request: httpx2.Response(
             401, json={"message": "You must authenticate to access this resource."}
         )
         self._assert_error(
@@ -4743,7 +4585,7 @@ class TestRealSdk:
         self, mode: str, limit: int, hint: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._use_credentials(mode, monkeypatch)
-        self.respond = lambda _request: httpx2.Response(
+        self.sdk.respond = lambda _request: httpx2.Response(
             429,
             json={"message": "You are making requests too quickly."},
             headers={
@@ -4786,7 +4628,7 @@ class TestRealSdk:
         self, mode: str, hint: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._use_credentials(mode, monkeypatch)
-        self.respond = lambda _request: httpx2.Response(
+        self.sdk.respond = lambda _request: httpx2.Response(
             429, json={}, headers={"Retry-After": "30"}
         )
         self._assert_error(
@@ -4804,7 +4646,7 @@ class TestRealSdk:
         def _refuse(request: httpx2.Request) -> httpx2.Response:
             raise httpx2.ConnectError("Connection refused", request=request)
 
-        self.respond = _refuse
+        self.sdk.respond = _refuse
         result = CliRunner().invoke(cli, ["tracks", "@r1"])
         assert result.exit_code == 1
         assert result.stderr.splitlines() == [
@@ -4817,7 +4659,7 @@ class TestRealSdk:
 
     def _full_release(self, **fields: object) -> dict[str, Any]:
         release = {**_RELEASE_WITH_HEADINGS, **fields}
-        self.respond = lambda _request: httpx2.Response(200, json=release)
+        self.sdk.respond = lambda _request: httpx2.Response(200, json=release)
         result = CliRunner().invoke(cli, ["get", "release", "--json", "--full", "@r1"])
         assert result.exit_code == 0, result.output
         return json.loads(result.stdout)
@@ -4863,7 +4705,7 @@ class TestRealSdk:
             assert not [t for t in tracks if "type_" in t]
 
     def test_full_json_search_rows_are_normalized(self) -> None:
-        self.respond = lambda _request: httpx2.Response(
+        self.sdk.respond = lambda _request: httpx2.Response(
             200,
             json={
                 "pagination": {"page": 1, "pages": 1, "items": 1},
@@ -4929,7 +4771,9 @@ class TestRealSdk:
         bare = {k: v for k, v in body.items() if k != "uri"}
         outputs = {}
         for name, sent in (("linked", body), ("bare", bare)):
-            self.respond = lambda _request, sent=sent: httpx2.Response(200, json=sent)
+            self.sdk.respond = lambda _request, sent=sent: httpx2.Response(
+                200, json=sent
+            )
             text = CliRunner().invoke(cli, ["--fresh", *argv])
             doc = CliRunner().invoke(cli, ["--fresh", *argv[:2], "--json", argv[2]])
             assert text.exit_code == doc.exit_code == 0, text.output + doc.output
@@ -4976,7 +4820,7 @@ class TestRealSdk:
             ("bare", [{k: v for k, v in r.items() if k != "uri"} for r in rows]),
         ):
             listing = {"pagination": pagination, key: sent}
-            self.respond = lambda request, listing=listing: httpx2.Response(
+            self.sdk.respond = lambda request, listing=listing: httpx2.Response(
                 200, json=listing if request.url.path == path else entity
             )
             text = CliRunner().invoke(cli, ["--fresh", *argv])
@@ -4993,7 +4837,7 @@ class TestRealSdk:
         assert "discogs.com" not in outputs["linked"][0]
 
     def test_json_search_links_are_absolute(self) -> None:
-        self.respond = lambda _request: httpx2.Response(
+        self.sdk.respond = lambda _request: httpx2.Response(
             200,
             json={
                 "pagination": {"page": 1, "pages": 1, "items": 3},
@@ -5071,7 +4915,7 @@ class TestRealSdk:
         fails with `bad_response` instead of `invalid_argument` or an empty page.
         A text catalogue's label header, read first, gets a valid answer."""
         label = httpx2.Response(200, json={"id": 1, "name": "Label"})
-        self.respond = lambda request: (
+        self.sdk.respond = lambda request: (
             label
             if request.url.path == "/labels/1"
             else httpx2.Response(200, text="<html>Bad gateway</html>")
@@ -5107,7 +4951,7 @@ class TestRealSdk:
                 return httpx2.Response(200, json={"num_for_sale": 1})
             return httpx2.Response(200, json=_RELEASE_WITH_HEADINGS)
 
-        self.respond = _respond
+        self.sdk.respond = _respond
         bad = CliRunner().invoke(cli, ["price", "--json", "@r1"])
         assert bad.exit_code == 1, bad.output
         error = json.loads(bad.stdout)["error"]
@@ -5126,7 +4970,9 @@ class TestRealSdk:
     def test_page_without_pagination_is_one_page(self) -> None:
         """An absent `pagination` key is intentional: one page of what was sent."""
         row = {"id": 1, "type": "release", "title": "Sides"}
-        self.respond = lambda _request: httpx2.Response(200, json={"results": [row]})
+        self.sdk.respond = lambda _request: httpx2.Response(
+            200, json={"results": [row]}
+        )
         result = CliRunner().invoke(
             cli, ["search", "--json", "--release-type", "all", "x"]
         )
@@ -5140,12 +4986,12 @@ class TestRealSdk:
         """Cache a /releases/1 body the Release model rejects, as an older SDK
         or another process sharing the cache file could have stored it. The
         SDK never stores such a body itself, so this goes around its parsing."""
-        self.respond = lambda _request: httpx2.Response(
+        self.sdk.respond = lambda _request: httpx2.Response(
             200, json={"id": "one", "title": "T"}
         )
         client = client_module.get_client()
         client._send("GET", client._build_url("/releases/1"), parse=lambda d: d)
-        self.respond = lambda _request: httpx2.Response(
+        self.sdk.respond = lambda _request: httpx2.Response(
             200, json=_RELEASE_WITH_HEADINGS
         )
         self.sends.clear()
