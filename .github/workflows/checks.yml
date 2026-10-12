@@ -3,22 +3,25 @@ name: Checks
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: Quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: "3.14"
           # Jobs on the same Python otherwise compute the same cache key and
           # race to reserve it, which logs a warning in whichever loses.
           cache-suffix: ${{ github.job }}
       - name: Install dependencies
-        run: uv sync --all-extras --all-groups
+        run: uv sync --locked --all-extras --all-groups
       - name: Check dead code
         run: |
           # KLUDGE: deadcode runs on Python 3.13, not this job's 3.14, and is
@@ -64,14 +67,14 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: ${{ matrix.python-version }}
           cache-suffix: ${{ github.job }}
       - name: Install dependencies
-        run: uv sync --all-extras --all-groups
+        run: uv sync --locked --all-extras --all-groups
       - name: Run tests
         run: uv run pytest --cov --cov-report=term-missing
 
@@ -80,9 +83,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: "3.14"
           cache-suffix: ${{ github.job }}
@@ -93,7 +96,7 @@ jobs:
       - name: Check distribution metadata
         run: uvx twine check --strict dist/*
       - name: Upload distributions
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/
@@ -112,14 +115,14 @@ jobs:
         python-version: ["3.10", "3.15"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: ${{ matrix.python-version }}
           cache-suffix: ${{ github.job }}
       - name: Download distributions
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist/
@@ -127,8 +130,10 @@ jobs:
         # A clean environment outside the checkout, so the suite can only import
         # the installed package. Resolution comes from the wheel's published
         # metadata, which the lockfile-based test job never exercises.
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
         run: |
-          uv venv --python ${{ matrix.python-version }} --seed /tmp/artifact-env
+          uv venv --python "$PYTHON_VERSION" --seed /tmp/artifact-env
           /tmp/artifact-env/bin/python -m pip install --quiet dist/*.whl
       - name: Check what the wheel metadata resolved
         # Before the test stack lands, so nothing masks what the wheel itself
@@ -139,7 +144,7 @@ jobs:
           /tmp/artifact-env/bin/python scripts/check_installed_package.py
       - name: Install the test stack
         run: |
-          uv export --only-group test --no-hashes --no-emit-project -o /tmp/test-requirements.txt
+          uv export --locked --only-group test --no-hashes --no-emit-project -o /tmp/test-requirements.txt
           /tmp/artifact-env/bin/python -m pip install --quiet -r /tmp/test-requirements.txt
       - name: Check the test environment
         run: /tmp/artifact-env/bin/python -m pip check
@@ -152,14 +157,14 @@ jobs:
     needs: [build]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: "3.15"
           cache-suffix: ${{ github.job }}
       - name: Download distributions
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist/
