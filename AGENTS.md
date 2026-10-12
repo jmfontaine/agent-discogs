@@ -136,8 +136,13 @@ work, run `just qa` and `just test`, report, and stop.
 Publishing is fully automated via CI. The `publish.yml` workflow triggers on `v*` tag push.
 
 1. Update `version` in `pyproject.toml`
-2. Commit the version bump
-3. Run `just release` — creates a signed tag, pushes, and monitors the workflow
+2. Commit the version bump and get it onto `origin/main`
+3. Run `just release` on `main` — creates a signed tag, pushes `main` and the
+   tag in one atomic push, and watches the publish run. It refuses to run
+   unless HEAD is `main`, the working tree is clean, `main` equals
+   `origin/main` after a fetch, and the tag exists neither locally nor on
+   `origin`. If the run does not appear within 2 minutes it exits 1; the tag
+   is already pushed by then, so check the Actions page.
 
 `publish.yml` calls the reusable `checks.yml`, which builds the distributions
 once, checks them with `scripts/check_distributions.py` (archive contents:

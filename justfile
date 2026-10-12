@@ -77,23 +77,43 @@ qa: dead-code deps-unused format-check lint type-check verify-types
 release:
     #!/usr/bin/env bash
     set -euo pipefail
+    fail() { echo "Error: $*" >&2; exit 1; }
     version=$(uv run python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
     tag="v${version}"
-    if git rev-parse "$tag" >/dev/null 2>&1; then
-        echo "Error: tag $tag already exists"
-        exit 1
+    branch=$(git symbolic-ref --quiet --short HEAD) || fail "HEAD is detached; check out main"
+    [ "$branch" = main ] || fail "on branch $branch; releases are cut from main"
+    [ -z "$(git status --porcelain)" ] || fail "working tree is not clean"
+    git fetch --quiet origin main || fail "could not fetch main from origin"
+    head=$(git rev-parse HEAD)
+    [ "$head" = "$(git rev-parse refs/remotes/origin/main)" ] || fail "main is not in sync with origin/main; pull or push first"
+    if git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null; then
+        fail "tag $tag already exists locally"
     fi
-    if [ -n "$(git status --porcelain)" ]; then
-        echo "Error: working tree is not clean"
-        exit 1
-    fi
+    # ls-remote --exit-code: 0 = tag found, 2 = not found, anything else = the query failed.
+    status=0
+    git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null || status=$?
+    case "$status" in
+        0) fail "tag $tag already exists on origin" ;;
+        2) ;;
+        *) fail "could not check origin for tag $tag" ;;
+    esac
     echo "Creating signed tag $tag..."
     git tag -s "$tag" -m "Release $tag"
-    echo "Pushing main and $tag to origin..."
-    git push origin main "$tag"
-    echo "Waiting for publish workflow to start..."
-    sleep 5
-    gh run watch --exit-status "$(gh run list --workflow=publish.yml --branch="$tag" --limit=1 --json=databaseId --jq='.[0].databaseId')"
+    echo "Pushing main and $tag to origin in one atomic push..."
+    if ! git push --atomic origin main "refs/tags/$tag"; then
+        git tag -d "$tag" >/dev/null
+        fail "push rejected; nothing was pushed and the local tag $tag was deleted"
+    fi
+    echo "Waiting for the publish workflow run for $tag..."
+    run_id=""
+    for _ in $(seq 24); do
+        # A failing gh call (network blip, rate limit) costs one attempt, not the run.
+        run_id=$(gh run list --workflow=publish.yml --event=push --branch="$tag" --commit="$head" --limit=1 --json=databaseId --jq='.[0].databaseId // empty') || run_id=""
+        [ -n "$run_id" ] && break
+        sleep 5
+    done
+    [ -n "$run_id" ] || fail "no publish run for $tag appeared within 2 minutes; $tag is pushed, so check https://github.com/jmfontaine/agent-discogs/actions"
+    gh run watch --exit-status "$run_id"
 
 # Use local discogs-sdk for development testing
 sdk-link:
