@@ -1,0 +1,50 @@
+# JSON output
+
+## Projections
+
+`search`, `get`, `tracks`, and `price` accept `--json` (as does `cache clear`, which prints `{"cleared":true}` or the error envelope). The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping.
+
+Empty fields are omitted, so test for a key rather than for null; for the `pagination` envelope, see [Pagination](#pagination).
+
+Each release, master, artist, label, and search result also carries `url`, its page on the Discogs website, always absolute: `"url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral"`. Use it to hand a person a link; text output leaves it out to save tokens.
+
+Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link.
+
+`credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`.
+
+Errors under `--json` are described in [Errors](errors.md#errors-under---json).
+
+## Pagination
+
+Lists are wrapped as `{"pagination":{...},"results":[...]}`. The `pagination` envelope is the exception to omitted empty fields:
+
+- `page`, `total_items` and `total_pages` are always present, with `null` totals only when a scan stopped before reading any page;
+- a filtered list always adds `filtered`, `capped` and `next_cursor`, `null` when nothing remains;
+- a capped one adds `stop_reason`, plus `retry_after` when Discogs sent one.
+
+In a filtered list, the totals describe the listing before the filter, not your pages: `page` counts pages of `--limit` matching rows, while `total_items` is the unfiltered total (the `≤N` of the text header) and `total_pages` counts the 100-row pages the scan reads from Discogs.
+
+For example, the second page of `get releases @l647 --year 1994 --limit 2 --json` reported `"page":2,"total_items":2723,"total_pages":28`: 28 is the number of Discogs pages a full scan reads, not the number of pages of matches, which nothing tells in advance. Continue with `next_cursor` until it is `null`.
+
+## --full
+
+```bash
+agent-discogs get release @r352665 --json            # projection
+agent-discogs get release @r352665 --json -v         # plus notes, credits, and identifiers
+agent-discogs get release @r352665 --json --full     # the complete record, when you need a field the projection drops
+agent-discogs get credits @r352665 --json --full     # complete release credits, plus track_credits: [{position, title, extra_artists}]
+```
+
+`--full` prints the complete record as the SDK normalizes it, not byte-for-byte what Discogs sends:
+
+- field names are consistent (`catalog_number` for `catno`, `extra_artists` for `extraartists`, `name_variation` for `anv`, a track's `type` for `type_`);
+- a search result's `uri` is absolute (`https://www.discogs.com/release/1`, not `/release/1`);
+- timestamps are RFC 3339 with an offset (`"date_added":"2005-01-03T23:17:26-08:00"`), and a timestamp that is absent or does not parse is `null`.
+
+Fields the SDK does not model appear as Discogs sends them. Unlike the projection, `--full` keeps empty fields, as `null` when unset.
+
+## Non-ASCII and control characters
+
+On a UTF-8 stdout, non-ASCII text is written as is (`"title":"無罪モラトリアム"`), which keeps Japanese, Cyrillic, or accented titles short. On any other stdout encoding, it is written as `\uXXXX` escapes so the document stays valid.
+
+Either way, C1 controls (U+0080–U+009F), bidi controls (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), U+2028/U+2029, and lone surrogates are always escaped. The escaping is lossless: `json.loads` returns every string unchanged.
