@@ -67,8 +67,9 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 ## Testing
 
 - Tests use `click.testing.CliRunner` for in-process CLI testing (no subprocess).
-- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_doc_examples.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`, `tests/test_trace.py`.
-- No special fixtures or mocking framework beyond `unittest.mock`.
+- Test files: `tests/test_cli.py`, `tests/test_client.py`, `tests/test_doc_examples.py`, `tests/test_env_isolation.py`, `tests/test_errors.py`, `tests/test_formatting.py`, `tests/test_pagination.py`, `tests/test_refs.py`, `tests/test_skills.py`, `tests/test_trace.py`.
+- `tests/conftest.py` has one autouse fixture, `_isolate_env`: every test not marked `live` runs with `AGENT_DISCOGS_DEBUG` and the five SDK credential variables (`DISCOGS_TOKEN`, `DISCOGS_CONSUMER_KEY`, `DISCOGS_CONSUMER_SECRET`, `DISCOGS_ACCESS_TOKEN`, `DISCOGS_ACCESS_TOKEN_SECRET`) removed, so the developer's shell cannot change results. Live tests keep them. A test that needs one sets it with `monkeypatch.setenv`. The conftest also enables the `pytester` plugin, which `tests/test_env_isolation.py` uses to check the fixture.
+- No mocking framework beyond `unittest.mock`.
 - `tests/test_doc_examples.py` checks every `@ref` in the docs against `KNOWN_REFS`. Its `live`-marked half resolves each ref against the real API; `just test` excludes it, `just test-live` runs it (needs `DISCOGS_TOKEN`). Adding a new example ID to any doc means adding it to `KNOWN_REFS`.
 
 ## Dependencies
