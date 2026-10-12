@@ -1,7 +1,8 @@
 """SDK models → the JSON an agent actually needs.
 
 Each text view in `formatting.py` has a sibling projector here that returns
-exactly the fields that view shows, plus refs. `--json` serializes these;
+exactly the fields that view shows, plus refs and, for an entity Discogs
+gives a page (`uri`), its web link as `url`. `--json` serializes these;
 `--json --full` bypasses them for the SDK's complete, normalized record
 (`json_output.full_dump()`). A full release is ~33 KB of image URLs and
 bookkeeping; its projection is ~1.5 KB.
@@ -48,6 +49,11 @@ def _timestamp(value: datetime | None) -> str | None:
     return _DATETIME.dump_python(value, mode="json") if value else None
 
 
+def _url(entity: Any) -> str | None:
+    """The entity's Discogs web page: its `uri`, which the SDK makes absolute."""
+    return getattr(entity, "uri", None)
+
+
 def _artist_refs(artists: list[Any] | None) -> list[dict[str, Any]]:
     return [
         {
@@ -80,12 +86,15 @@ def project_search_result(r: Any) -> dict[str, Any]:
     entity_type = _search_result_type(r)
     if entity_type is None:
         # What the text row shows: no ref, since nothing says what the ID is.
-        return drop_empty({"id": r.id, "type": r.type, "title": r.title})
+        return drop_empty(
+            {"id": r.id, "type": r.type, "title": r.title, "url": _url(r)}
+        )
     label = getattr(r, "label", None)
     master_id = getattr(r, "master_id", None)
     return drop_empty(
         {
             "ref": make_ref(entity_type, r.id),
+            "url": _url(r),
             "type": entity_type,
             "title": r.title,
             "year": known_year(getattr(r, "year", None)),
@@ -110,6 +119,7 @@ def project_release(
     tracklist = getattr(rel, "tracklist", None) or []
     data = {
         "ref": make_ref("release", rel.id),
+        "url": _url(rel),
         "title": rel.title,
         "artists": _artist_refs(getattr(rel, "artists", None)),
         "year": known_year(getattr(rel, "year", None)),
@@ -235,6 +245,7 @@ def project_artist(artist: Any) -> dict[str, Any]:
     return drop_empty(
         {
             "ref": make_ref("artist", artist.id),
+            "url": _url(artist),
             "name": artist.name,
             "profile": _truncate(getattr(artist, "profile", None)),
             "urls": _urls_short(getattr(artist, "urls", None)),
@@ -249,6 +260,7 @@ def project_label(label: Any) -> dict[str, Any]:
     return drop_empty(
         {
             "ref": make_ref("label", label.id),
+            "url": _url(label),
             "name": label.name,
             "profile": _truncate(getattr(label, "profile", None)),
             "urls": _urls_short(getattr(label, "urls", None)),
@@ -276,6 +288,7 @@ def project_master(master: Any) -> dict[str, Any]:
     return drop_empty(
         {
             "ref": make_ref("master", master.id),
+            "url": _url(master),
             "title": master.title,
             "artists": _artist_refs(getattr(master, "artists", None)),
             "year": known_year(getattr(master, "year", None)),

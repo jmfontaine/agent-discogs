@@ -4148,6 +4148,85 @@ class TestRealSdk:
         assert row["uri"] == "https://www.discogs.com/release/1"
 
     @pytest.mark.parametrize(
+        ("argv", "body"),
+        [
+            (
+                ["get", "release", "@r38606880"],
+                {
+                    "id": 38606880,
+                    "title": "Slate",
+                    "uri": "https://www.discogs.com/release/38606880-Nine-Inch-Nails-Slate",
+                },
+            ),
+            (
+                ["get", "master", "@m3719"],
+                {
+                    "id": 3719,
+                    "title": "The Downward Spiral",
+                    "uri": "https://www.discogs.com/master/3719-Nine-Inch-Nails-The-Downward-Spiral",
+                },
+            ),
+            (
+                ["get", "artist", "@a3857"],
+                {
+                    "id": 3857,
+                    "name": "Nine Inch Nails",
+                    "uri": "https://www.discogs.com/artist/3857-Nine-Inch-Nails",
+                },
+            ),
+            (
+                ["get", "label", "@l647"],
+                {
+                    "id": 647,
+                    "name": "Nothing Records",
+                    "uri": "https://www.discogs.com/label/647-Nothing-Records",
+                },
+            ),
+        ],
+    )
+    def test_json_links_each_entity_to_its_discogs_page(
+        self, argv: list[str], body: dict[str, object]
+    ) -> None:
+        bare = {k: v for k, v in body.items() if k != "uri"}
+        outputs = {}
+        for name, sent in (("linked", body), ("bare", bare)):
+            self.respond = lambda _request, sent=sent: httpx2.Response(200, json=sent)
+            text = CliRunner().invoke(cli, ["--fresh", *argv])
+            doc = CliRunner().invoke(cli, ["--fresh", *argv[:2], "--json", argv[2]])
+            assert text.exit_code == doc.exit_code == 0, text.output + doc.output
+            outputs[name] = (text.stdout, json.loads(doc.stdout))
+        assert outputs["linked"][1]["url"] == body["uri"]
+        assert "url" not in outputs["bare"][1]
+        # The link is JSON-only: the text view ignores it, byte for byte.
+        assert outputs["linked"][0] == outputs["bare"][0]
+        assert "discogs.com" not in outputs["linked"][0]
+
+    def test_json_search_links_are_absolute(self) -> None:
+        self.respond = lambda _request: httpx2.Response(
+            200,
+            json={
+                "pagination": {"page": 1, "pages": 1, "items": 3},
+                "results": [
+                    {"id": 1, "type": "release", "title": "Sides", "uri": "/release/1"},
+                    {"id": 2, "type": "playlist", "title": "Mix", "uri": "/lists/2"},
+                    {"id": 3, "type": "artist", "title": "Band"},
+                ],
+            },
+        )
+        argv = ["search", "--release-type", "all", "Sides"]
+        result = CliRunner().invoke(cli, [*argv[:1], "--json", *argv[1:]])
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.stdout)["results"]
+        assert [row.get("url") for row in rows] == [
+            "https://www.discogs.com/release/1",
+            "https://www.discogs.com/lists/2",
+            None,
+        ]
+        text = CliRunner().invoke(cli, argv)
+        assert text.exit_code == 0, text.output
+        assert "discogs.com" not in text.stdout
+
+    @pytest.mark.parametrize(
         ("argv", "body", "detail"),
         [
             (["get", "release", "@r1"], None, "Expecting value"),

@@ -155,6 +155,10 @@ the account's buyer currency (USD without a token); 'price' names the currency.
 get release prints 'Added: YYYY-MM-DD', the day the release was added to
 Discogs (--json: 'added', an RFC 3339 timestamp), at no extra request.
 
+--json gives each release, master, artist, label, and search result a 'url':
+its Discogs web page, absolute, to hand to a person. Text output omits it. The
+versions/releases rows and tracks, price, credits, identifiers have none.
+
 Piping into a reader that closes early (| head -1) exits 1 with no message.
 
 A connection error names its cause ('Connection error: <cause>'). Its hint
