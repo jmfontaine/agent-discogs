@@ -3557,3 +3557,92 @@ class TestDebug:
         assert isinstance(result.exception, ValueError)
         assert sdk_logger.handlers == []
         assert sdk_logger.level == level
+
+
+def _api_rows(per_page: int, start: int, *, search: bool) -> list[dict[str, object]]:
+    """Rows no filter in TestRequestCost keeps (an unofficial release, role
+    Remix, year 1990), so client-side scans run to their cap."""
+    shape: dict[str, object] = (
+        {"year": "1990", "format": ["Unofficial Release"]}
+        if search
+        else {"year": 1990, "format": "Vinyl", "role": "Remix"}
+    )
+    return [
+        {"id": start + i, "title": "T", "type": "release", **shape}
+        for i in range(per_page)
+    ]
+
+
+class TestRequestCost:
+    """Network sends per command, counted at the transport (the cost tables)."""
+
+    @pytest.fixture(autouse=True)
+    def _client(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.sent: list[str] = []
+
+        def _handle(request: httpx2.Request) -> httpx2.Response:
+            path = request.url.path
+            self.sent.append(path)
+            page = int(request.url.params.get("page", "1"))
+            per_page = int(request.url.params.get("per_page", "5"))
+            pagination = {"page": page, "pages": 10, "per_page": per_page}
+            if path.endswith(("/releases", "/versions", "/search")):
+                search = path.endswith("/search")
+                key = "results" if search else path.rsplit("/", 1)[1]
+                rows = _api_rows(per_page, page * 100, search=search)
+                return httpx2.Response(
+                    200, json={"pagination": {**pagination, "items": 50}, key: rows}
+                )
+            entity_id = int(path.rsplit("/", 1)[1])
+            if path.startswith("/marketplace/"):
+                return httpx2.Response(200, json={})
+            return httpx2.Response(
+                200,
+                json={"id": entity_id, "name": "N", "title": "T", "master_id": 3719},
+            )
+
+        client = Discogs(
+            cache=False,
+            http_client=httpx2.Client(transport=httpx2.MockTransport(_handle)),
+        )
+        monkeypatch.setattr("agent_discogs.commands.get.get_client", lambda: client)
+        monkeypatch.setattr("agent_discogs.commands.search.get_client", lambda: client)
+
+    @pytest.mark.parametrize(
+        ("argv", "sends"),
+        [
+            ("get artist @a1", 1),
+            ("get release @r1 @r2 @r3", 3),
+            ("tracks @r1", 1),
+            ("price @r1", 3),
+            ("get price @r1 --json --full", 2),  # raw documents: no release read
+            # Lists: the JSON page reads no header attribute; text adds the
+            # artist/label/master name.
+            ("get releases @a1 --json", 1),
+            ("get releases @a1", 2),
+            ("get releases @l1 --json", 1),
+            ("get releases @l1", 2),
+            ("get versions @m1 --json", 1),
+            ("get versions @m1", 2),
+            # A release ref costs its lookup for master_id, the title is free.
+            ("get versions @r1 --json", 2),
+            ("get versions @r1", 2),
+            # Client-side scans stop at 5 API pages.
+            ("get releases @a1 --role Main --json", 5),
+            ("get releases @a1 --role Main", 6),
+            ("get releases @l1 --year 1999 --json", 5),
+            ("get releases @l1 --year 1999", 6),
+            ("search x --release-type all", 1),
+            ("search artist x", 1),
+            ("search x", 5),
+        ],
+    )
+    def test_sends(self, argv: str, sends: int) -> None:
+        result = CliRunner().invoke(cli, argv.split())
+        assert result.exit_code == 0, result.output
+        assert len(self.sent) == sends, self.sent
+
+    def test_versions_of_a_release_list_its_master(self) -> None:
+        result = CliRunner().invoke(cli, ["get", "versions", "@r1", "--json"])
+        assert result.exit_code == 0, result.output
+        assert self.sent == ["/releases/1", "/masters/3719/versions"]

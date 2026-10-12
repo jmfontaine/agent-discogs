@@ -209,14 +209,20 @@ api: 4 requests · 6/60 left this minute ⚠ pause ~60s before uncached calls
 
 The count is what this command spent; `43/60` is what Discogs reported after the last request. `⚠` appears when 10 or fewer requests remain: pause about a minute, or keep to refs that are already cached (`--cached` guarantees zero spend). Without a token the warning suggests setting `DISCOGS_TOKEN` instead. The line is on stderr and never inside `--json` output; commands that make no request (`status`, `skills`, `cache clear`) print nothing.
 
-What commands cost:
+What commands cost (network requests; listing rows are per ref):
 
 | Command | Requests |
 |---|---|
-| `get <noun>`, `tracks`, `price` | 1 per ref (`price`: up to 3; `versions @r...`: 2) |
-| `search`, `get releases`, `get versions` (server-side pages) | 1 |
-| Client-side scans: `search --release-type official\|unofficial`, `get releases --role`, `get releases @l... --year` | up to 5 |
+| `get artist\|label\|master\|release\|credits\|identifiers\|tracklist`, `tracks` | 1 per ref |
+| `get price`, `price` | 3 per ref (`--json --full`: 2, the release itself is not read) |
+| `get releases @a...`, `get releases @l...`, `get versions @m...` | `--json`: 1; text: 2 (the header's artist, label or master name) |
+| `get versions @r...` | 2, text or `--json` (the release, for its master, then the list) |
+| Client-side scans: `get releases @a... --role`, `get releases @l... --year` | `--json`: 1 to 5; text: 2 to 6 |
+| `search artist\|label`, `search --release-type all` | 1 |
+| Other searches (`--release-type official`, the default, or `unofficial`): client-side scans | 1 to 5 |
 | Anything repeated within 1 hour | 0 (cached) |
+
+A scan stops once the page is full, so a sparse filter costs the most.
 
 The CLI reports; it never sleeps or throttles on your behalf. When Discogs answers 429, the error says how much of the minute is left (`Rate limited: 0/60 requests left this minute.`), and under `--json` the envelope carries `retry_after`, `limit`, and `remaining`.
 
@@ -228,8 +234,8 @@ The CLI reports; it never sleeps or throttles on your behalf. When Discogs answe
 api: 2 requests · 58/60 left this minute
 ── debug ───────────────────────────────────────────────
 total     1310ms
-GET /artists/3857                               200   338ms
 GET /artists/3857/releases?page=1&per_page=15   200   947ms
+GET /artists/3857                               200   338ms
 scan      1 API calls, 15 rows fetched, 5 kept, not capped
 cache     ~/.cache/agent-discogs  540.0 KB  ttl 1h
 output    494 chars, 9 lines, ≈123 tokens

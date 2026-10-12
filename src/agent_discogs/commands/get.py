@@ -276,8 +276,9 @@ def _get_releases(
             mode=mode,
         )
 
+    # A lazy proxy: reading .name sends the request, so only the text header
+    # pays for it (as for a label's catalogue).
     artist = client.artists.get(entity_id)
-    artist_name = artist.name
     artist_ref = make_ref("artist", entity_id)
 
     path = f"/artists/{entity_id}/releases"
@@ -319,7 +320,7 @@ def _get_releases(
     return format_artist_releases(
         result.items,
         artist_ref,
-        artist_name,
+        artist.name,
         result.page,
         result.total_items,
         footer_cmd,
@@ -354,9 +355,10 @@ def _get_versions(
     mode: Mode,
 ) -> Any:
     master_id = entity_id
-    master_title = ""
 
-    # Smart resolution: release ref → look up its master_id
+    # Smart resolution: release ref → look up its master_id, which selects the
+    # endpoint. Either way the title is read only for the text header: free on
+    # the fetched release, one lazy-proxy request for a master ref.
     if entity_type == "release":
         release = client.releases.get(entity_id)
         if not release.master_id:
@@ -367,10 +369,9 @@ def _get_versions(
                 f'agent-discogs search master "{release.title}"'
             )
         master_id = release.master_id
-        master_title = release.title
+        titled = release
     else:
-        master = client.masters.get(master_id)
-        master_title = master.title
+        titled = client.masters.get(master_id)
 
     master_ref = make_ref("master", master_id)
 
@@ -413,7 +414,7 @@ def _get_versions(
     return format_master_versions(
         result.items,
         master_ref,
-        master_title,
+        titled.title,
         result.page,
         result.total_items,
         footer_cmd,

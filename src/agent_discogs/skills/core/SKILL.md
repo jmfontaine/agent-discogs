@@ -112,7 +112,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 - **Don't paginate through all results.** Narrow with filters first.
 - **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list. Filtered lists (the default search, `releases --role`, `releases @l... --year`) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
 - **Don't guess IDs.** Always search first to find the right entity.
-- **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref (smart resolution costs an extra API call).
+- **Don't use `get versions` on a release ID.** Release rows already show `→ @m...`; use that master ref. Smart resolution fetches the release first, so `@r...` costs 2 requests; `@m...` costs 1 with `--json` (2 as text, for the header title).
 - **Don't use `--fresh` by default.** Catalogue data an hour old is fine; reserve `--fresh` for `price` when you need current market numbers.
 
 ## Error Recovery
@@ -157,10 +157,13 @@ The count is what this command spent; `43/60` is what Discogs reported after its
 
 | Command | Requests |
 |---|---|
-| `get <noun>`, `tracks` | 1 per ref |
-| `price` | 3 per ref; `get versions @r...` 2 (resolve, then list) |
-| `search`, `get releases`, `get versions` (server-side pages) | 1 |
-| Client-side scans: `search` with `--release-type official\|unofficial` (the default), `get releases --role`, `get releases @l... --year` | up to 5 |
+| `get artist\|label\|master\|release\|credits\|identifiers\|tracklist`, `tracks` | 1 per ref |
+| `price` | 3 per ref (`--json --full`: 2) |
+| `get releases @a...\|@l...`, `get versions @m...` | `--json`: 1 per ref; text: 2 (the header name costs one) |
+| `get versions @r...` | 2 per ref (resolve the master, then list) |
+| Client-side scans: `get releases @a... --role`, `get releases @l... --year` | `--json`: 1 to 5; text: 2 to 6 |
+| `search artist\|label`, `search --release-type all` | 1 |
+| Other searches (`--release-type official\|unofficial`, default official): client-side scan | 1 to 5 |
 | Anything repeated within 1 hour | 0 (cached) |
 
 At `⚠` (10 or fewer left): pause ~60s before uncached calls, or spend nothing with `--cached`. Unauthenticated runs get 25/min; setting `DISCOGS_TOKEN` is the fix there.
