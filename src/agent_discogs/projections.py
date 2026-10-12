@@ -21,6 +21,7 @@ from agent_discogs.formatting import (
     _search_result_type,
     _truncate,
     _urls_short,
+    artist_title,
     credits_by_role,
     field,
     known_year,
@@ -117,6 +118,29 @@ def project_search_result(r: Any) -> dict[str, Any]:
             "master": make_ref("master", master_id)
             if entity_type == "release" and master_id
             else None,
+        }
+    )
+
+
+def project_added_release(rel: Any) -> dict[str, Any]:
+    """A `search --added-since` row: a looked-up release, titled like a search
+    result (`Artist - Title`), with `formats` as `get release` gives them and
+    `added`, its full RFC 3339 timestamp."""
+    labels = getattr(rel, "labels", None) or []
+    first = labels[0] if labels else None
+    master_id = getattr(rel, "master_id", None)
+    return drop_empty(
+        {
+            "ref": make_ref("release", rel.id),
+            "url": _url(rel),
+            "title": artist_title(rel),
+            "year": known_year(getattr(rel, "year", None)),
+            "country": getattr(rel, "country", None),
+            "label": getattr(first, "name", None),
+            "catno": getattr(first, "catalog_number", None),
+            "formats": _format_string(getattr(rel, "formats", None)),
+            "added": _timestamp(getattr(rel, "date_added", None)),
+            "master": make_ref("master", master_id) if master_id else None,
         }
     )
 

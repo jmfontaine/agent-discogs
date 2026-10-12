@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -338,6 +339,7 @@ def _release_row(
     fmt: str | None = None,
     role: str | None = None,
     have: int | None = None,
+    added: str | None = None,
     master_ref: str | None = None,
 ) -> str:
     """One list row: everything an agent needs to pick or navigate, nothing else.
@@ -363,6 +365,8 @@ def _release_row(
         parts.append(f"· {role}")
     if have is not None:
         parts.append(f"· have {have:,}")
+    if added:
+        parts.append(f"· added {added}")
     if master_ref:
         parts.append(f"→ {master_ref}")
     return " ".join(parts)
@@ -847,10 +851,7 @@ def format_search_results(
     without a detail call. A result of an unknown or missing type has no ref:
     its row starts with `id N` and always shows its tag.
     """
-    subject = " ".join(
-        p for p in (f'"{query}"' if query else "", _format_filters(filters)) if p
-    )
-    head = " ".join(p for p in ("Search:", type_filter or "all", subject) if p)
+    head = _search_head(query, type_filter, filters)
     counts = _page_counts(
         page, len(results), total_results, "results", filtered=filtered, stop=stop
     )
@@ -897,6 +898,83 @@ def format_search_results(
             lines.append(_release_row(ref=ref, type_=show_type, title=result.title))
 
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
+    return _text(lines)
+
+
+def _search_head(
+    query: str, type_filter: str | None, filters: dict[str, str] | None
+) -> str:
+    """`Search: release "query" artist="Nine Inch Nails"`: what was searched."""
+    subject = " ".join(
+        p for p in (f'"{query}"' if query else "", _format_filters(filters)) if p
+    )
+    return " ".join(p for p in ("Search:", type_filter or "all", subject) if p)
+
+
+def artist_title(release: Any) -> str | None:
+    """`Artist - Title`, the way a search result titles a release. A comma
+    join attaches to the name before it (`A, B`); others stand apart (`A & B`)."""
+    names = ""
+    for artist in getattr(release, "artists", None) or []:
+        names += getattr(artist, "name", None) or "Unknown"
+        join = (getattr(artist, "join", None) or "").strip()
+        if join:
+            names += join if join == "," else f" {join}"
+        names += " "
+    title = getattr(release, "title", None)
+    return f"{names.rstrip()} - {title}" if names else title
+
+
+def added_day(release: Any) -> str | None:
+    """The UTC day a release was added: the day `--added-since` compares, so
+    a row never shows a day before the cutoff it passed."""
+    added = getattr(release, "date_added", None)
+    return added.astimezone(timezone.utc).date().isoformat() if added else None
+
+
+def format_added_releases(
+    releases: list[Any],
+    *,
+    query: str,
+    filters: dict[str, str],
+    since: str,
+    total: int,
+    complete: bool,
+    max_requests: int | None,
+) -> str:
+    """`search release ... --added-since`: looked-up releases, newest first,
+    each row ending in its added day. `total` counts the window before an
+    explicit `--limit` cut it to `releases`; an incomplete window ends with
+    a note naming the cap that stopped it."""
+    shown = len(releases)
+    count = f"{total:,}" if shown == total else f"{shown} of {total:,}"
+    head = _search_head(query, "release", filters)
+    lines = [f"{head} added since {since} ({count} results, newest first)", ""]
+    for rel in releases:
+        labels = getattr(rel, "labels", None) or []
+        master_id = getattr(rel, "master_id", None)
+        lines.append(
+            _release_row(
+                ref=make_ref("release", rel.id),
+                title=artist_title(rel),
+                year=getattr(rel, "year", None),
+                country=getattr(rel, "country", None),
+                label=getattr(labels[0], "name", None) if labels else None,
+                catno=getattr(labels[0], "catalog_number", None) if labels else None,
+                fmt=_format_string(getattr(rel, "formats", None)) or None,
+                added=added_day(rel),
+                master_ref=make_ref("master", master_id) if master_id else None,
+            )
+        )
+    if not complete:
+        lines += [
+            "",
+            (
+                f"Stopped at --max-requests {max_requests}: the result may be "
+                "incomplete. Rerun with a higher --max-requests to look further; "
+                "the lookups already made are cached and cost nothing."
+            ),
+        ]
     return _text(lines)
 
 

@@ -57,6 +57,8 @@ agent-discogs search [type] <query> [--flags]
 
 **Flags:**
 
+**`--added-since` (experimental):** `search release ... --added-since YYYY-MM-DD` returns the releases added to Discogs on or after that day (inclusive, from midnight UTC), newest first, through the SDK's experimental `releases_added_since()`. Discogs has no date filter and search results carry no added date, so it walks the undocumented `date_added` search order (100 results a page) and looks up each release, stopping at the first one older than the cutoff. Every row ends in `· added YYYY-MM-DD`, the UTC day the cutoff compares; `--json` gives `{"complete":true,"total":N,"results":[...]}`, each row with `added` (RFC 3339). Cost: one request per release the search matches in the window (before `--release-type` filtering), plus one per 100 search results and one for the release that ends the scan; cached lookups are free, so a repeat within the hour costs nothing. No cap by default; with `--max-requests N` the command stops after N sends, and the text ends with `Stopped at --max-requests N: the result may be incomplete` (`complete: false`). `--limit`, when you pass it, cuts the rows shown, not the requests. `--release-type official` (default) and `unofficial --format ...` filter on the looked-up formats at no extra request; `unofficial` alone is filtered by Discogs, so official releases are never looked up. Needs `search release`; `--sort`, `--desc`, `--page` and `--after` are rejected (`invalid_argument`, no request). A 429 partway fails the command with `rate_limited` (the CLI never waits); rerun after `retry_after`, and the lookups already made come from the cache. A broken date order fails with `bad_response`; those responses are cached, so a plain retry repeats it and only `--fresh` asks Discogs again. Under `--cached` an uncached lookup fails with `cache_miss`. With a tool-call time limit, pass `--max-requests`.
+
 | Flag | Description |
 |------|-------------|
 | `--artist` | Filter by artist name |
@@ -70,7 +72,8 @@ agent-discogs search [type] <query> [--flags]
 | `--full` | With `--json`: the complete record instead of the projection, normalized (consistent field names such as `catalog_number`, RFC 3339 timestamps, `null` for an absent or unparseable timestamp; unmodeled fields as Discogs sends them) |
 | `--label` | Filter by label name |
 | `--limit` | Results per page, 1-100 (default: 5) |
-| `--max-requests` | Cap the command's HTTP sends during a client-side scan (`--release-type official`, or `unofficial` with `--format`); cache hits are free. Default: no cap. Rejected on server-side pages. See Client-side scans above. |
+| `--max-requests` | Cap the command's HTTP sends during a client-side scan (`--release-type official`, or `unofficial` with `--format`) or `--added-since`; cache hits are free. Default: no cap. Rejected on server-side pages. See Client-side scans above. |
+| `--added-since` | `search release` only, experimental: releases added on or after `YYYY-MM-DD`, newest first, the whole window. See `--added-since` above. |
 | `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, `--release-type unofficial` (without `--format`), or artist/label searches. Rejected on the client-side filtered path. |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (client-side filtered searches only: `--release-type official`, or `unofficial` with `--format`) |
 | `--release-type` | `official` (default): client-side scan, `≤N` total, continues with `--after`. `unofficial`: filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` it falls back to the client-side scan. `all`: no filter. |
@@ -95,6 +98,8 @@ agent-discogs search release "The Downward Spiral" --after 2:5   # cursor copied
 agent-discogs search release "Pretty Hate Machine" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
 agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc   # newest additions first
+agent-discogs search release --artist "Nine Inch Nails" --release-type all --added-since 2026-07-08 --max-requests 60
+agent-discogs search release --artist "Nine Inch Nails" --release-type unofficial --added-since 2025-10-09   # bootlegs added in the last year
 ```
 
 Each row starts with a ref. A result of any other type than the four above starts with `id N [type]` instead (`[no type]` when Discogs sends none) and has no ref (`id` instead of `ref` under `--json`); the rest of the page is unaffected.
