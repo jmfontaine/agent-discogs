@@ -9,11 +9,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from agent_discogs import sanitize
-from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS
+from agent_discogs.config import CACHE_TTL_LABEL
 from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
 
 if TYPE_CHECKING:
     from discogs_sdk import AuthMode
+
+    from agent_discogs.pagination import ScanStop
 
 
 def _text(lines: list[str]) -> str:
@@ -22,17 +24,35 @@ def _text(lines: list[str]) -> str:
     return "\n".join(sanitize.line(text) for text in lines)
 
 
+def _scan_note(stop: ScanStop) -> str:
+    """Why a client-side scan returned early, for the page counts."""
+    if stop.reason == "rate_limited":
+        wait = "" if stop.retry_after is None else f", retry in {stop.retry_after}s"
+        return f"scan stopped: rate limited{wait}"
+    return f"scan stopped at --max-requests {stop.max_requests}"
+
+
 def _page_counts(
-    page: int, shown: int, total: int, noun: str, *, filtered: bool, capped: bool
+    page: int,
+    shown: int,
+    total: int | None,
+    noun: str,
+    *,
+    filtered: bool,
+    stop: ScanStop | None = None,
 ) -> str:
-    """`(page 2, 5 of ≤23 results; scan capped at 5 API calls)`.
+    """`(page 2, 5 of ≤23 results; scan stopped at --max-requests 3)`.
 
     `≤` marks a client-side filtered list whose total is the unfiltered API
-    count; the capped note means the scan stopped early and the page may be
-    short.
+    count; a scan note means the scan stopped early and the page may be
+    short. With no total, the scan read no listing page before
+    `--max-requests` ran out, so no page, count or bound is known yet.
     """
+    if total is None:
+        cap = "" if stop is None else f" {stop.max_requests}"
+        return f"(--max-requests{cap} ran out before the scan started)"
     bound = "≤" if filtered else ""
-    note = f"; scan capped at {MAX_API_CALLS} API calls" if capped else ""
+    note = "" if stop is None else f"; {_scan_note(stop)}"
     return f"(page {page}, {shown} of {bound}{total:,} {noun}{note})"
 
 
@@ -416,15 +436,15 @@ def format_label_releases(
     label_ref: str,
     label_name: str,
     page: int,
-    total_results: int,
+    total_results: int | None,
     next_page_cmd: str | None,
     *,
     filtered: bool = False,
-    capped: bool = False,
+    stop: ScanStop | None = None,
 ) -> str:
     """Format a label's catalogue (client-side `--year` scans are `filtered`)."""
     counts = _page_counts(
-        page, len(releases), total_results, "results", filtered=filtered, capped=capped
+        page, len(releases), total_results, "results", filtered=filtered, stop=stop
     )
     lines = [f'Releases on {label_ref} "{label_name}" {counts}', ""]
     lines.extend(
@@ -438,7 +458,7 @@ def format_label_releases(
         )
         for rel in releases
     )
-    lines.extend(_footer(next_page_cmd, capped=capped))
+    lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
 
@@ -447,15 +467,15 @@ def format_artist_releases(
     artist_ref: str,
     artist_name: str,
     page: int,
-    total_results: int,
+    total_results: int | None,
     next_page_cmd: str | None,
     *,
     filtered: bool = False,
-    capped: bool = False,
+    stop: ScanStop | None = None,
 ) -> str:
     """Format artist releases/discography."""
     counts = _page_counts(
-        page, len(releases), total_results, "results", filtered=filtered, capped=capped
+        page, len(releases), total_results, "results", filtered=filtered, stop=stop
     )
     lines = [f'Releases by {artist_ref} "{artist_name}" {counts}', ""]
 
@@ -471,7 +491,7 @@ def format_artist_releases(
         )
         for rel in releases
     )
-    lines.extend(_footer(next_page_cmd, capped=capped))
+    lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
 
@@ -542,12 +562,12 @@ def format_master_versions(
     master_ref: str,
     master_title: str,
     page: int,
-    total_results: int,
+    total_results: int | None,
     next_page_cmd: str | None,
 ) -> str:
     """Format master release versions."""
     counts = _page_counts(
-        page, len(versions), total_results, "versions", filtered=False, capped=False
+        page, len(versions), total_results, "versions", filtered=False
     )
     lines = [f'Versions of {master_ref} "{master_title}" {counts}', ""]
 
@@ -789,12 +809,12 @@ def format_search_results(
     query: str,
     type_filter: str | None,
     page: int,
-    total_results: int,
+    total_results: int | None,
     next_page_cmd: str | None,
     filters: dict[str, str] | None = None,
     *,
     filtered: bool = False,
-    capped: bool = False,
+    stop: ScanStop | None = None,
 ) -> str:
     """Format search results as compact text.
 
@@ -809,7 +829,7 @@ def format_search_results(
     )
     head = " ".join(p for p in ("Search:", type_filter or "all", subject) if p)
     counts = _page_counts(
-        page, len(results), total_results, "results", filtered=filtered, capped=capped
+        page, len(results), total_results, "results", filtered=filtered, stop=stop
     )
     lines = [f"{head} {counts}", ""]
 
@@ -853,7 +873,7 @@ def format_search_results(
         else:
             lines.append(_release_row(ref=ref, type_=show_type, title=result.title))
 
-    lines.extend(_footer(next_page_cmd, capped=capped))
+    lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
 

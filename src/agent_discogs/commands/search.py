@@ -16,6 +16,7 @@ from agent_discogs.pagination import (
     DEFAULT_LIMIT,
     fetch_filtered_page,
     fetch_page,
+    max_requests_error,
     next_page_cmd,
     paging_error,
     parse_cursor,
@@ -127,6 +128,11 @@ def _parse_type_and_query(args_list: tuple[str, ...]) -> tuple[str | None, str]:
     "--limit", type=int, default=DEFAULT_LIMIT, help="Results per page (1-100)"
 )
 @click.option(
+    "--max-requests",
+    type=int,
+    help="Cap the HTTP sends of a client-side filtered scan (default: no cap)",
+)
+@click.option(
     "--page",
     type=int,
     help="Page number, from 1 (server-side pages only: --release-type all or "
@@ -159,6 +165,7 @@ def search(
     genre: str | None,
     label: str | None,
     limit: int,
+    max_requests: int | None,
     page: int | None,
     release_type: str,
     sort: str | None,
@@ -209,7 +216,7 @@ def search(
 
     # Release-type filtering only applies to release/master searches.
     # Artist and label results never have format metadata, so filtering
-    # is a no-op that wastes bandwidth by overfetching 3x.
+    # would scan the whole listing for nothing.
     release_typed = type_filter in (None, "release", "master")
     # Discogs filters unofficial releases itself via `format`, so they page
     # server-side with an exact total. Not alongside `--format`: a repeated
@@ -252,6 +259,17 @@ def search(
             ),
             json_output=json_output,
         )
+    if not needs_release_filter and max_requests is not None:
+        fail(
+            ValueError(
+                "--max-requests caps a client-side filtered scan; this search "
+                "pages server-side and sends one request."
+            ),
+            json_output=json_output,
+        )
+    bad_cap = max_requests_error(max_requests)
+    if bad_cap:
+        fail(ValueError(bad_cap), json_output=json_output)
     if after is not None:
         try:
             parse_cursor(after)
@@ -263,7 +281,13 @@ def search(
         listing = functools.partial(client.search, **request)
         if needs_release_filter:
             keep = _is_unofficial if release_type == "unofficial" else _is_official
-            result = fetch_filtered_page(listing, limit=limit, keep=keep, cursor=after)
+            result = fetch_filtered_page(
+                listing,
+                limit=limit,
+                keep=keep,
+                cursor=after,
+                max_requests=max_requests,
+            )
         else:
             result = fetch_page(listing, page=page or 1, per_page=limit)
     # classify() maps every exception to a coded, recovery-oriented error, so
@@ -291,6 +315,7 @@ def search(
         release_type=release_type if release_type != "official" else None,
         sort=sort,
         desc=desc,
+        max_requests=max_requests,
     )
 
     if release_type != "official" and type_filter in (None, "release", "master"):
@@ -308,7 +333,7 @@ def search(
             next_page_cmd=footer_cmd,
             filters=filters,
             filtered=result.filtered,
-            capped=result.capped,
+            stop=result.stop,
         )
     except Exception as e:  # noqa: BLE001
         fail(e, "Search", json_output=False)

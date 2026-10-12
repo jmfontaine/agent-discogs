@@ -17,15 +17,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-from agent_discogs.config import CACHE_TTL_LABEL, MAX_API_CALLS, cache_dir
+from agent_discogs.config import CACHE_TTL_LABEL, cache_dir
 
 if TYPE_CHECKING:
     import click
     from discogs_sdk import RequestEvent
 
-# Remaining requests at which the footer warns. One client-side scan costs up
-# to MAX_API_CALLS requests; two back-to-back scans can spend twice that.
-LOW_BUDGET = 2 * MAX_API_CALLS
+# Remaining requests at which the footer warns: a sixth of the authenticated
+# minute, enough notice to pause before the next uncached command meets a 429.
+# Scans have no fixed cost to size it by: they run until the page fills.
+LOW_BUDGET = 10
 # Discogs' per-minute limit for requests carrying any credentials (25 without).
 # An observed limit below it means Discogs counted the request as anonymous.
 _AUTHENTICATED_LIMIT = 60
@@ -35,12 +36,13 @@ _SDK_LOGGER = "discogs_sdk"
 
 @dataclass
 class ScanNote:
-    """What one `fetch_filtered_page` call spent and kept."""
+    """What one `fetch_filtered_page` call spent and kept, and why it stopped
+    short (`"max_requests"` or `"rate_limited"`), or None."""
 
     api_calls: int
     rows: int
     kept: int
-    capped: bool
+    stop: str | None
 
 
 class _CountingWriter:
@@ -110,6 +112,18 @@ def note_scan(note: ScanNote) -> None:
     _trace.scans.append(note)
 
 
+def _count_sends(events: Sequence[RequestEvent]) -> int:
+    """HTTP sends behind `events`: each network event carries its attempts,
+    a failed transport send included; cache hits and misses send nothing."""
+    return sum(e.attempts for e in events if e.source == "network")
+
+
+def sends() -> int:
+    """HTTP sends this invocation has made so far: what `--max-requests` caps
+    and the footer counts."""
+    return _count_sends(_trace.events)
+
+
 def render_footer(events: Sequence[RequestEvent]) -> str | None:
     """The budget line, or None when nothing was requested.
 
@@ -123,7 +137,7 @@ def render_footer(events: Sequence[RequestEvent]) -> str | None:
     if not events:
         return None
     network = [e for e in events if e.source == "network"]
-    n = sum(e.attempts for e in network)
+    n = _count_sends(network)
     if n == 0:
         return "api: 0 requests · cached"
     line = f"api: {n} request" + ("" if n == 1 else "s")
@@ -181,6 +195,13 @@ def _cache_line(cache_dir: Path | None) -> str:
     return f"cache     {where}  ttl {CACHE_TTL_LABEL}"
 
 
+# How the panel ends a scan row that stopped short (ScanNote.stop).
+_SCAN_ENDS = {
+    "max_requests": "stopped at --max-requests",
+    "rate_limited": "stopped by a 429",
+}
+
+
 def render_panel(trace: Trace, *, cache_dir: Path | None, elapsed_ms: float) -> str:
     """The `--debug` panel: one row per response, from the cache or the
     network, then scan, cache and output statistics. A `--cached` miss and a
@@ -195,12 +216,10 @@ def render_panel(trace: Trace, *, cache_dir: Path | None, elapsed_ms: float) -> 
         cost = "cache" if event.source == "cache" else f"{event.elapsed_ms:.0f}ms"
         lines.append(f"{event.method} {path:<{width}}   {event.status_code}   {cost}")
     for scan in trace.scans:
-        capped = (
-            f"capped at {scan.api_calls} API calls" if scan.capped else "not capped"
-        )
+        end = "not capped" if scan.stop is None else _SCAN_ENDS[scan.stop]
         lines.append(
             f"scan      {scan.api_calls} API calls, {scan.rows} rows fetched, "
-            f"{scan.kept} kept, {capped}"
+            f"{scan.kept} kept, {end}"
         )
     lines.append(_cache_line(cache_dir))
     if trace.stdout is not None:

@@ -143,7 +143,11 @@ class TestRenderPanel:
                     attempts=0,
                 ),
             ],
-            scans=[ScanNote(2, 30, 5, capped=False), ScanNote(5, 75, 1, capped=True)],
+            scans=[
+                ScanNote(2, 200, 5, stop=None),
+                ScanNote(3, 30, 1, stop="max_requests"),
+                ScanNote(4, 400, 2, stop="rate_limited"),
+            ],
             stdout=stdout,
         )
         panel = render_panel(trace, cache_dir=cache_dir, elapsed_ms=412.6)
@@ -153,8 +157,9 @@ class TestRenderPanel:
             "GET /database/search?q=nin&type=artist   200   190ms",
             "GET /masters/3719                        200   cache",
             "GET /masters/3719/versions               503   8ms",
-            "scan      2 API calls, 30 rows fetched, 5 kept, not capped",
-            "scan      5 API calls, 75 rows fetched, 1 kept, capped at 5 API calls",
+            "scan      2 API calls, 200 rows fetched, 5 kept, not capped",
+            "scan      3 API calls, 30 rows fetched, 1 kept, stopped at --max-requests",
+            "scan      4 API calls, 400 rows fetched, 2 kept, stopped by a 429",
             "cache     ~/.cache/agent-discogs  3.0 KB  ttl 1h",
             "output    854 chars, 12 lines, ≈213 tokens",
         ]

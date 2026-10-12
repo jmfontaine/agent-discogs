@@ -1,5 +1,5 @@
-"""Shared configuration: where the cache lives, how long it keeps responses,
-and how many requests one scan may spend.
+"""Shared configuration: where the cache lives and how long it keeps
+responses.
 
 A leaf module: it imports nothing from the package, so any module can import
 it without creating a cycle.
@@ -13,8 +13,6 @@ from pathlib import Path
 # Passed to Discogs(cache_ttl=...); `status` and --debug show CACHE_TTL_LABEL.
 CACHE_TTL = 3600.0
 CACHE_TTL_LABEL = f"{CACHE_TTL / 3600:g}h"
-# Requests one client-side filtered scan may spend.
-MAX_API_CALLS = 5
 
 
 def cache_dir() -> Path:
