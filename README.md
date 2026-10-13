@@ -27,19 +27,15 @@ Or with pip:
 pip install agent-discogs
 ```
 
-pipx, uv and pip need Python 3.10 or later; Homebrew brings its own Python.
+pipx, uv and pip need Python 3.10 or later.
 
-Or with [Homebrew](https://brew.sh/):
+### Homebrew
 
 ```bash
 brew install jmfontaine/tap/agent-discogs
 ```
 
-The formula comes from the maintainer's tap and follows each PyPI release after a short delay, which can be a day or more.
-
-### Homebrew
-
-The formula installs the PyPI release into a virtualenv on Homebrew's own Python, whatever Python you have.
+The formula comes from the maintainer's [Homebrew](https://brew.sh/) tap. It installs the PyPI release into a virtualenv on Homebrew's own Python, whatever Python you have.
 
 To tap once and then use the short name:
 

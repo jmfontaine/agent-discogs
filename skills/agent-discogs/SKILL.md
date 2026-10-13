@@ -19,7 +19,7 @@ allowed-tools: Bash(agent-discogs:*)
 
 Token-efficient Discogs CLI for AI agents. Typed refs (`@r847868`, `@m3719`, `@a3857`, `@l647`) flow from one command into the next.
 
-Install: `pip install agent-discogs` (or `uv tool install agent-discogs`), then `export DISCOGS_TOKEN=<token>` from discogs.com/settings/developers.
+Install: `pip install agent-discogs` (or `uv tool install agent-discogs`, or `brew install jmfontaine/tap/agent-discogs`), then `export DISCOGS_TOKEN=<token>` from discogs.com/settings/developers.
 
 ## Start here
 
