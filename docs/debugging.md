@@ -19,6 +19,8 @@ cache     ~/.cache/agent-discogs  540.0 KB  ttl 1h
 output    494 chars, 9 lines, ≈123 tokens
 ```
 
+The `--owned` collection read shows in the panel as a `scan` row too, since it goes through the same scan machinery; its rows fetched and kept are equal.
+
 ## Output encoding
 
 Command output follows the encoding of stdout. When it is not UTF-8 (`PYTHONIOENCODING=ascii` or `latin-1`, some Windows pipes), a character the encoding cannot hold prints as a backslash escape (`宇多田` → `\u5b87\u591a\u7530`) and the command still succeeds; an encoding problem is never reported as an argument error. (click itself writes `--help` as UTF-8 when stdout is plain ASCII.)

@@ -10,7 +10,9 @@ from click.core import ParameterSource
 from discogs_sdk import Release, SearchResult
 from discogs_sdk.experimental import releases_added_since
 
+from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
+from agent_discogs.collection import mark_rows, ownership_of
 from agent_discogs.errors import fail
 from agent_discogs.formatting import format_added_releases, format_search_results
 from agent_discogs.json_output import dump, full_dump, page_document
@@ -260,7 +262,15 @@ def _search_added_since(
 @click.option(
     "--max-requests",
     type=int,
-    help="Cap the HTTP sends of a client-side scan or --added-since (default: no cap)",
+    help="Cap the HTTP sends of a client-side scan, --added-since or the "
+    "--owned collection read (default: no cap)",
+)
+@click.option(
+    "--owned",
+    is_flag=True,
+    default=False,
+    help="Mark each release row with the copies in your own collection "
+    "(needs DISCOGS_TOKEN or OAuth)",
 )
 @click.option(
     "--page",
@@ -297,6 +307,7 @@ def search(
     label: str | None,
     limit: int,
     max_requests: int | None,
+    owned: bool,
     page: int | None,
     release_type: str,
     sort: str | None,
@@ -396,11 +407,31 @@ def search(
             ),
             json_output=json_output,
         )
-    if not (needs_release_filter or added_since) and max_requests is not None:
+    if owned and added_since is not None:
         fail(
             ValueError(
-                "--max-requests caps a client-side filtered scan or --added-since; "
-                "this search pages server-side and sends one request."
+                "--owned cannot be combined with --added-since. Mark a page of "
+                "the same search without --added-since, or check a few refs "
+                "with: agent-discogs get owned @r... @r..."
+            ),
+            json_output=json_output,
+        )
+    if owned and type_filter in ("artist", "label", "master"):
+        article = "an" if type_filter == "artist" else "a"
+        fail(
+            ValueError(
+                f"--owned marks release rows, and {article} {type_filter} search "
+                "has none: a collection holds releases. Search releases, or list "
+                "a master's with: agent-discogs get versions @m... --owned"
+            ),
+            json_output=json_output,
+        )
+    if not (needs_release_filter or added_since or owned) and max_requests is not None:
+        fail(
+            ValueError(
+                "--max-requests caps a client-side filtered scan, --added-since "
+                "or the --owned collection read; this search pages server-side "
+                "and sends one request."
             ),
             json_output=json_output,
         )
@@ -411,6 +442,11 @@ def search(
         try:
             parse_cursor(after)
         except ValueError as exc:
+            fail(exc, json_output=json_output)
+    if owned:
+        try:
+            require_user("--owned")
+        except UserRequiredError as exc:
             fail(exc, json_output=json_output)
 
     filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}
@@ -450,6 +486,9 @@ def search(
             )
         else:
             result = fetch_page(listing, page=page or 1, per_page=limit)
+        ownership = (
+            ownership_of(client, result, max_requests=max_requests) if owned else None
+        )
     # classify() maps every exception to a coded, recovery-oriented error, so
     # catching broadly is the point.
     except Exception as e:  # noqa: BLE001
@@ -460,6 +499,8 @@ def search(
     if json_output:
         try:
             document = page_document(result, project_search_result, full=full)
+            if ownership is not None:
+                mark_rows(document, result.items, ownership)
         except Exception as e:  # noqa: BLE001
             fail(e, "Search", json_output=True)
         dump(document)
@@ -475,6 +516,7 @@ def search(
         sort=sort,
         desc=desc,
         max_requests=max_requests,
+        owned=owned,
     )
 
     if release_type != "official" and type_filter in (None, "release", "master"):
@@ -493,6 +535,7 @@ def search(
             filters=filters,
             filtered=result.filtered,
             stop=result.stop,
+            ownership=ownership,
         )
     except Exception as e:  # noqa: BLE001
         fail(e, "Search", json_output=False)

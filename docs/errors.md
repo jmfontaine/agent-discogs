@@ -13,6 +13,8 @@ The CLI maps API errors to recovery-oriented messages with suggested next steps:
   Retry in 30s. Discogs reported 60 req/min for the credentials in use (token).
 ✗ Not cached: GET /releases/352665
   Rerun without --cached to fetch it from the API.
+✗ --owned reads your own Discogs account, but no credentials are set.
+  Set a token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET). agent-discogs status shows the credentials in use.
 ✗ Connection error: [Errno 61] Connection refused
   Check your network and retry.
 ✗ Connection error: 407 Proxy Authentication Required
@@ -51,6 +53,15 @@ Codes:
 A 401 names the credentials that were sent, as `status` reports them: `DISCOGS_TOKEN`, the consumer key/secret, or OAuth (with the variables behind each), and says what to check. A consumer key and secret identify an app, not a user, so that hint also points at `DISCOGS_TOKEN` or OAuth for price suggestions.
 
 With no credentials set, the message reads `Authentication failed: no credentials are set.` and the hint says to export `DISCOGS_TOKEN`.
+
+## --owned and get owned need a user
+
+`--owned` and `get owned` read the authenticated user's own collection, so they need credentials that name a user: a token or OAuth. When `agent-discogs status` shows `consumer` or `none`, they fail with `auth_required` before any request is sent (the budget footer is absent):
+
+- `--owned reads your own Discogs account, but no credentials are set.` (no credentials), or `--owned reads your own Discogs account, but a consumer key/secret identifies an app, not a user.` (`get owned reads ...` for the noun);
+- the hint: `Set a token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET). agent-discogs status shows the credentials in use.`
+
+Under `--json` this is the usual envelope, without `status`, since no HTTP response exists. A 401 on a request that was sent is the [Authentication failed](#authentication-failed-401) case above; a 403 on the collection keeps the generic `forbidden` error.
 
 ## Rate limited (429)
 

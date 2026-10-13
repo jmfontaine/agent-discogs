@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from agent_discogs import markup, sanitize, style
+from agent_discogs.collection import is_release_row
 from agent_discogs.config import CACHE_TTL_LABEL
 from agent_discogs.markup import Part, plain
 from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
@@ -19,6 +20,7 @@ from agent_discogs.style import Span
 if TYPE_CHECKING:
     from discogs_sdk import AuthMode
 
+    from agent_discogs.collection import Copies, Ownership
     from agent_discogs.pagination import ScanStop
 
 # A view line is plain text, or a list of parts (`markup.Part`): text (which
@@ -407,6 +409,7 @@ def _release_row(
     have: int | None = None,
     added: str | None = None,
     master_ref: Span | None = None,
+    owned: Span | None = None,
 ) -> list[Part]:
     """One list row: everything an agent needs to pick or navigate, nothing else.
 
@@ -435,7 +438,62 @@ def _release_row(
         words.append([f"· added {added}"])
     if master_ref:
         words.append(["→ ", master_ref])
+    if owned:
+        words.append([owned])
     return _joined(words, " ")
+
+
+# Between `owned` and the copy count, as between a format's quantity and name.
+_TIMES = "\u00d7"  # multiplication sign
+
+
+def _owned(ownership: Ownership | None, row: Any) -> Span | None:
+    """`· owned` and the copy count, `· not owned`, or `· owned ?` (not in the
+    part of the collection read) for a release row under `--owned`; nothing
+    otherwise."""
+    if ownership is None or not is_release_row(row):
+        return None
+    copies = ownership.owned(row)
+    if copies is None:
+        return Span("· owned ?", "dim")
+    return Span(f"· owned {_TIMES}{copies}" if copies else "· not owned", "dim")
+
+
+def _ownership_note(ownership: Ownership | None) -> list[Line]:
+    """Why `owned ?` rows are undecided: the collection read stopped short."""
+    if ownership is None or ownership.stop is None:
+        return []
+    stop = ownership.stop
+    if stop.reason == "rate_limited":
+        wait = "" if stop.retry_after is None else f", retry in {stop.retry_after}s"
+        why = f"was rate limited{wait}"
+    else:
+        why = f"stopped at --max-requests {stop.max_requests}"
+    total = (
+        "" if ownership.total_records is None else f" of {ownership.total_records:,}"
+    )
+    read = f"{ownership.records_read:,}{total} records read"
+    return [
+        "",
+        [
+            _label("Owned"),
+            (
+                f' the collection read {why} ({read}): "owned ?" rows are not '
+                "in the part read, and a count may be short."
+            ),
+        ],
+    ]
+
+
+def format_owned(release_id: int, copies: Copies) -> str:
+    """`get owned`: `@r123 owned` with the copy count and folder names
+    (`Vinyl, Uncategorized`), or `@r123 not owned`. A copy in no folder
+    Discogs names adds no name."""
+    if not copies.count:
+        return _text([[_ref("release", release_id), " not owned"]])
+    folders = ", ".join(copies.folders)
+    owned = f" owned {_TIMES}{copies.count}" + (f": {folders}" if folders else "")
+    return _text([[_ref("release", release_id), owned]])
 
 
 def _format_filters(filters: dict[str, str] | None) -> str:
@@ -530,6 +588,7 @@ def format_label_releases(
     filtered: bool = False,
     stop: ScanStop | None = None,
     header_resent: bool = False,
+    ownership: Ownership | None = None,
 ) -> str:
     """Format a label's catalogue (client-side `--year` scans are `filtered`)."""
     counts = _page_counts(
@@ -558,9 +617,11 @@ def format_label_releases(
             year=getattr(rel, "year", None),
             catno=getattr(rel, "catalog_number", None),
             fmt=getattr(rel, "format", None),
+            owned=_owned(ownership, rel),
         )
         for rel in releases
     )
+    lines.extend(_ownership_note(ownership))
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
@@ -576,6 +637,7 @@ def format_artist_releases(
     filtered: bool = False,
     stop: ScanStop | None = None,
     header_resent: bool = False,
+    ownership: Ownership | None = None,
 ) -> str:
     """Format artist releases/discography."""
     counts = _page_counts(
@@ -606,9 +668,11 @@ def format_artist_releases(
             label=getattr(rel, "label", None),
             fmt=getattr(rel, "format", None),
             role=getattr(rel, "role", None),
+            owned=_owned(ownership, rel),
         )
         for rel in releases
     )
+    lines.extend(_ownership_note(ownership))
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
@@ -689,6 +753,8 @@ def format_master_versions(
     page: int,
     total_results: int | None,
     next_page_cmd: str | None,
+    *,
+    ownership: Ownership | None = None,
 ) -> str:
     """Format master release versions."""
     counts = _page_counts(
@@ -713,10 +779,12 @@ def format_master_versions(
             catno=getattr(ver, "catalog_number", None),
             fmt=getattr(ver, "format", None),
             have=_community_have(ver),
+            owned=_owned(ownership, ver),
         )
         for ver in versions
     )
 
+    lines.extend(_ownership_note(ownership))
     lines.extend(_footer(next_page_cmd, capped=False))
     return _text(lines)
 
@@ -961,6 +1029,7 @@ def format_search_results(
     *,
     filtered: bool = False,
     stop: ScanStop | None = None,
+    ownership: Ownership | None = None,
 ) -> str:
     """Format search results as compact text.
 
@@ -1011,11 +1080,13 @@ def format_search_results(
                     fmt=", ".join(fmt_list) if fmt_list else None,
                     have=_community_have(result),
                     master_ref=master_ref,
+                    owned=_owned(ownership, result),
                 )
             )
         else:
             lines.append(_release_row(ref=ref, type_=show_type, title=result.title))
 
+    lines.extend(_ownership_note(ownership))
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 

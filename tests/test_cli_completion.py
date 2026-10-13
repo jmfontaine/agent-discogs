@@ -14,6 +14,7 @@ _NOUNS = [
     "identifiers",
     "label",
     "master",
+    "owned",
     "price",
     "release",
     "releases",
