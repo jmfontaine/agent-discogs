@@ -15,11 +15,11 @@ from typing import Any
 
 from pydantic import TypeAdapter
 
+from agent_discogs import markup
 from agent_discogs.formatting import (
     _community_have,
     _format_string,
     _search_result_type,
-    _truncate,
     _urls_short,
     artist_title,
     credits_by_role,
@@ -191,7 +191,7 @@ def project_release(
         data["tracklist"] = _tracks(tracklist)
     if verbose:
         # Same facets the text view adds under -v: notes, credits, identifiers.
-        data["notes"] = (getattr(rel, "notes", None) or "").strip()
+        data["notes"] = markup.plain(markup.parse(getattr(rel, "notes", None) or ""))
         data["credits"] = project_credits(rel)
         data["identifiers"] = project_identifiers(rel)
     return drop_empty(data)
@@ -282,7 +282,7 @@ def project_artist(artist: Any) -> dict[str, Any]:
             "ref": make_ref("artist", artist.id),
             "url": _url(artist),
             "name": artist.name,
-            "profile": _truncate(getattr(artist, "profile", None)),
+            "profile": markup.plain(markup.profile(getattr(artist, "profile", None))),
             "urls": _urls_short(getattr(artist, "urls", None)),
             "members": _refs_of(current, "artist"),
             "former": _refs_of(former, "artist"),
@@ -297,7 +297,7 @@ def project_label(label: Any) -> dict[str, Any]:
             "ref": make_ref("label", label.id),
             "url": _url(label),
             "name": label.name,
-            "profile": _truncate(getattr(label, "profile", None)),
+            "profile": markup.plain(markup.profile(getattr(label, "profile", None))),
             "urls": _urls_short(getattr(label, "urls", None)),
             "parent": _refs_of([parent], "label")[0] if parent else None,
             "sub_labels": _refs_of(getattr(label, "sub_labels", None) or [], "label"),

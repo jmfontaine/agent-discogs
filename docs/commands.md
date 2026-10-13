@@ -105,6 +105,22 @@ Its format lists one entry per physical format, separated by `;`: the quantity w
 
 Index tracks (a suite or medley split into parts) list their sub-tracks indented beneath them. The compact count includes each part, and the total sums the parts' durations; when a part is untimed, the index track's own duration stands in for the suite.
 
+### Profiles and notes
+
+`artist` and `label` print a profile, cut to about 300 characters, and `release -v` prints the release notes. Discogs writes links and formatting into these fields as markup, which its website renders; the CLI converts it in the text view and the `--json` projection alike, so a link to another entity arrives as a ref you can pass straight back to `get`:
+
+| Discogs markup | Printed |
+|---|---|
+| `[a3857]`, `[l647]`, `[r352665]`, `[m3719]`, and the title-only `[r=352665]`, `[m=3719]` | the ref: `@a3857`, `@l647`, `@r352665`, `@m3719` |
+| `[a=Name]`, `[l=Name]` | `Name` (not resolved to a ref: that would take a search per name, which may not match exactly) |
+| `[url=https://host/path]text[/url]` | `text (host)`, without a leading `www.` |
+| `[url]https://host/path[/url]` | `host` |
+| `[g1.2.3]` (a database guideline), `[t=262]` (a forum topic) | the text Discogs shows: `RSG §1.2.3`, `Forum Topic #262` |
+| `[b]`, `[i]`, `[u]`, `[s]` and their closing tags | the text alone; with color on, bold, italic, underlined or struck through |
+| anything else in brackets, uppercase tags included (`[A3857]`, `[Booklet]`) | unchanged |
+
+An opening tag Discogs never closes ends with the field, and a closing tag with nothing to close is dropped. The cut counts the converted text and never splits a ref. `--json --full` keeps both fields exactly as Discogs sent them, markup included.
+
 ### credits and identifiers
 
 `credits` lists who did what on a release, grouped by role, each person with an artist ref. It includes credits Discogs files on individual tracks and sub-tracks: each person appears once per role with the tracks the credit covers, and no track list means the whole release.

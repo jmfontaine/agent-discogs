@@ -1,5 +1,5 @@
 """Tests for printing what Discogs sends: unknown search types, non-UTF-8
-stdout, JSON encoding, control characters, and color."""
+stdout, JSON encoding, control characters, color, and Discogs markup."""
 
 from __future__ import annotations
 
@@ -533,3 +533,134 @@ class TestColor:
         spans = _PAINTED.findall(result.stderr)
         assert any(text.startswith("── debug ") for text in spans)
         assert any(text.endswith("ms") for text in spans)
+
+
+# An SGR sequence with its parameters, the text it styles, and its reset.
+_CODED = re.compile(r"\x1b\[([0-9;]*)m(.*?)\x1b\[0m")
+
+
+class TestMarkup:
+    """Discogs markup in profiles and notes converts in the text views and
+    `--json`: refs become refs, name links names, URLs their text and site,
+    and `[b]`/`[i]`/`[u]`/`[s]` text attributes under color, never a color.
+    `--json --full` keeps the field as Discogs sent it."""
+
+    PROFILE = (
+        "Founder of [l7783] with [a=Carl Craig] and [a3857]. See "
+        "[url=https://www.discogs.com/label/1]Planet E[/url], "
+        "[url]http://warp.net/x[/url]. [b]B[/b] [i]I[/i] [u]U[/u] [s]S[/s] "
+        "[i][u]IU[/u] I[/i] [g1.1] [t=262] [A123] [x9] [Booklet] stray[/b] "
+        "Evil\x1b[31mRed [b]open"
+    )
+    CONVERTED = (
+        "Founder of @l7783 with Carl Craig and @a3857. See "
+        "Planet E (discogs.com), warp.net. B I U S IU I RSG §1.1 "
+        "Forum Topic #262 [A123] [x9] [Booklet] stray Evil\x1b[31mRed open"
+    )
+    # What the text view prints: the raw ESC as a visible escape.
+    PRINTED = CONVERTED.replace("\x1b", "\\x1b")
+    NOTES = (
+        "Pressed with [r=123] and [m456].\r\n[b]Bold\r\nacross lines[/b] [l=Imprint]"
+    )
+    LONG = "x" * 290 + " [b]bold words that cross the limit[/b] tail"
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        bodies = {
+            "/artists/1": {"id": 1, "name": "Artist", "profile": self.PROFILE},
+            "/labels/2": {"id": 2, "name": "Label", "profile": self.PROFILE},
+            "/labels/3": {"id": 3, "name": "Long", "profile": self.LONG},
+            "/releases/1": {"id": 1, "title": "Title", "notes": self.NOTES},
+        }
+        _FakeAPI(monkeypatch, lambda path, _params: bodies[path])
+
+    @pytest.mark.parametrize(
+        "argv", [["get", "artist", "@a1"], ["get", "label", "@l2"]]
+    )
+    def test_piped_text_converts_markup(self, argv: list[str]) -> None:
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 0
+        assert result.stdout.splitlines()[1] == f"Profile: {self.PRINTED}"
+        assert "\x1b" not in result.stdout
+
+    @pytest.mark.parametrize(
+        "argv", [["get", "artist", "@a1"], ["get", "label", "@l2"]]
+    )
+    def test_color_styles_data_with_attributes_only(self, argv: list[str]) -> None:
+        plain = CliRunner().invoke(cli, argv)
+        painted = CliRunner().invoke(cli, ["--color", "always", *argv])
+        profile = painted.stdout.splitlines()[1]
+        assert _SGR.sub("", painted.stdout) == plain.stdout
+        # Every escape code is a CLI style closed by its own reset, so none
+        # outlives its run; the data's own ESC stays a visible escape.
+        assert "\x1b" not in _CODED.sub("", profile)
+        assert "Evil\\x1b[31mRed" in profile
+        assert _CODED.findall(profile) == [
+            ("1", "Profile:"),
+            ("36", "@l7783"),
+            ("36", "@a3857"),
+            ("4", "Planet E"),
+            ("4", "warp.net"),
+            ("1", "B"),
+            ("3", "I"),
+            ("4", "U"),
+            ("9", "S"),
+            ("3;4", "IU"),
+            ("3", " I"),
+            ("1", "open"),
+        ]
+
+    def test_notes_convert_and_keep_styles_within_each_line(self) -> None:
+        argv = ["get", "release", "-v", "@r1"]
+        plain = CliRunner().invoke(cli, argv).stdout.splitlines()
+        painted = CliRunner().invoke(cli, ["--color", "always", *argv])
+        notes = plain.index("Notes: Pressed with @r123 and @m456.")
+        assert plain[notes + 1 : notes + 3] == ["  Bold", "  across lines Imprint"]
+        lines = painted.stdout.splitlines()[notes : notes + 3]
+        for line in lines:
+            assert "\x1b" not in _CODED.sub("", line)
+        assert [_CODED.findall(line) for line in lines] == [
+            [("1", "Notes:"), ("36", "@r123"), ("36", "@m456")],
+            [("1", "Bold")],
+            [("1", "across lines")],
+        ]
+
+    def test_truncation_cuts_a_styled_run_cleanly(self) -> None:
+        plain = CliRunner().invoke(cli, ["get", "label", "@l3"])
+        painted = CliRunner().invoke(cli, ["--color", "always", "get", "label", "@l3"])
+        data = CliRunner().invoke(cli, ["get", "label", "--json", "@l3"])
+        cut = "x" * 290 + " bold..."
+        assert plain.stdout.splitlines()[1] == f"Profile: {cut}"
+        assert json.loads(data.stdout)["profile"] == cut
+        profile = painted.stdout.splitlines()[1]
+        assert profile.endswith("x" * 290 + " \x1b[1mbold\x1b[0m...")
+
+    @pytest.mark.parametrize(
+        ("argv", "key", "converted"),
+        [
+            (["get", "artist", "--json", "@a1"], "profile", CONVERTED),
+            (["get", "label", "--json", "@l2"], "profile", CONVERTED),
+            (
+                ["get", "release", "-v", "--json", "@r1"],
+                "notes",
+                "Pressed with @r123 and @m456.\r\nBold\r\nacross lines Imprint",
+            ),
+        ],
+    )
+    def test_json_converts_without_escape_codes(
+        self, argv: list[str], key: str, converted: str
+    ) -> None:
+        result = CliRunner().invoke(cli, ["--color", "always", *argv])
+        assert "\x1b" not in result.stdout
+        assert json.loads(result.stdout)[key] == converted
+
+    @pytest.mark.parametrize(
+        ("argv", "key", "sent"),
+        [
+            (["get", "artist", "--json", "--full", "@a1"], "profile", PROFILE),
+            (["get", "release", "--json", "--full", "@r1"], "notes", NOTES),
+        ],
+    )
+    def test_full_keeps_the_markup(self, argv: list[str], key: str, sent: str) -> None:
+        result = CliRunner().invoke(cli, argv)
+        assert json.loads(result.stdout)[key] == sent
