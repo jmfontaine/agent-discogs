@@ -79,7 +79,7 @@ agent-discogs search [type] <query> [--flags]
 | `--added-since` | `search release` only, experimental: releases added on or after `YYYY-MM-DD`, newest first, the whole window. See `--added-since` above. |
 | `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, `--release-type unofficial` (without `--format`), or artist/label searches. Rejected on the client-side filtered path. |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (client-side filtered searches only: `--release-type official`, or `unofficial` with `--format`) |
-| `--release-type` | `official` (default): client-side scan, `≤N` total, continues with `--after`. `unofficial`: filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` it falls back to the client-side scan. `all`: no filter. |
+| `--release-type` | `official` (default): client-side scan, `≤N` total, continues with `--after`. `unofficial`: filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` it falls back to the client-side scan. It returns every unofficial release: bootlegs, counterfeits and pirates alike; for bootlegs only, see [Unofficial Releases](discogs-domain.md#unofficial-releases-bootlegs-counterfeits-pirates). `all`: no filter. |
 | `--sort` | `date_added` only, and only on `search release ...`: order by when releases were added to Discogs (ascending; add `--desc` for newest first). Undocumented by Discogs and only seen working on release searches, so any other search, or `--desc` without `--sort`, fails with `invalid_argument` before any request. If Discogs drops it, results most likely come back in relevance order with no error. The filtered (default) path keeps the server's order. |
 | `--style` | Filter by style |
 | `--year` | Filter by release year |
@@ -102,7 +102,7 @@ agent-discogs search release "Pretty Hate Machine" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
 agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc   # newest additions first
 agent-discogs search release --artist "Nine Inch Nails" --release-type all --added-since 2026-07-08 --max-requests 60
-agent-discogs search release --artist "Nine Inch Nails" --release-type unofficial --added-since 2025-10-09   # bootlegs added in the last year
+agent-discogs search release --artist "Nine Inch Nails" --release-type unofficial --added-since 2025-10-09   # unofficial releases (bootlegs, counterfeits, pirates) added in the last year
 ```
 
 Each row starts with a ref. A result of any other type than the four above starts with `id N [type]` instead (`[no type]` when Discogs sends none) and has no ref (`id` instead of `ref` under `--json`); the rest of the page is unaffected.

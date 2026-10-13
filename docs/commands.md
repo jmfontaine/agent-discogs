@@ -34,6 +34,8 @@ To continue, paste the `Next page:` command printed under the results: the defau
 
 `--release-type unofficial` is filtered by Discogs itself (`format=Unofficial Release`), so it shows an exact total and pages with `--page`; combined with `--format` it falls back to the client-side scan, because Discogs cannot reliably combine two format filters. `--page` (from 1) works with those server-side pages, `--release-type all`, and artist/label searches.
 
+Discogs' "Unofficial Release" covers bootlegs, counterfeits and pirate copies alike, and no field tells them apart, so `--release-type unofficial` returns all three. To keep bootlegs only, check each row's master: the bundled guide (`agent-discogs skills get core --full`, section "Unofficial Releases: Bootlegs, Counterfeits, Pirates") describes how.
+
 A search needs a query or at least one non-blank filter; an out-of-range `--limit`/`--page` or an empty search fails with `invalid_argument` before any request.
 
 A query starting with `-` goes after `--` (`agent-discogs search --release-type all -- -ambient`); the printed `Next page:` command always puts the type and query there, so it pastes back unchanged.

@@ -35,15 +35,17 @@ agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc
 
 `date_added` is undocumented: Discogs lists no sort keys for search and has only been seen honoring it on release searches, so `--sort` on artist, label, master, or untyped searches is rejected before any request. If Discogs ever drops the parameter, results most likely come back in relevance order with no error, so check the dates before trusting the order.
 
-### Releases (or bootlegs) added since a date
+### Releases (or unofficial releases) added since a date
 ```bash
 # Everything added in the last 3 months, newest first
 agent-discogs search release --artist "Nine Inch Nails" --release-type all --added-since 2026-07-08 --max-requests 60
-# Bootlegs added in the last 12 months: Discogs filters them, so only bootlegs are looked up
+# Unofficial releases (bootlegs, counterfeits, pirates) added in the last 12 months: Discogs filters them, so only unofficial releases are looked up
 agent-discogs search release --artist "Nine Inch Nails" --release-type unofficial --added-since 2025-10-09
 ```
 
-`--added-since` is experimental. Search results carry no added date, so it walks the undocumented `date_added` order and looks up each release the search matches (one request per release in the window, before `--release-type` filtering, plus one per 100 search results and one to end the scan). It returns the whole window, each row with `· added YYYY-MM-DD` (the UTC day; the cutoff is midnight UTC), and is complete only while Discogs keeps the order; a broken order fails with `bad_response`, cached, so retry it with `--fresh`. A repeat within the hour is free. Under a tool-call time limit, pass `--max-requests N`: a capped run says it may be incomplete (`complete: false`), and rerunning with a higher cap reuses every cached lookup. The CLI never waits out the rate limit: a 429 partway fails with `rate_limited`, and the rerun after `retry_after` resends nothing already looked up. It misses releases where the artist has only track-level or secondary credits (`artist=` does not match them) and bootlegs not tagged "Unofficial Release".
+`--added-since` is experimental. Search results carry no added date, so it walks the undocumented `date_added` order and looks up each release the search matches (one request per release in the window, before `--release-type` filtering, plus one per 100 search results and one to end the scan). It returns the whole window, each row with `· added YYYY-MM-DD` (the UTC day; the cutoff is midnight UTC), and is complete only while Discogs keeps the order; a broken order fails with `bad_response`, cached, so retry it with `--fresh`. A repeat within the hour is free. Under a tool-call time limit, pass `--max-requests N`: a capped run says it may be incomplete (`complete: false`), and rerunning with a higher cap reuses every cached lookup. The CLI never waits out the rate limit: a 429 partway fails with `rate_limited`, and the rerun after `retry_after` resends nothing already looked up. It misses releases where the artist has only track-level or secondary credits (`artist=` does not match them) and, under `--release-type unofficial`, unofficial releases not tagged "Unofficial Release".
+
+`--release-type unofficial` returns every unofficial release: bootlegs, counterfeits and pirates alike, since Discogs tags all three the same way. For bootlegs only, check each row's `→ @m...` master as [Unofficial Releases](discogs-domain.md#unofficial-releases-bootlegs-counterfeits-pirates) describes, and drop the rows whose master has official versions.
 
 ## Filter Combinations
 

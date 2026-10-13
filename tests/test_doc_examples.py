@@ -43,6 +43,7 @@ KNOWN_REFS: dict[str, tuple[str, str]] = {
     "@a3857": ("artist", "Nine Inch Nails"),
     "@l647": ("label", "Nothing Records"),
     "@a20661": ("artist", "Flood"),
+    "@m563536": ("master", "Woodstock 94"),
 }
 
 # Entity names the docs mention, by kind. A ref whose ±CONTEXT-line window
@@ -59,6 +60,7 @@ VOCABULARY: dict[str, set[str]] = {
         "Closer To God",
         "Down In It",
         "Vulgar Display Of Power",
+        "Woodstock 94",
     },
     "artist": {"Nine Inch Nails", "New Order", "Trent Reznor", "Jaydee", "Pantera"},
     "label": {

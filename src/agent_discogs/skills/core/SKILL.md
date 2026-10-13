@@ -88,7 +88,8 @@ Color is off when stdout is a pipe, which is how most agent harnesses run comman
 | Get original pressing | `search master "<title>"` → `get versions @m... --sort released` → `get release @r...` |
 | Narrow release search | `search release "<title>" --artist "<name>"` |
 | Newest additions first | `search release --artist "<name>" --sort date_added --desc` (release searches only; undocumented by Discogs) |
-| Recently added releases / bootlegs | `search release --artist "<name>" --release-type all --added-since YYYY-MM-DD --max-requests 60` (bootlegs: `--release-type unofficial`, which Discogs filters, so only bootlegs are looked up). Experimental; one request per release in the window |
+| Recently added releases / unofficial releases | `search release --artist "<name>" --release-type all --added-since YYYY-MM-DD --max-requests 60` (unofficial releases: `--release-type unofficial`, which Discogs filters, so only unofficial releases are looked up; that means bootlegs, counterfeits and pirates alike). Experimental; one request per release in the window |
+| Bootlegs only (not counterfeits) | `search release --artist "<name>" --release-type unofficial`, then drop rows whose `→ @m...` master has official versions (`get versions @m... --limit 100 --json`: any row without "Unofficial Release" that is not just a promo). Not a flag: a judgement call, see [Unofficial Releases](references/discogs-domain.md#unofficial-releases-bootlegs-counterfeits-pirates) |
 | Get release notes / credits / identifiers together | `get release @r... --verbose` |
 | Compare several pressings cheaply | `get release @r... @r... @r... -c` in one command; `tracks @r...` only when the tracklist matters |
 | Who produced / engineered / played on this? | `get credits @r...` → follow a `[@a...]` into `get releases @a...` |

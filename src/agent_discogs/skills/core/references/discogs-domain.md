@@ -5,6 +5,7 @@ How Discogs structures and categorizes music data. Use this to interpret search 
 ## Contents
 
 - [Formats](#formats)
+- [Unofficial Releases: Bootlegs, Counterfeits, Pirates](#unofficial-releases-bootlegs-counterfeits-pirates)
 - [Genre and Style](#genre-and-style)
 - [Country](#country)
 - [Artists](#artists)
@@ -55,7 +56,7 @@ Descriptions qualify a format. Common ones and what they mean:
 | White Label | Center labels are blank (any color). No mechanically applied print. |
 | Limited Edition | Only when "limited" or "limited edition" appears on the release. |
 | Numbered | Edition is numbered (e.g., "142 of 500"). |
-| Unofficial Release | Made without copyright holder consent. Covers bootlegs, counterfeits, pirates. |
+| Unofficial Release | Made without copyright holder consent. Covers bootlegs, counterfeits, pirates alike; see [Unofficial Releases](#unofficial-releases-bootlegs-counterfeits-pirates) to tell them apart. |
 
 **Reissue vs Repress**: A reissue can cross formats (CD reissue of an LP). A repress must use the original master disc on the same pressed format. Both tags can coexist.
 
@@ -73,6 +74,32 @@ A format display string is composed of: `Qty x Format, Description, Description,
 Example: `2xLP, Album, Reissue, (180g, Gatefold)` means 2 vinyl LPs, album-length, reissued, pressed at 180g in a gatefold sleeve.
 
 `get release` prints each entry as `Qty×Format (Description, Description, Free Text)`, entries separated by `;`, and omits a quantity of 1: the example above appears as `2×Vinyl (LP, Album, Reissue, 180g, Gatefold)`.
+
+## Unofficial Releases: Bootlegs, Counterfeits, Pirates
+
+Discogs tags bootlegs, counterfeits and pirate copies alike with the format description "Unofficial Release", and `search --release-type unofficial` returns all three. No field tells them apart: which kind a release is remains a judgement call, made from the signals below. Discogs records none of it.
+
+| Kind | What it is | Signals on Discogs |
+|------|------------|--------------------|
+| Bootleg | Material never officially released: live recordings, demos, outtakes, unreleased films | Its own title, and either no master or a master with no official versions; often `Not On Label (Artist)` or an invented label |
+| Counterfeit | A copy of an official release made to pass as genuine | Grouped under the official release's master (`→ @m...`); the official label name and catalog number copied (e.g. "Island Records" ILPSD 8012 LPs under @m3719) |
+| Pirate | An unauthorised copy of official content that does not pretend to be genuine | Under the official master too, usually with a local label and catalog number (e.g. Russian or Indonesian cassettes) |
+
+A question that says "bootleg" usually means the first kind only; `--release-type unofficial` alone is not the answer to it.
+
+### How to check
+
+1. **Find the master.** A search row ends in `→ @m...` (JSON `master`); `get release` prints `Master: @m...`. When neither shows one, the release has no master: a bootleg, unless it falls into one of the traps below.
+2. **See whether that master has official versions.** `get versions @m... --limit 100 --json` costs 1 request (2 as text, for the header title). A version row whose format lacks "Unofficial Release" is official, unless it is only a promotional copy ("Promo", "Advance", "Test Pressing"). One official row is enough: the unofficial releases under that master copy official content, so they are counterfeits or pirates, not bootlegs. Every row unofficial means a bootleg master: `get versions @m563536` ("Woodstock 94") lists dozens of bootlegs of Nine Inch Nails' 1994 Woodstock set, every one "Unofficial Release". So does a master whose only other rows are promotional copies: the material was never released, so its unofficial releases are bootlegs. When the master has more versions than one page holds and none so far is official, read the next page before concluding.
+3. **Counterfeit or pirate**, when it matters: the official label name and catalog number copied point to a counterfeit; a local label and catalog number to a pirate.
+
+Several releases often share a master: check each master once (a repeat within the hour is cached anyway).
+
+### Traps
+
+- **A counterfeit with no master** slips past the master check and looks like a bootleg. Compare its title and tracklist (`tracks @r...`) with the official release's (`search master "<title>" --artist "<name>"`, then `get master @m...`): the same album under the same title is a counterfeit or a pirate.
+- **An invented label name does not by itself make a counterfeit.** Bootlegs use invented labels too. A compilation whose title and tracklist match no official release is a bootleg, whatever label it prints.
+- **`Not On Label (Artist)` does not by itself make a bootleg.** Counterfeits and pirates carry it too; the master decides.
 
 ## Genre and Style
 
@@ -178,9 +205,9 @@ A label is a brand or imprint used to identify releases. The main label is usual
 
 ### Not On Label
 
-Self-released, white labels, bootlegs, and other releases with no discernible label use "Not On Label". Common patterns:
+Self-released, white labels, unofficial releases (bootlegs, counterfeits, pirates), and other releases with no discernible label use "Not On Label". Common patterns:
 - `Not On Label (Artist Name Self-released)` for artist self-releases.
-- `Not On Label (Artist Name)` for unofficial releases of that artist's music.
+- `Not On Label (Artist Name)` for unofficial releases of that artist's music, of any of the three kinds (see [Unofficial Releases](#unofficial-releases-bootlegs-counterfeits-pirates)).
 
 ### Catalog numbers
 
