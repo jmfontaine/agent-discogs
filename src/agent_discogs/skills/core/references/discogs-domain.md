@@ -79,6 +79,8 @@ Example: `2xLP, Album, Reissue, (180g, Gatefold)` means 2 vinyl LPs, album-lengt
 
 Discogs tags bootlegs, counterfeits and pirate copies alike with the format description "Unofficial Release", and `search --release-type unofficial` returns all three. No field tells them apart: which kind a release is remains a judgement call, made from the signals below. Discogs records none of it.
 
+"Partially Unofficial" is a separate description: `--release-type unofficial` does not return those releases, and the default `official` keeps them. List them with `--release-type all --format "Partially Unofficial"`.
+
 | Kind | What it is | Signals on Discogs |
 |------|------------|--------------------|
 | Bootleg | Material never officially released: live recordings, demos, outtakes, unreleased films | Its own title, and either no master or a master with no official versions; often `Not On Label (Artist)` or an invented label |
@@ -90,8 +92,8 @@ A question that says "bootleg" usually means the first kind only; `--release-typ
 ### How to check
 
 1. **Find the master.** A search row ends in `→ @m...` (JSON `master`); `get release` prints `Master: @m...`. When neither shows one, the release has no master: a bootleg, unless it falls into one of the traps below.
-2. **See whether that master has official versions.** `get versions @m... --limit 100 --json` costs 1 request (2 as text, for the header title). A version row whose format lacks "Unofficial Release" is official; promo, advance and test-pressing copies count too, since the label issued them. One official row is enough: the unofficial releases under that master copy official content, so they are counterfeits or pirates, not bootlegs. Every row unofficial means a bootleg master, unless its tracks are officially released recordings (see the compilation trap below): `get versions @m563536` ("Woodstock 94") lists dozens of bootlegs of Nine Inch Nails' 1994 Woodstock set, every one "Unofficial Release". When the master has more versions than one page holds and none so far is official, read the next page before concluding.
-3. **Counterfeit or pirate**, when it matters: the official label name and catalog number copied point to a counterfeit; a local label and catalog number to a pirate.
+2. **See whether that master has official versions.** `get versions @m... --limit 100 --json` costs 1 request (2 as text, for the header title). A version row whose format lacks both "Unofficial Release" and "Partially Unofficial" is official; promo, advance and test-pressing copies count too, since the label issued them. A "Partially Unofficial" row is not official: Discogs tags releases that may not respect copyright with either description, and "Partially" marks one whose content is only partly unauthorised, so it does not show that the master has official versions. One official row is enough: the unofficial releases under that master copy official content, so they are counterfeits or pirates, not bootlegs. Every row unofficial means a bootleg master, unless its tracks are officially released recordings (see the compilation trap below): `get versions @m563536` ("Woodstock 94") lists dozens of bootlegs of Nine Inch Nails' 1994 Woodstock set, every one "Unofficial Release". When the master has more versions than one page holds and none so far is official, read the next page before concluding.
+3. **Counterfeit or pirate**, when it matters: compare the release's label and catalog number with those of the official versions found in step 2 (for a release with no master, `get versions` of the official master found under Traps). The official label name and catalog number copied point to a counterfeit; a local label and catalog number to a pirate.
 
 Several releases often share a master: check each master once (a repeat within the hour is cached anyway).
 
