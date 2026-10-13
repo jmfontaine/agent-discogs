@@ -190,8 +190,9 @@ Options:
                    most N (exactly N is kept; no price is dropped). Needs
                    --currency
   --currency CODE  get wantlist --for-sale: prices in USD, GBP, EUR, CAD, AUD,
-                   JPY, CHF, MXN, BRL, NZD, SEK or ZAR (any case); without it
-                   Discogs uses the account's currency
+                   JPY, CHF, MXN, BRL, NZD, SEK or ZAR (any case; another code
+                   is invalid_argument); without it Discogs uses the account's
+                   currency
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its

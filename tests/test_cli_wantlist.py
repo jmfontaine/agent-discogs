@@ -328,6 +328,7 @@ class TestForSale:
             "get wantlist --for-sale --max-price nan --currency EUR",
             "get wantlist --for-sale --max-requests 1",
             "get wantlist --for-sale --max-requests 2",
+            "get wantlist --for-sale --currency XYZ",
             "get wantlist --for-sale --page 2",
             "get wantlist --after 2:3",
             "get wantlist @r1",
@@ -340,6 +341,18 @@ class TestForSale:
         h = _Harness(monkeypatch, _Wantlist())
         result, sent = h.run(*argv.split(), "--json")
         assert json_error(result)["code"] == "invalid_argument"
+        assert sent == []
+
+    def test_an_unknown_currency_is_an_invalid_argument(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Like any bad flag value: exit 1 and the error, not a usage error."""
+        h = _Harness(monkeypatch, _Wantlist())
+        result, sent = h.run("get", "wantlist", "--for-sale", "--currency", "xyz")
+        assert text_error(result).startswith(
+            "✗ --currency must be one of USD, GBP, EUR, CAD, AUD, JPY, CHF, MXN, "
+            "BRL, NZD, SEK, ZAR ('xyz' given)."
+        )
         assert sent == []
 
 

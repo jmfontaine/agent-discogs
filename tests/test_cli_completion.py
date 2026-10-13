@@ -99,6 +99,14 @@ class TestCompletion:
             ("agent-discogs skills get ", ["core"]),
             ("agent-discogs skills path ", ["core"]),
             ("agent-discogs completion ", ["bash", "zsh", "fish"]),
+            (
+                "agent-discogs get wantlist --currency ",
+                [
+                    *("USD", "GBP", "EUR", "CAD", "AUD", "JPY"),
+                    *("CHF", "MXN", "BRL", "NZD", "SEK", "ZAR"),
+                ],
+            ),
+            ("agent-discogs get wantlist --currency e", ["EUR"]),
         ],
     )
     def test_fixed_option_and_argument_values(

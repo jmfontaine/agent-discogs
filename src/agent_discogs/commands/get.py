@@ -85,6 +85,22 @@ REFLESS_NOUNS = ("wantlist",)
 
 GET_NOUNS = [*NOUN_EXPECTED_TYPE, *REFLESS_NOUNS, *NOUN_ALIASES]
 
+# The currencies Discogs prices the Marketplace in (`curr_abbr`).
+CURRENCIES: tuple[CurrencyCode, ...] = get_args(CurrencyCode)
+
+
+def _currency(code: str) -> CurrencyCode | None:
+    """The currency `code` names, in any case, or None for an unknown one."""
+    return next((c for c in CURRENCIES if c == code.upper()), None)
+
+
+def _complete_currency(
+    _ctx: click.Context, _param: click.Parameter, incomplete: str
+) -> list[str]:
+    """Tab offers the currency codes, uppercase, matching what was typed in
+    any case."""
+    return [c for c in CURRENCIES if c.startswith(incomplete.upper())]
+
 
 def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
     """Parse a ref or raw ID, validating type against noun expectation.
@@ -682,6 +698,10 @@ def _wantlist_error(
             "checks each want's Marketplace stats; get wantlist alone pages "
             "server-side."
         )
+    if currency is not None and _currency(currency) is None:
+        return (
+            f"--currency must be one of {', '.join(CURRENCIES)} ({currency!r} given)."
+        )
     if max_price is not None and currency is None:
         return (
             "--max-price needs --currency CODE (e.g. --currency EUR), so the "
@@ -927,7 +947,7 @@ def _dispatch(
     owned: bool,
     for_sale: bool,
     max_price: float | None,
-    currency: CurrencyCode | None,
+    currency: str | None,
     verbose: bool,
     compact: bool,
     mode: Mode,
@@ -991,7 +1011,7 @@ def _dispatch(
                 after=after,
                 for_sale=for_sale,
                 max_price=max_price,
-                currency=currency,
+                currency=_currency(currency) if currency else None,
                 max_requests=max_requests,
                 mode=mode,
             )
@@ -1092,8 +1112,10 @@ def _json_options(command: Any) -> Any:
 @click.option("--country", help="Filter versions by country")
 @click.option(
     "--currency",
-    type=click.Choice(get_args(CurrencyCode), case_sensitive=False),
-    help="wantlist --for-sale: Marketplace prices in this currency (sent as curr_abbr)",
+    metavar="CODE",
+    shell_complete=_complete_currency,
+    help=f"wantlist --for-sale: Marketplace prices in {'|'.join(CURRENCIES)} "
+    "(any case; sent as curr_abbr)",
 )
 @click.option(
     "--desc", is_flag=True, default=False, help="With --sort: descending order"
@@ -1159,7 +1181,7 @@ def get(
     after: str | None,
     compact: bool,
     country: str | None,
-    currency: CurrencyCode | None,
+    currency: str | None,
     desc: bool,
     format_: str | None,
     for_sale: bool,
