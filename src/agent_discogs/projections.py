@@ -370,3 +370,23 @@ def project_artist_release(rel: Any) -> dict[str, Any]:
             "format": getattr(rel, "format", None),
         }
     )
+
+
+def project_want(want: Any) -> dict[str, Any]:
+    """A `get wantlist` row: the wanted release, titled like a search result,
+    with the want's own `notes` and `rating` (Discogs' 0 is unrated)."""
+    release = getattr(want, "basic_information", None)
+    labels = getattr(release, "labels", None) or []
+    first = labels[0] if labels else None
+    return drop_empty(
+        {
+            "ref": make_ref("release", want.id),
+            "title": artist_title(release),
+            "year": known_year(getattr(release, "year", None)),
+            "label": getattr(first, "name", None),
+            "catno": getattr(first, "catalog_number", None),
+            "format": _format_string(getattr(release, "formats", None)),
+            "notes": getattr(want, "notes", None),
+            "rating": getattr(want, "rating", None) or None,
+        }
+    )

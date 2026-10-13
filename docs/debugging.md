@@ -21,6 +21,8 @@ output    494 chars, 9 lines, ≈123 tokens
 
 The `--owned` collection read shows in the panel as a `scan` row too, since it goes through the same scan machinery; its rows fetched and kept are equal.
 
+The `get wantlist --for-sale` scan has a `scan` row as well: its API calls are the wants pages (100 wants each), its rows fetched every want on those pages (checked or not), and its rows kept the wants it kept. Each want's Marketplace stats lookup is a `GET /marketplace/stats/{id}` row of its own, which the scan row's API calls do not count.
+
 ## Output encoding
 
 Command output follows the encoding of stdout. When it is not UTF-8 (`PYTHONIOENCODING=ascii` or `latin-1`, some Windows pipes), a character the encoding cannot hold prints as a backslash escape (`宇多田` → `\u5b87\u591a\u7530`) and the command still succeeds; an encoding problem is never reported as an argument error. (click itself writes `--help` as UTF-8 when stdout is plain ASCII.)

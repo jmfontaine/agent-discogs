@@ -130,7 +130,7 @@ def _read_ownership(
     if max_requests is not None and trace.sends() >= max_requests:
         return _unread(ScanStop("max_requests", max_requests=max_requests))
     try:
-        user = client.users.get(account.username(client))
+        user = account.user(client)
         result = fetch_filtered_page(
             user.collection.folders.get(_ALL_FOLDER).releases.list,
             limit=None,
@@ -168,7 +168,7 @@ def _folder_names(user: Any) -> dict[int, str]:
 def copies(client: Discogs, release_id: int, *, folders: bool) -> Copies:
     """One request for the release's instances, plus, with `folders` and at
     least one copy, the folder list (once per invocation) to name them."""
-    user = client.users.get(account.username(client))
+    user = account.user(client)
     page = fetch_page(
         user.collection.releases.get(release_id).list, page=1, per_page=MAX_LIMIT
     )

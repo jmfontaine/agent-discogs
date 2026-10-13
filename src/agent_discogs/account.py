@@ -4,7 +4,7 @@ wantlist) goes through here."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -53,3 +53,9 @@ def username(client: Discogs) -> str:
     if isinstance(found, Exception):
         raise found
     return found
+
+
+def user(client: Discogs) -> Any:
+    """The SDK's handle on the user behind the credentials, for their
+    collection and wantlist: the username lookup, nothing more."""
+    return client.users.get(username(client))

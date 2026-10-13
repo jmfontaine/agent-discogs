@@ -40,7 +40,7 @@ Codes:
 - `auth_required`
 - `forbidden`
 - `rate_limited`: with `retry_after` in whole seconds, rounded up, when Discogs sends a usable `Retry-After`, as seconds or an HTTP date; `0` means retry now; and `limit`/`remaining` for the current minute when Discogs reports them
-- `cache_miss`: only under `--cached`
+- `cache_miss`: only under `--cached`; a `get wantlist --for-sale` want whose stats are not cached carries one in its own row, with exit 1 (see [--cached](caching-and-budget.md#--cached-and---fresh))
 - `cache_error`: with `path`, the cache database; see [Cache errors](caching-and-budget.md#cache-errors)
 - `api_error`
 - `connection_error`
@@ -54,14 +54,20 @@ A 401 names the credentials that were sent, as `status` reports them: `DISCOGS_T
 
 With no credentials set, the message reads `Authentication failed: no credentials are set.` and the hint says to export `DISCOGS_TOKEN`.
 
-## --owned and get owned need a user
+## --owned, get owned and get wantlist need a user
 
-`--owned` and `get owned` read the authenticated user's own collection, so they need credentials that name a user: a token or OAuth. When `agent-discogs status` shows `consumer` or `none`, they fail with `auth_required` before any request is sent (the budget footer is absent):
+`--owned`, `get owned` and `get wantlist` read the authenticated user's own data (the collection, the wantlist), so they need credentials that name a user: a token or OAuth. When `agent-discogs status` shows `consumer` or `none`, they fail with `auth_required` before any request is sent (the budget footer is absent):
 
-- `--owned reads your own Discogs account, but no credentials are set.` (no credentials), or `--owned reads your own Discogs account, but a consumer key/secret identifies an app, not a user.` (`get owned reads ...` for the noun);
+- `--owned reads your own Discogs account, but no credentials are set.` (no credentials), or `--owned reads your own Discogs account, but a consumer key/secret identifies an app, not a user.` (`get owned reads ...` for the noun, `get wantlist reads ...` for the wantlist);
 - the hint: `Set a token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET). agent-discogs status shows the credentials in use.`
 
 Under `--json` this is the usual envelope, without `status`, since no HTTP response exists. A 401 on a request that was sent is the [Authentication failed](#authentication-failed-401) case above; a 403 on the collection keeps the generic `forbidden` error.
+
+## get wantlist argument errors
+
+Before any request, `get wantlist` rejects with `invalid_argument` (no budget footer): a ref (`get wantlist takes no ref: it lists your own wantlist.`); `--max-price`, `--currency` or `--max-requests` without `--for-sale`; an unknown `--currency` code (`--currency must be one of USD, GBP, EUR, CAD, AUD, JPY, CHF, MXN, BRL, NZD, SEK, ZAR ('xyz' given).`); `--max-requests` below 3 with `--for-sale` (`--max-requests must be 3 or more with --for-sale (2 given): the username, a wants page and one want's stats, which a cold cache or --fresh sends on every run.`); `--max-price` without `--currency`; a negative `--max-price`; `--page` with `--for-sale` (use the `Continue scan:` command); `--after` without `--for-sale`.
+
+Under `--for-sale`, a 429 on a stats request ends the scan with the rows kept instead of an error, and a `--cached` miss on one want's stats is reported in that want's row (text `· ✗ Not cached: GET /marketplace/stats/5`, JSON `error.code == "cache_miss"`) with exit 1; the rest of the page still prints. See [get wantlist](commands.md#wantlist).
 
 ## Rate limited (429)
 

@@ -43,6 +43,27 @@ Under `--owned` (`search`, `get versions`, `get releases`; see [Marking rows wit
 
 `get owned @r... --json` prints `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}`, or `{"ref":"@r847868","owned":0}` when not owned. Several refs give a list, with `{"ref","error"}` items for failures. `--full` prints `{"instances":[...]}`, your collection records for the release as the SDK normalizes them (their folders by id, not name).
 
+## Wantlist
+
+`get wantlist --json` is the paginated envelope (see [get wantlist](commands.md#wantlist)):
+
+```json
+{"pagination":{"page":1,"total_items":150,"total_pages":30},"results":[{"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral","year":1994,"label":"Nothing Records","catno":"92346-2","format":"CD (Album)","notes":"Sealed only","rating":4}]}
+```
+
+- Rows carry `ref`, `title` (`artist - title`), `year`, `label`, `catno` and `format`, plus `notes` and `rating` when set; `rating` `0` (unrated) is omitted, like any empty field. A want has no `url`.
+- `--full` prints the want records as the SDK normalizes them: `id`, `basic_information`, `notes`, `rating`, `resource_url`.
+
+With `--for-sale` (a filtered scan, so `pagination` carries `filtered`, `capped`, `next_cursor`, and `stop_reason` / `retry_after` when it stopped early; see [Pagination](#pagination)) each kept row adds `market`, the shape `price` uses:
+
+```json
+{"pagination":{"page":1,"total_items":10,"total_pages":1,"filtered":true,"capped":false,"next_cursor":null},"results":[{"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral","year":1994,"label":"Nothing Records","catno":"92346-2","format":"CD (Album)","notes":"Sealed only","rating":4,"market":{"for_sale":3,"lowest":12.5,"currency":"EUR"}}]}
+```
+
+- `market` is `{"for_sale": int, "lowest": number, "currency": string}`: copies on sale and the lowest asking price across every condition and location, in the `--currency` asked for. `lowest` and `currency` are omitted when Discogs gives no price. Condition, sleeve condition, seller location and shipping are not available: the API lists no individual copies.
+- `total_items` is the whole wantlist, not the number for sale; `capped: true` with `stop_reason: "max_requests"` or `"rate_limited"` means more wants remain unchecked, and `next_cursor` continues from the first one.
+- Under `--cached`, a want whose stats are not cached is a row with no `market` and `error: {"code":"cache_miss","message":"Not cached: GET /marketplace/stats/5","hint":"..."}`, and the command exits 1. It was not checked: do not read it as not for sale. `--full` keeps the `error` and adds `market` to the want records the same way.
+
 ## --full
 
 ```bash
