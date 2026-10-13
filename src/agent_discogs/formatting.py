@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
     from agent_discogs.collection import Copies, Ownership
     from agent_discogs.pagination import ScanStop
+    from agent_discogs.wantlist import Market
 
 # A view line is plain text, or a list of parts (`markup.Part`): text (which
 # may hold Discogs values), `Span`s of CLI framing color may paint, and
@@ -409,12 +410,15 @@ def _release_row(
     have: int | None = None,
     added: str | None = None,
     master_ref: Span | None = None,
+    notes: str | None = None,
     owned: Span | None = None,
+    tail: list[Part] | None = None,
 ) -> list[Part]:
     """One list row: everything an agent needs to pick or navigate, nothing else.
 
-    Shared by search, versions, and discography views so a release looks the
-    same wherever it appears. Every part is optional and omitted when empty.
+    Shared by search, versions, discography and wantlist views so a release
+    looks the same wherever it appears. Every part is optional and omitted
+    when empty; `tail` ends the row (a want's Marketplace stats).
     """
     words: list[list[Part]] = [[ref]]
     if type_:
@@ -438,8 +442,12 @@ def _release_row(
         words.append([f"· added {added}"])
     if master_ref:
         words.append(["→ ", master_ref])
+    if notes:
+        words.append([f"· notes: {notes}"])
     if owned:
         words.append([owned])
+    if tail:
+        words.append(tail)
     return _joined(words, " ")
 
 
@@ -499,6 +507,76 @@ def format_owned(release_id: int, copies: Copies) -> str:
     folders = ", ".join(copies.folders)
     owned = f" {_copies(copies.count)}" + (f": {folders}" if folders else "")
     return _text([[_ref("release", release_id), owned]])
+
+
+def _market_tail(market: Market) -> list[Part]:
+    """`· for sale: 3 from EUR 12.50`; the amount is Discogs', not framing."""
+    lowest = _price(market.lowest)
+    sale = f" {market.for_sale:,}" + (f" from {lowest}" if lowest else "")
+    return [Span("· for sale:", "dim"), sale]
+
+
+def format_wantlist(
+    wants: list[Any],
+    username: str,
+    page: int,
+    total_results: int | None,
+    next_page_cmd: str | None,
+    *,
+    filters: dict[str, str] | None = None,
+    filtered: bool = False,
+    stop: ScanStop | None = None,
+    header_resent: bool = False,
+    markets: dict[int, Market] | None = None,
+    misses: dict[int, str] | None = None,
+) -> str:
+    """`get wantlist`: one row per want, the release titled like a search
+    result, with the want's notes. Under `--for-sale` (`filtered`), each row
+    ends in its Marketplace stats (`markets`), or in the `--cached` miss that
+    left it undecided (`misses`, by release id, the error message)."""
+    counts = _page_counts(
+        page,
+        len(wants),
+        total_results,
+        "wants",
+        filtered=filtered,
+        stop=stop,
+        header_resent=header_resent,
+    )
+    subject = " ".join(
+        p
+        for p in (username, "for sale" if filtered else "", _format_filters(filters))
+        if p
+    )
+    lines: list[Line] = [[_label("Wantlist"), f" {subject} ", Span(counts, "dim")], ""]
+    markets = markets or {}
+    misses = misses or {}
+    for want in wants:
+        release = getattr(want, "basic_information", None)
+        labels = getattr(release, "labels", None) or []
+        first = labels[0] if labels else None
+        if want.id in misses:
+            tail: list[Part] | None = [Span("· ✗", "error"), f" {misses[want.id]}"]
+        elif want.id in markets:
+            tail = _market_tail(markets[want.id])
+        else:
+            tail = None
+        lines.append(
+            _release_row(
+                ref=_ref("release", want.id),
+                title=artist_title(release),
+                year=getattr(release, "year", None),
+                label=getattr(first, "name", None),
+                catno=getattr(first, "catalog_number", None),
+                fmt=_format_string(getattr(release, "formats", None)) or None,
+                notes=getattr(want, "notes", None),
+                tail=tail,
+            )
+        )
+    if misses:
+        lines += ["", "Rerun without --cached to check the wants marked ✗."]
+    lines.extend(_footer(next_page_cmd, capped=stop is not None))
+    return _text(lines)
 
 
 def _format_filters(filters: dict[str, str] | None) -> str:

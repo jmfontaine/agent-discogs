@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import functools
+import math
 import sys
-from typing import Any
+from decimal import Decimal
+from typing import Any, get_args
 
 import click
 from click.core import ParameterSource
-from discogs_sdk import Discogs
+from discogs_sdk import CurrencyCode, Discogs
 
-from agent_discogs import style
+from agent_discogs import account, style
 from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import Ownership, copies, mark_rows, ownership_of
-from agent_discogs.errors import error_document, fail, format_error
+from agent_discogs.errors import classify, error_document, fail, format_error
 from agent_discogs.formatting import (
     format_artist,
     format_artist_releases,
@@ -28,6 +30,7 @@ from agent_discogs.formatting import (
     format_price_guide,
     format_release,
     format_tracklist,
+    format_wantlist,
     iter_tracks,
 )
 from agent_discogs.json_output import Mode, dump, full_dump
@@ -55,8 +58,10 @@ from agent_discogs.projections import (
     project_price,
     project_release,
     project_tracklist,
+    project_want,
 )
 from agent_discogs.refs import make_ref, parse_ref
+from agent_discogs.wantlist import ForSale
 
 # Which entity type each noun expects
 NOUN_EXPECTED_TYPE = {
@@ -75,7 +80,10 @@ NOUN_EXPECTED_TYPE = {
 
 NOUN_ALIASES = {"ids": "identifiers"}
 
-GET_NOUNS = [*NOUN_EXPECTED_TYPE, *NOUN_ALIASES]
+# Nouns about the user behind the credentials, which take no ref.
+REFLESS_NOUNS = ("wantlist",)
+
+GET_NOUNS = [*NOUN_EXPECTED_TYPE, *REFLESS_NOUNS, *NOUN_ALIASES]
 
 
 def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
@@ -465,6 +473,90 @@ def _get_versions(
     )
 
 
+def _amount(value: float) -> str:
+    """`20`, `12.5`, `1000000`, `19.9999999`: a `--max-price` as the header
+    shows it and the continuation repeats it. Exact: `repr` round-trips the
+    float, and `Decimal` spells it without an exponent."""
+    text = format(Decimal(repr(value)), "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _get_wantlist(
+    client: Discogs,
+    *,
+    page: int | None,
+    limit: int,
+    after: str | None,
+    for_sale: bool,
+    max_price: float | None,
+    currency: CurrencyCode | None,
+    max_requests: int | None,
+    mode: Mode,
+) -> tuple[Any, bool]:
+    """The user's wantlist, server-side pages; with `--for-sale`, a scan that
+    keeps the wants for sale, one stats request each. Returns the text or
+    JSON document, and whether a want's stats were a `--cached` miss."""
+    # The username, before the listing, so --max-requests counts it first.
+    user = account.user(client)
+    if for_sale:
+        check = ForSale(client, max_price=max_price, currency=currency)
+        result = fetch_filtered_page(
+            user.wantlist.list,
+            limit=limit,
+            keep=check,
+            cursor=after,
+            max_requests=max_requests,
+            keep_sends=True,
+        )
+        markets, misses = check.markets, check.misses
+    else:
+        result = fetch_page(user.wantlist.list, page=page or 1, per_page=limit)
+        markets, misses = {}, {}
+
+    if mode.json:
+        document = mode.page(result, project_want)
+        for row, want in zip(document["results"], result.items, strict=True):
+            if want.id in misses:
+                context = f"Want {make_ref('release', want.id)}"
+                row["error"] = error_document(misses[want.id], context)
+            elif want.id in markets:
+                market = markets[want.id]
+                row["market"] = drop_empty(
+                    {
+                        "for_sale": market.for_sale,
+                        "lowest": getattr(market.lowest, "value", None),
+                        "currency": getattr(market.lowest, "currency", None),
+                    }
+                )
+        return document, bool(misses)
+
+    amount = None if max_price is None else _amount(max_price)
+    footer_cmd = next_page_cmd(
+        ["get", "wantlist"],
+        result,
+        limit=limit,
+        for_sale=for_sale,
+        max_price=amount,
+        currency=currency,
+        max_requests=max_requests,
+    )
+    filters = {"max-price": amount, "currency": currency}
+    text = format_wantlist(
+        result.items,
+        account.username(client),
+        result.page,
+        result.total_items,
+        footer_cmd,
+        filters={k: v for k, v in filters.items() if v},
+        filtered=result.filtered,
+        stop=result.stop,
+        header_resent=_fresh(),
+        markets=markets,
+        misses={rid: classify(exc).message for rid, exc in misses.items()},
+    )
+    return text, bool(misses)
+
+
 SORT_KEYS: dict[str, tuple[str, ...]] = {
     "releases": ("year", "title", "format"),
     "versions": ("released", "title", "format", "label", "catno", "country"),
@@ -519,6 +611,17 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "year",
         },
     ),
+    "wantlist": frozenset(
+        {
+            "after",
+            "currency",
+            "for_sale",
+            "limit",
+            "max_price",
+            "max_requests",
+            "page",
+        },
+    ),
 }
 
 NOUN_SPECIFIC_OPTIONS: frozenset[str] = frozenset().union(*NOUN_OPTIONS.values())
@@ -550,6 +653,51 @@ def _explicit_options() -> frozenset[str]:
     )
 
 
+def _wantlist_error(
+    refs: tuple[str, ...],
+    *,
+    for_sale: bool,
+    max_price: float | None,
+    currency: str | None,
+    max_requests: int | None,
+) -> str | None:
+    """What `get wantlist` cannot take: a ref, or a --for-sale flag without
+    --for-sale. --max-price needs --currency, so the threshold is always in a
+    currency the user named, never the account's."""
+    if refs:
+        return "get wantlist takes no ref: it lists your own wantlist."
+    stray = [
+        flag
+        for flag, given in (
+            ("--max-price", max_price is not None),
+            ("--currency", currency is not None),
+            ("--max-requests", max_requests is not None),
+        )
+        if given
+    ]
+    if stray and not for_sale:
+        verb = "applies" if len(stray) == 1 else "apply"
+        return (
+            f"{', '.join(stray)} only {verb} to get wantlist --for-sale, which "
+            "checks each want's Marketplace stats; get wantlist alone pages "
+            "server-side."
+        )
+    if max_price is not None and currency is None:
+        return (
+            "--max-price needs --currency CODE (e.g. --currency EUR), so the "
+            "threshold and the prices shown are in a currency you named."
+        )
+    if max_price is not None and not (math.isfinite(max_price) and max_price >= 0):
+        return f"--max-price must be a number, 0 or more ({max_price} given)."
+    if max_requests is not None and max_requests < 3:  # noqa: PLR2004
+        return (
+            f"--max-requests must be 3 or more with --for-sale ({max_requests} "
+            "given): the username, a wants page and one want's stats, which a "
+            "cold cache or --fresh sends on every run."
+        )
+    return None
+
+
 def _flag_error(
     noun: str,
     refs: tuple[str, ...],
@@ -564,22 +712,38 @@ def _flag_error(
     desc: bool,
     max_requests: int | None,
     owned: bool,
+    for_sale: bool,
+    max_price: float | None,
+    currency: str | None,
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
     Checked before any API call so a bad flag never costs a request or gets
     masked by an auth/network failure. Client-side filtered listings (which
-    page by cursor, not by number) are `releases --role` on an artist and
-    `releases --year` on a label.
+    page by cursor, not by number) are `releases --role` on an artist,
+    `releases --year` on a label and `wantlist --for-sale`.
     """
+    if noun == "wantlist":
+        wantlist_error = _wantlist_error(
+            refs,
+            for_sale=for_sale,
+            max_price=max_price,
+            currency=currency,
+            max_requests=max_requests,
+        )
+        if wantlist_error:
+            return wantlist_error
     label_refs = noun == "releases" and any(r.startswith("@l") for r in refs)
     artist_refs = noun == "releases" and not all(r.startswith("@l") for r in refs)
-    filtered = noun == "releases" and (bool(role) or (label_refs and bool(year)))
+    filtered = (noun == "releases" and (bool(role) or (label_refs and bool(year)))) or (
+        noun == "wantlist" and for_sale
+    )
     if after is not None and not filtered:
         return (
             "--after only continues a client-side filtered listing "
-            "(get releases --role, or get releases @l... --year). This command "
-            "pages server-side or is not paginated; use --page where applicable."
+            "(get releases --role, get releases @l... --year, or get wantlist "
+            "--for-sale). This command pages server-side or is not paginated; "
+            "use --page where applicable."
         )
     if after is not None and len(refs) > 1:
         return (
@@ -607,8 +771,8 @@ def _flag_error(
     if filtered and page is not None:
         return (
             "--page is not available while results are filtered client-side "
-            "(--role, or --year on a label catalogue). Use the Next page "
-            "command from the previous output."
+            "(--role, --year on a label catalogue, or --for-sale). Use the Next "
+            "page / Continue scan command from the previous output."
         )
     if after is not None:
         try:
@@ -761,6 +925,9 @@ def _dispatch(
     role: str | None,
     max_requests: int | None,
     owned: bool,
+    for_sale: bool,
+    max_price: float | None,
+    currency: CurrencyCode | None,
     verbose: bool,
     compact: bool,
     mode: Mode,
@@ -773,7 +940,7 @@ def _dispatch(
     block and the rest still run; JSON becomes a list with `{"ref", "error"}`
     items for failures. Exit 1 if any ref failed. With one ref the shape is
     unchanged, including the single-error path (`fail()`: stderr text or a
-    JSON envelope).
+    JSON envelope). `wantlist` takes no ref and prints one document.
     """
     flag_error = _flag_error(
         noun,
@@ -788,6 +955,9 @@ def _dispatch(
         desc=desc,
         max_requests=max_requests,
         owned=owned,
+        for_sale=for_sale,
+        max_price=max_price,
+        currency=currency,
     )
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
@@ -796,9 +966,12 @@ def _dispatch(
             ValueError(f"At most {MAX_REFS} refs per command ({len(refs)} given)."),
             json_output=mode.json,
         )
-    if noun == "owned" or owned:
+    feature = {"owned": "get owned", "wantlist": "get wantlist"}.get(
+        noun, "--owned" if owned else None
+    )
+    if feature:
         try:
-            require_user("get owned" if noun == "owned" else "--owned")
+            require_user(feature)
         except UserRequiredError as e:
             fail(e, json_output=mode.json)
 
@@ -808,6 +981,29 @@ def _dispatch(
     # catching broadly is the point.
     except Exception as e:  # noqa: BLE001
         fail(e, json_output=mode.json)
+
+    if noun == "wantlist":
+        try:
+            output, failed = _get_wantlist(
+                client,
+                page=page,
+                limit=limit,
+                after=after,
+                for_sale=for_sale,
+                max_price=max_price,
+                currency=currency,
+                max_requests=max_requests,
+                mode=mode,
+            )
+        except Exception as e:  # noqa: BLE001
+            fail(e, "Wantlist", json_output=mode.json)
+        if mode.json:
+            dump(output)
+        else:
+            print(output)
+        if failed:
+            sys.exit(1)
+        return
 
     single = len(refs) == 1
     blocks: list[Any] = []  # one per ref, in order: text/document or error
@@ -881,7 +1077,7 @@ def _json_options(command: Any) -> Any:
 
 @click.command()
 @click.argument("noun", type=click.Choice(GET_NOUNS))
-@click.argument("refs", nargs=-1, required=True, metavar="REF...")
+@click.argument("refs", nargs=-1, metavar="REF...")
 @click.option(
     "--after",
     help="Continuation cursor copied from a previous Next page / Continue scan line",
@@ -895,19 +1091,36 @@ def _json_options(command: Any) -> Any:
 )
 @click.option("--country", help="Filter versions by country")
 @click.option(
+    "--currency",
+    type=click.Choice(get_args(CurrencyCode), case_sensitive=False),
+    help="wantlist --for-sale: Marketplace prices in this currency (sent as curr_abbr)",
+)
+@click.option(
     "--desc", is_flag=True, default=False, help="With --sort: descending order"
 )
 @click.option("--format", "format_", help="Filter versions by format")
+@click.option(
+    "--for-sale",
+    is_flag=True,
+    default=False,
+    help="wantlist: keep the wants with copies for sale (one stats request each)",
+)
 @_json_options
 @click.option("--label", help="Filter versions by label")
 @click.option(
     "--limit", type=int, default=DEFAULT_LIMIT, help="Results per page (1-100)"
 )
 @click.option(
+    "--max-price",
+    type=float,
+    help="wantlist --for-sale: keep wants whose lowest price is at most this "
+    "(needs --currency)",
+)
+@click.option(
     "--max-requests",
     type=int,
-    help="releases --role / @l --year, or --owned: cap the command's HTTP sends "
-    "(default: no cap)",
+    help="releases --role / @l --year, --owned, or wantlist --for-sale: cap the "
+    "command's HTTP sends (default: no cap)",
 )
 @click.option(
     "--owned",
@@ -946,10 +1159,13 @@ def get(
     after: str | None,
     compact: bool,
     country: str | None,
+    currency: CurrencyCode | None,
     desc: bool,
     format_: str | None,
+    for_sale: bool,
     label: str | None,
     limit: int,
+    max_price: float | None,
     max_requests: int | None,
     owned: bool,
     page: int | None,
@@ -961,10 +1177,15 @@ def get(
     """Get entity details for one or more refs.
 
     NOUN is the entity type: artist, credits, identifiers (alias: ids), label,
-    master, owned, price, release, releases, tracklist, versions.
+    master, owned, price, release, releases, tracklist, versions; or wantlist,
+    your own wantlist, which takes no REF.
     REF is a typed ref (@r123, @a456) or raw Discogs ID. Several refs run in
     sequence (at most 10).
     """
+    if not refs and noun not in REFLESS_NOUNS:
+        ctx = click.get_current_context()
+        param = next(p for p in ctx.command.params if p.name == "refs")
+        raise click.MissingParameter(ctx=ctx, param=param)
     _dispatch(
         NOUN_ALIASES.get(noun, noun),
         refs,
@@ -980,6 +1201,9 @@ def get(
         role=role,
         max_requests=max_requests,
         owned=owned,
+        for_sale=for_sale,
+        max_price=max_price,
+        currency=currency,
         verbose=verbose,
         compact=compact,
         mode=_mode(json_output, full),
@@ -1002,6 +1226,9 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         role=None,
         max_requests=None,
         owned=False,
+        for_sale=False,
+        max_price=None,
+        currency=None,
         verbose=False,
         compact=False,
         mode=_mode(json_output, full),

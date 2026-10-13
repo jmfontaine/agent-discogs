@@ -222,6 +222,7 @@ def fetch_filtered_page(
     keep: Callable[[Any], bool],
     cursor: str | None = None,
     max_requests: int | None = None,
+    keep_sends: bool = False,
 ) -> PageResult:
     """Fetch one page of client-side filtered results, resuming from `cursor`.
 
@@ -237,6 +238,13 @@ def fetch_filtered_page(
     asked for, so the page can be short or empty. A 429 after at least one
     page returns the rows read so far; a 429 on the first page propagates.
 
+    With `keep_sends`, `keep` itself may send a request (the wantlist's
+    `--for-sale` stats lookup): the cap is then checked before each row too,
+    a page is asked for only while a send would remain to check a row of it,
+    and a 429 from `keep` stops the scan with the rows kept so far, on any
+    page. Either way the cursor names the row `keep` did not decide, so a
+    continuation checks it first and never checks a row twice.
+
     A returned cursor guarantees unscanned raw rows remain, not that they
     match `keep`.
     """
@@ -248,8 +256,11 @@ def fetch_filtered_page(
     total_items: int | None = None
     total_pages: int | None = None
 
+    # A `keep` that sends needs one send left after the page, or the page
+    # would be read and none of its rows checked.
+    page_cost = 2 if keep_sends else 1
     while True:
-        if max_requests is not None and trace.sends() >= max_requests:
+        if max_requests is not None and trace.sends() + page_cost > max_requests:
             stop = ScanStop("max_requests", max_requests=max_requests)
             break
         try:
@@ -267,7 +278,22 @@ def fetch_filtered_page(
 
         for idx in range(offset, len(result.items)):
             item = result.items[idx]
-            if not keep(item):
+            kept = False
+            if (
+                keep_sends
+                and max_requests is not None
+                and trace.sends() >= max_requests
+            ):
+                stop = ScanStop("max_requests", max_requests=max_requests)
+            else:
+                try:
+                    kept = keep(item)
+                except RateLimitError as exc:  # only a `keep_sends` keep sends
+                    stop = rate_limited_stop(exc)
+            if stop is not None:
+                offset = idx
+                break
+            if not kept:
                 continue
             collected.append(item)
             if len(collected) == limit:  # never with no limit
@@ -276,7 +302,7 @@ def fetch_filtered_page(
                 )
                 break
 
-        if next_cursor or api_page >= last_page:
+        if stop is not None or next_cursor or api_page >= last_page:
             break
         api_page, offset = api_page + 1, 0
 

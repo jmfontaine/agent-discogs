@@ -20,6 +20,7 @@ _NOUNS = [
     "releases",
     "tracklist",
     "versions",
+    "wantlist",
     "ids",
 ]
 _RELEASES_SORT = ["year", "title", "format"]
