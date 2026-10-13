@@ -10,8 +10,9 @@ from datetime import timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from agent_discogs import sanitize, style
+from agent_discogs import markup, sanitize, style
 from agent_discogs.config import CACHE_TTL_LABEL
+from agent_discogs.markup import Part, plain
 from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
 from agent_discogs.style import Span
 
@@ -20,42 +21,39 @@ if TYPE_CHECKING:
 
     from agent_discogs.pagination import ScanStop
 
-# A view line is plain text, or a list of parts: text (which may hold Discogs
-# values) and `Span`s, the CLI framing color may paint.
-Part = str | Span
+# A view line is plain text, or a list of parts (`markup.Part`): text (which
+# may hold Discogs values), `Span`s of CLI framing color may paint, and
+# `Styled` runs of Discogs text under its markup's attributes.
 Line = str | list[Part]
 
 
 def _text(lines: list[Line]) -> str:
     """Join a view's lines. Each line is neutralized here, so a line break or
     escape sequence inside a Discogs field cannot leave its line. When stdout
-    takes color, each `Span` is painted after that."""
+    takes color, each `Span` and `Styled` run is painted after that."""
     color = style.enabled(sys.stdout)
     return "\n".join(_line(line, color=color) for line in lines)
-
-
-def _plain(parts: list[Part]) -> str:
-    return "".join(p.text if isinstance(p, Span) else p for p in parts)
 
 
 def _line(line: Line, *, color: bool) -> str:
     """One neutralized line. Without color it is the plain text, neutralized
     as one string. With color, each run of text is neutralized on its own
-    and each span painted around its neutralized text, so an escape code
-    only ever comes from a span."""
+    and each span or styled run painted around its neutralized text, so an
+    escape code only ever comes from the CLI's fixed styles."""
     if isinstance(line, str):
         return sanitize.line(line)
     if not color:
-        return sanitize.line(_plain(line))
+        return sanitize.line(plain(line))
     out: list[str] = []
     run: list[str] = []
     for part in line:
-        if isinstance(part, Span):
-            out.append(sanitize.line("".join(run)))
-            run.clear()
-            out.append(style.paint(sanitize.line(part.text), part.style, color=True))
-        else:
+        if isinstance(part, str):
             run.append(part)
+            continue
+        out.append(sanitize.line("".join(run)))
+        run.clear()
+        styles = (part.style,) if isinstance(part, Span) else part.attrs
+        out.append(style.paint(sanitize.line(part.text), *styles, color=True))
     out.append(sanitize.line("".join(run)))
     return "".join(out)
 
@@ -351,16 +349,6 @@ def _format_track_lines(tracklist: list[Any], depth: int = 1) -> list[Line]:
     return lines
 
 
-def _truncate(text: str | None, length: int = 300) -> str:
-    """Truncate text to a max length with ellipsis."""
-    if not text:
-        return ""
-    text = text.strip()
-    if len(text) <= length:
-        return text
-    return text[:length].rsplit(" ", 1)[0] + "..."
-
-
 def _search_result_type(result: Any) -> str | None:
     """The result's entity type if it has a ref prefix, else None.
 
@@ -483,15 +471,21 @@ def split_members(artist: Any) -> tuple[list[Any], list[Any]]:
     return current, former
 
 
+def _profile(text: str | None) -> list[Line]:
+    """`Profile: ...`: the markup converted, truncated, on one line."""
+    parts = markup.profile(text)
+    if not plain(parts):
+        return []
+    return [[_label("Profile"), " ", *_joined(markup.split_lines(parts), " ")]]
+
+
 def format_artist(artist: Any) -> str:
     """Format an artist profile view."""
     lines: list[Line] = [
         [_ref("artist", artist.id), f' [artist] "{artist.name}"'],
     ]
 
-    profile = _truncate(getattr(artist, "profile", None))
-    if profile:
-        lines.append([_label("Profile"), f" {profile}"])
+    lines.extend(_profile(getattr(artist, "profile", None)))
 
     urls = _urls_short(getattr(artist, "urls", None))
     if urls:
@@ -623,9 +617,7 @@ def format_label(label: Any) -> str:
     """Format a label profile view."""
     lines: list[Line] = [[_ref("label", label.id), f' [label] "{label.name}"']]
 
-    profile = _truncate(getattr(label, "profile", None))
-    if profile:
-        lines.append([_label("Profile"), f" {profile}"])
+    lines.extend(_profile(getattr(label, "profile", None)))
 
     urls = _urls_short(getattr(label, "urls", None))
     if urls:
@@ -879,7 +871,7 @@ def format_release(
     ]
 
     label = _label_parts(getattr(release, "labels", None))
-    if _plain(label):
+    if plain(label):
         lines.append([_label("Label"), " ", *label])
 
     fmt = _format_string(getattr(release, "formats", None))
@@ -934,13 +926,13 @@ def format_release(
         lines.append([_label("Master"), " ", _ref("master", master_id)])
 
     if verbose:
-        notes = (getattr(release, "notes", None) or "").strip()
-        if notes:
+        notes = markup.parse(getattr(release, "notes", None) or "")
+        if plain(notes):
             # Continuation lines are indented: nothing in the notes may start
             # a line at column 0, where it could pass for CLI framing.
-            first, *rest = notes.splitlines()
-            lines.append([_label("Notes"), f" {first}"])
-            lines.extend(f"  {part}" if part.strip() else "" for part in rest)
+            first, *rest = markup.split_lines(notes)
+            lines.append([_label("Notes"), " ", *first])
+            lines.extend(["  ", *part] if plain(part).strip() else "" for part in rest)
 
     tracklist = getattr(release, "tracklist", None) or []
     if tracklist and compact:

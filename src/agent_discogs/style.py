@@ -8,9 +8,11 @@ is pure noise, so color is off unless the stream is clearly a person's: under
 are decided separately. A `--json` command is for a program, so it is never
 colored, on either stream.
 
-Only the CLI's own framing is painted, never a Discogs value: a view marks
-framing with a `Span` and paints it after `sanitize.line()`, so data can
-neither carry an escape code nor be painted like framing.
+Only the CLI's own framing takes a color, never a Discogs value: a view
+marks framing with a `Span` and paints it after `sanitize.line()`, so data
+can neither carry an escape code nor be painted like framing. Discogs text
+takes only the attributes its own markup asks for (`[b]`, `[i]`, `[u]`,
+`[s]`), as a `Styled` run painted the same way (`markup`).
 """
 
 from __future__ import annotations
@@ -27,14 +29,22 @@ Mode = Literal["auto", "always", "never"]
 MODES: tuple[Mode, ...] = ("auto", "always", "never")
 
 Style = Literal["ref", "label", "error", "warning", "dim"]
+# Text attributes, the only styling Discogs data gets: never a color, which
+# stays reserved for framing. In the order they are painted.
+Attr = Literal["bold", "italic", "underline", "strike"]
+ATTRS: tuple[Attr, ...] = ("bold", "italic", "underline", "strike")
 
-# The palette, in one place: the SGR parameters of each framing style.
-_SGR: dict[Style, str] = {
+# The palette, in one place: the SGR parameters of each style.
+_SGR: dict[Style | Attr, str] = {
     "ref": "36",  # cyan: @r…, @a…, @m…, @l…
     "label": "1",  # bold: Tracklist:, Credits:, Members:, ...
     "error": "31",  # red: the ✗ of an error
     "warning": "33",  # yellow: the ⚠ budget warning
     "dim": "2",  # faint: counts, timings, Next page: / Continue scan:
+    "bold": "1",
+    "italic": "3",
+    "underline": "4",
+    "strike": "9",
 }
 _RESET = "\x1b[0m"
 
@@ -48,6 +58,14 @@ class Span(NamedTuple):
 
     text: str
     style: Style
+
+
+class Styled(NamedTuple):
+    """Discogs text under the attributes its markup asked for, in `ATTRS`
+    order: never a color."""
+
+    text: str
+    attrs: tuple[Attr, ...]
 
 
 def configure(ctx: click.Context, mode: Mode) -> None:
@@ -74,8 +92,10 @@ def enabled(stream: TextIO) -> bool:
     return stream.isatty()
 
 
-def paint(text: str, style: Style, *, color: bool) -> str:
-    """`text` in `style` when `color` (`enabled()` for the stream it goes
-    to), else `text` unchanged. `text` must already be neutralized
-    (`sanitize.line()`)."""
-    return f"\x1b[{_SGR[style]}m{text}{_RESET}" if color else text
+def paint(text: str, *styles: Style | Attr, color: bool) -> str:
+    """`text` in `styles`, then a reset, when `color` (`enabled()` for the
+    stream it goes to), else `text` unchanged. `text` must already be
+    neutralized (`sanitize.line()`)."""
+    if not color or not styles:
+        return text
+    return f"\x1b[{';'.join(_SGR[s] for s in styles)}m{text}{_RESET}"

@@ -27,7 +27,9 @@ Command output follows the encoding of stdout. When it is not UTF-8 (`PYTHONIOEN
 
 Discogs text is user-generated, so the text views never print it raw. A line break or tab inside a field becomes a space; any other control or bidi character prints as a visible escape (`\x1b`, `\u202e`), so a title cannot clear the screen, reorder the line, or start a line that looks like `Next page:` or `✗`.
 
-Release notes (`get release -v`) keep their line breaks, with every continuation line indented under `Notes:`. Error messages on stderr get the same treatment. `--json` output keeps every value exact (see [JSON output](json-output.md)).
+Release notes (`get release -v`) keep their line breaks, with every continuation line indented under `Notes:`. Error messages on stderr get the same treatment. `--json` output keeps every value exact (see [JSON output](json-output.md)), apart from the Discogs markup the projection converts in profiles and notes (see [Profiles and notes](commands.md#profiles-and-notes)).
+
+That markup is converted before the text is neutralized, so a tag cannot smuggle a control character past it: a raw ESC inside `[b]...[/b]` still prints as `\x1b`.
 
 ## Color
 
@@ -44,5 +46,7 @@ agent-discogs --color never get release @r847868
 Some agent harnesses run commands in a pseudo-terminal, which `auto` cannot tell from a person's terminal: set `NO_COLOR=1` there, or pass `--color never`. The same applies to a Windows console that does not interpret escape sequences (the legacy console host shows them as `←[36m`).
 
 Only the CLI's own framing is colored, never a Discogs value: refs (`@r847868`) in cyan, section labels (`Tracklist:`, `Members:`, `Format:`) in bold, the `✗` of an error in red, the `⚠` budget warning in yellow, and secondary detail dimmed (page counts, the `Next page:` / `Continue scan:` prefix, the budget line, `--debug` timings). Color is applied after Discogs text is neutralized, so a title can neither carry a color code (it still prints as `\x1b`) nor be colored as framing: a ref or label inside a title stays plain.
+
+The one exception is the markup Discogs writes into profiles and notes. A ref it links to (`[l647]`) prints as a ref, in cyan like any other, and its formatting tags become text attributes, never colors: `[b]` bold, `[i]` italic, `[u]` and a link's text underlined, `[s]` struck through. The CLI writes each of these codes itself and closes each one with a reset before the line ends, so a style cannot run into the next field or line.
 
 A `--json` command is never colored, on either stream: its stdout, the JSON error envelope, and the budget line and `--debug` panel on stderr stay plain even with `--color always`. `--help` and `skills` are never colored either.

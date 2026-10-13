@@ -10,6 +10,8 @@ Each release, master, artist, label, and search result also carries `url`, its p
 
 Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link.
 
+An artist or label `profile` and release `notes` (`-v`) carry Discogs' markup converted as in the text view, line breaks kept: `[l647]` → `@l647`, `[a=Name]` → `Name`, `[url=https://host/path]text[/url]` → `text (host)`, and `[b]` and the other formatting tags removed, their text kept. The conversion adds no escape code. See [Profiles and notes](commands.md#profiles-and-notes) for every tag. `--json --full` keeps both fields as Discogs sent them, markup included.
+
 `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`.
 
 Errors under `--json` are described in [Errors](errors.md#errors-under---json).

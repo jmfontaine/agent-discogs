@@ -121,16 +121,27 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 
 | Noun | Expected Ref Type | Description |
 |------|-------------------|-------------|
-| `artist` | `@a` or numeric ID | Artist profile; `URLs:` lists linked sites by domain, omitting empty entries |
+| `artist` | `@a` or numeric ID | Artist profile, with Discogs' markup converted (linked entities as refs, see below); `URLs:` lists linked sites by domain, omitting empty entries |
 | `credits` | `@r` or numeric ID | Release, track, and sub-track credits grouped by role, each person once per role with an artist ref and track scope (none = whole release) |
 | `identifiers` (alias `ids`) | `@r` or numeric ID | Barcodes, matrix/runout, label codes, rights societies |
-| `label` | `@l` or numeric ID | Label profile; `URLs:` lists linked sites by domain, omitting empty entries |
+| `label` | `@l` or numeric ID | Label profile, with Discogs' markup converted (linked entities as refs, see below); `URLs:` lists linked sites by domain, omitting empty entries |
 | `master` | `@m` or numeric ID | Master release details |
 | `price` | `@r` or numeric ID | Marketplace pricing (requires a token or OAuth *and* seller settings on that account), each amount with its ISO currency code |
 | `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, `Added: YYYY-MM-DD` (day added to Discogs, in the timestamp's own offset; JSON `added`, RFC 3339), tracklist |
 | `releases` | `@a` or `@l` (numeric ID = artist) | Artist discography, or a label's catalogue (paginated) |
 | `tracklist` | `@r` or numeric ID | Tracklist only (from a release); an index track's parts are indented beneath it (JSON: `"type": "index"` with `sub_tracks`) |
 | `versions` | `@m` or numeric ID | Master release versions (paginated) |
+
+**Markup in profiles and notes:** artist and label profiles (cut to about 300 characters, never inside a ref) and release notes (`-v`) convert Discogs' markup, in text and `--json` alike; `--json --full` keeps it as sent.
+
+| Discogs markup | Printed |
+|----------------|---------|
+| `[a3857]`, `[l647]`, `[r352665]`, `[m3719]`, `[r=352665]`, `[m=3719]` | the ref (`@a3857`, `@l647`, ...): pass it to `get` |
+| `[a=Name]`, `[l=Name]` | `Name`, no ref (use `search` to find it) |
+| `[url=https://host/path]text[/url]` / `[url]https://host/path[/url]` | `text (host)` / `host` |
+| `[g1.2.3]`, `[t=262]` | `RSG §1.2.3`, `Forum Topic #262` |
+| `[b]`, `[i]`, `[u]`, `[s]` | their text (bold, italic, underlined, struck through when colored) |
+| anything else in brackets, uppercase tags included | unchanged |
 
 **Currency:** `price` prints amounts as `EUR 20.00`, the ISO code Discogs returns, never a symbol; under `--json` each suggestion is `{"value":20.0,"currency":"EUR"}` and `market` carries `lowest` and `currency`. The `Market: N for sale from 9.36` line of `release` and `master` is a bare amount in the token account's buyer currency (USD when unauthenticated): Discogs does not name it, so its JSON `market` has no `currency` key. Use `price @r...` when the currency matters.
 
