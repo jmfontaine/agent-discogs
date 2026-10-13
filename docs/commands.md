@@ -79,7 +79,7 @@ It is complete only while Discogs keeps that order; when a looked-up date breaks
 
 ### Marking rows with --owned
 
-`--owned` marks every release row with the copies in your own Discogs collection, on `search`, `get versions` and `get releases` (artist and label). A row ends in `· owned ×2` (always with the count, also for one copy), `· not owned`, or `· owned ?` when the read did not reach it (below). In `--json`, each row gets `owned`, and the document gets a `collection` object (see [JSON output](json-output.md#owned-rows)).
+`--owned` marks every release row with the copies in your own Discogs collection, on `search`, `get versions` and `get releases` (artist and label). A row ends in `· owned` (one copy), `· owned ×2` (two or more), `· not owned`, or `· owned ?` when the read did not reach it (below). In `--json`, each row gets `owned`, the count, and the document gets a `collection` object (see [JSON output](json-output.md#owned-rows)).
 
 It is not the `have 1,234` on a row, which is Discogs' community count: how many Discogs users own that release. `owned` is the authenticated user's own copies.
 
@@ -163,7 +163,7 @@ An opening tag Discogs never closes ends with the field, and a closing tag with 
 
 It asks about one release at a time (`GET /users/{username}/collection/releases/{id}`), so it is the cheap way to check a few refs; for a page of rows, use `--owned` instead. Several refs work as with the other nouns: blocks separated by a blank line, a failing ref as its `✗` block, exit 1 if any failed.
 
-- **Cost:** one request for the username (once per command), one per ref, and one for the folder list when any ref is owned. A copy in a folder Discogs does not name adds no folder name: with no names at all the text is `@r352665 owned ×1` (no colon) and JSON has no `folders`.
+- **Cost:** one request for the username (once per command), one per ref, and one for the folder list when any ref is owned. A copy in a folder Discogs does not name adds no folder name: with no names at all the text is `@r352665 owned` (no colon) and JSON has no `folders`.
 - **`--json`:** `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}`, or `{"ref":"@r847868","owned":0}` when not owned; several refs give a list, with `{"ref","error"}` items for failures. `--json --full` is `{"instances":[...]}`, the collection records as the SDK normalizes them (each names its folder by id), and sends no folder-list request.
 - **Needs a token or OAuth**, like `--owned` (`auth_required` before any request otherwise). Only `--json` and `--full` apply.
 

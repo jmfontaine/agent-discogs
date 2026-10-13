@@ -55,10 +55,11 @@ Get Credits:   release, track, and sub-track credits by role; each person once
                per role with the tracks covered (none = whole release);
                --json --full adds track_credits
 Get Owned:     get owned <release ref>...: your own copies of each release, as
-               '@r352665 owned \u00d72: Vinyl, Uncategorized' or '@r847868 not
-               owned' (--json: owned, folders; --json --full: instances).
-               Needs DISCOGS_TOKEN or OAuth. 1 request for your username, 1
-               per ref, and 1 more for your folder names when any is owned
+               '@r352665 owned \u00d72: Vinyl, Uncategorized' ('owned: Vinyl'
+               for one copy) or '@r847868 not owned' (--json: owned, folders;
+               --json --full: instances). Needs DISCOGS_TOKEN or OAuth. 1
+               request for your username, 1 per ref, and 1 more for your
+               folder names when any is owned
 
 On a row, 'have N' is Discogs' community count (how many Discogs users own the
 release); 'owned' is your own copies (--owned).
@@ -140,9 +141,10 @@ Options:
                    --sort, --desc, --page, --after. --release-type filters on the
                    looked-up formats (unofficial asks Discogs, unless --format)
   --owned          Mark each release row with the copies in your own
-                   collection: '· owned \u00d72', '· not owned', or '· owned ?'
-                   (not in the part read). search, get releases @a|@l and get
-                   versions; release rows only (a master, artist or label row
+                   collection: '· owned' (one copy), '· owned \u00d72' (two or
+                   more), '· not owned', or '· owned ?' (not in the part
+                   read). search, get releases @a|@l and get versions;
+                   release rows only (a master, artist or label row
                    has no mark), so not search artist|label|master, and not
                    with --added-since. Needs DISCOGS_TOKEN or OAuth (see
                    auth_required below). Reads your whole collection once per

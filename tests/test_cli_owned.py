@@ -166,7 +166,7 @@ class TestOwnedRows:
         assert sent == []
         assert _marks(text) == {
             "@r1": "not owned",
-            "@r2": "owned x1",
+            "@r2": "owned",
             "@r3": "owned x2",
             "@r4": "not owned",
             "@r5": "not owned",
@@ -226,7 +226,7 @@ class TestOwnedRows:
         h = _Harness(monkeypatch, _Account())
         text, _ = h.run(*_SEARCH, "--owned", "--max-requests", "3")
         assert _marks(text)["@r1"] == "owned ?"
-        assert _marks(text)["@r2"] == "owned x1"
+        assert _marks(text)["@r2"] == "owned"
         assert "not owned" not in text.stdout
         assert "stopped at --max-requests 3" in text.stdout
 
@@ -464,7 +464,7 @@ class TestGetOwned:
         result, _ = h.run("get", "owned", "@r6", "--json")
         assert json.loads(result.stdout) == {"ref": "@r6", "owned": 1}
         text, _ = h.run("get", "owned", "@r6")
-        assert text.stdout == "@r6 owned \u00d71\n"
+        assert text.stdout == "@r6 owned\n"
 
     def test_one_ref_keeps_the_single_document(
         self, monkeypatch: pytest.MonkeyPatch
@@ -477,6 +477,8 @@ class TestGetOwned:
             "folders": ["Uncategorized"],
         }
         assert len(sent) == 3
+        text, _ = h.run("get", "owned", "2")
+        assert text.stdout == "@r2 owned: Uncategorized\n"
 
     def test_full_gives_the_instances(self, monkeypatch: pytest.MonkeyPatch) -> None:
         h = _Harness(monkeypatch, _Account())

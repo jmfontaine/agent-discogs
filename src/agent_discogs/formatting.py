@@ -447,16 +447,21 @@ def _release_row(
 _TIMES = "\u00d7"  # multiplication sign
 
 
+def _copies(count: int) -> str:
+    """`owned` for one copy; for more, the count after a multiplication sign."""
+    return "owned" if count == 1 else f"owned {_TIMES}{count}"
+
+
 def _owned(ownership: Ownership | None, row: Any) -> Span | None:
-    """`· owned` and the copy count, `· not owned`, or `· owned ?` (not in the
-    part of the collection read) for a release row under `--owned`; nothing
-    otherwise."""
+    """`· owned` (one copy, or with the count for more), `· not owned`, or
+    `· owned ?` (not in the part of the collection read) for a release row
+    under `--owned`; nothing otherwise."""
     if ownership is None or not is_release_row(row):
         return None
     copies = ownership.owned(row)
     if copies is None:
         return Span("· owned ?", "dim")
-    return Span(f"· owned {_TIMES}{copies}" if copies else "· not owned", "dim")
+    return Span(f"· {_copies(copies)}" if copies else "· not owned", "dim")
 
 
 def _ownership_note(ownership: Ownership | None) -> list[Line]:
@@ -486,13 +491,13 @@ def _ownership_note(ownership: Ownership | None) -> list[Line]:
 
 
 def format_owned(release_id: int, copies: Copies) -> str:
-    """`get owned`: `@r123 owned` with the copy count and folder names
-    (`Vinyl, Uncategorized`), or `@r123 not owned`. A copy in no folder
-    Discogs names adds no name."""
+    """`get owned`: `@r123 owned` (with the count for more than one copy) and
+    the folder names (`: Vinyl, Uncategorized`), or `@r123 not owned`. A copy
+    in no folder Discogs names adds no name."""
     if not copies.count:
         return _text([[_ref("release", release_id), " not owned"]])
     folders = ", ".join(copies.folders)
-    owned = f" owned {_TIMES}{copies.count}" + (f": {folders}" if folders else "")
+    owned = f" {_copies(copies.count)}" + (f": {folders}" if folders else "")
     return _text([[_ref("release", release_id), owned]])
 
 
