@@ -205,17 +205,20 @@ def _advance(
     return None
 
 
-def _retry_after(exc: RateLimitError) -> int | None:
-    """Discogs' Retry-After in whole seconds, rounded up as the error envelope
-    rounds it, so a retry is never suggested before the server asked."""
+def rate_limited_stop(exc: RateLimitError) -> ScanStop:
+    """The stop for a 429, with Discogs' Retry-After in whole seconds, rounded
+    up as the error envelope rounds it, so a retry is never suggested before
+    the server asked."""
     seconds = exc.retry_after_seconds
-    return None if seconds is None else math.ceil(seconds)
+    return ScanStop(
+        "rate_limited", retry_after=None if seconds is None else math.ceil(seconds)
+    )
 
 
 def fetch_filtered_page(
     listing: Listing,
     *,
-    limit: int,
+    limit: int | None,
     keep: Callable[[Any], bool],
     cursor: str | None = None,
     max_requests: int | None = None,
@@ -225,7 +228,8 @@ def fetch_filtered_page(
     The API has no server-side filter for these cases, so we scan raw API
     pages of Discogs' largest size (100 rows) and keep matching items until
     the page is full or the listing ends. Scanning resumes exactly where the
-    previous call stopped, never rescanning from page 1.
+    previous call stopped, never rescanning from page 1. A `limit` of None
+    reads the whole listing (the `--owned` collection read).
 
     It stops short, with a `stop` and a cursor to continue from, in two
     cases. `max_requests` caps the HTTP sends of the whole command, header
@@ -253,7 +257,7 @@ def fetch_filtered_page(
         except RateLimitError as exc:
             if not api_calls:
                 raise
-            stop = ScanStop("rate_limited", retry_after=_retry_after(exc))
+            stop = rate_limited_stop(exc)
             break
         api_calls += 1
         rows += len(result.items)
@@ -266,7 +270,7 @@ def fetch_filtered_page(
             if not keep(item):
                 continue
             collected.append(item)
-            if len(collected) == limit:
+            if len(collected) == limit:  # never with no limit
                 next_cursor = _advance(
                     page, api_page, idx + 1, len(result.items), last_page
                 )

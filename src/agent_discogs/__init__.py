@@ -42,18 +42,27 @@ Commands:
 
 Search Types:  artist, label, master, release
 Search Flags:  --artist, --barcode, --catno, --country, --format, --genre,
-               --label, --style, --year; --release-type official (default;
-               a client-side scan on release, master and untyped searches) |
-               unofficial | all
+               --label, --owned, --style, --year; --release-type official
+               (default; a client-side scan on release, master and untyped
+               searches) | unofficial | all
 Search Auth:   Discogs documents search as needing credentials (see
                Environment); unauthenticated searches currently get answers,
                but Discogs may refuse one with auth_required
-Get Nouns:     artist, credits, identifiers (ids), label, master, price, release,
-               releases, tracklist, versions
+Get Nouns:     artist, credits, identifiers (ids), label, master, owned, price,
+               release, releases, tracklist, versions
                (artist/label 'URLs:' lists site domains, empty entries omitted)
 Get Credits:   release, track, and sub-track credits by role; each person once
                per role with the tracks covered (none = whole release);
                --json --full adds track_credits
+Get Owned:     get owned <release ref>...: your own copies of each release, as
+               '@r352665 owned \u00d72: Vinyl, Uncategorized' ('owned: Vinyl'
+               for one copy) or '@r847868 not owned' (--json: owned, folders;
+               --json --full: instances). Needs DISCOGS_TOKEN or OAuth. 1
+               request for your username, 1 per ref, and 1 more for your
+               folder names when any is owned
+
+On a row, 'have N' is Discogs' community count (how many Discogs users own the
+release); 'owned' is your own copies (--owned).
 
 get release's Format line (and --json formats) lists one entry per physical
 format, ';'-separated: the quantity when above 1, the name, then descriptions
@@ -108,12 +117,18 @@ Options:
                    unofficial with --format; get releases --role, get releases
                    @l --year)
   --max-requests N Cap the command's HTTP sends (header lookups included; cache
-                   hits are free) for a client-side scan or --added-since: search
-                   with --release-type official, or unofficial with --format; get
-                   releases --role / @l --year; one ref only. Default: no cap,
-                   the scan runs until the page fills or the list ends. Pass it
-                   if your tool calls have a time limit. Text get releases
-                   under --fresh resends its header every run: 2 or more there
+                   hits are free) for a client-side scan, --added-since or the
+                   --owned collection read: search with --release-type
+                   official, or unofficial with --format; get releases --role /
+                   @l --year; get releases and get versions with --owned; one
+                   ref only. Default: no cap, the scan runs until the page
+                   fills or the list ends. Pass it if your tool calls have a
+                   time limit. Text get releases under --fresh resends its
+                   header every run: 2 or more there. Under --owned the cap
+                   counts every send but stops only scans and the collection
+                   read: the text header and a server-side listing page are
+                   always sent, then the username and collection pages while
+                   the cap allows
   --added-since D  search release only (experimental): releases added to Discogs
                    on or after D (YYYY-MM-DD, from midnight UTC), newest first,
                    each with its added day in UTC (--json: added; complete:
@@ -125,6 +140,25 @@ Options:
                    lookups). Whole window unless you pass --limit; not with
                    --sort, --desc, --page, --after. --release-type filters on the
                    looked-up formats (unofficial asks Discogs, unless --format)
+  --owned          Mark each release row with the copies in your own
+                   collection: '· owned' (one copy), '· owned \u00d72' (two or
+                   more), '· not owned', or '· owned ?' (not in the part
+                   read). search, get releases @a|@l and get versions;
+                   release rows only (a master, artist or label row
+                   has no mark), so not search artist|label|master, and not
+                   with --added-since. Needs DISCOGS_TOKEN or OAuth (see
+                   auth_required below). Reads your whole collection once per
+                   command: 1 request for your username, then 1 per 100
+                   records, free for an hour. --max-requests stops the
+                   collection read (see there); when it or a 429 stops the
+                   read, a note says how much was read and the rows it did not
+                   reach are 'owned ?' (--json: owned null, plus a collection
+                   object). A 429 on the username or the first page, or after
+                   the listing's own scan stopped on one, reads nothing: every
+                   release row is 'owned ?', exit 0. A record added in the
+                   last hour can show as not owned: --fresh re-reads the
+                   collection. --cached fails (cache_miss) on any page not
+                   cached. 'Next page:' repeats it
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its
@@ -143,13 +177,13 @@ Options:
 
 Get flags by noun (any other get flag fails with invalid_argument):
   release          -v/--verbose, -c/--compact
-  releases @a      --limit, --page, --role, --sort, --desc, --after and
-                   --max-requests (with --role)
-  releases @l      --limit, --page, --year, --after and --max-requests (with
-                   --year)
+  releases @a      --limit, --page, --role, --sort, --desc, --owned, --after
+                   and --max-requests (with --role or --owned)
+  releases @l      --limit, --page, --year, --owned, --after and --max-requests
+                   (with --year or --owned)
   versions         --limit, --page, --country, --format, --label, --year,
-                   --sort, --desc
-  any other noun   none beyond --json and --full
+                   --sort, --desc, --owned and --max-requests (with --owned)
+  any other noun   none beyond --json and --full (owned included)
   --after and --max-requests continue or cap one listing, so they take exactly
   one ref.
 
@@ -170,8 +204,8 @@ Environment:
 
 Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
-  it repeats --cached or --fresh and --max-requests, and puts a search's type
-  and query after --, so a query such as -ambient survives.
+  it repeats --cached or --fresh, --max-requests and --owned, and puts a
+  search's type and query after --, so a query such as -ambient survives.
   Filtered lists scan Discogs' 100-row pages until --limit rows match or the
   list ends. 'Continue scan:' means the scan stopped early: --max-requests ran
   out (the header says so; before the scan started, it shows no counts and JSON
@@ -200,6 +234,9 @@ Errors:
   shape). It is not your input: retry in a moment, with --fresh if it repeats.
   auth_required names the credentials that were sent (DISCOGS_TOKEN, the
   consumer key/secret, or OAuth), or says none are set, as 'status' reports.
+  --owned and get owned raise it before any request when 'status' shows
+  consumer or none: they read your own account, which an app key does not
+  identify; the hint says to set a token or use OAuth. A 403 stays forbidden.
 
 Price data also needs seller settings filled out on the Discogs account the
 token or OAuth credentials belong to (discogs.com/settings/seller). Without
@@ -236,6 +273,8 @@ Examples:
   agent-discogs price @r847868
   agent-discogs get releases @a3857 --role Main --limit 5
   agent-discogs search release --artist Wire --added-since 2026-07-08
+  agent-discogs search release --artist Wire --limit 20 --owned
+  agent-discogs get owned @r847868 @r352665
 """
 
 

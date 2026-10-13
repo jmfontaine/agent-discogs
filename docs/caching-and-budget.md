@@ -19,11 +19,15 @@ The check is exact: it uses the real cache key at the real moment, so a command 
 
 That includes client-side scans: under `--cached` a scan reads cached pages until its page is full, and the first page the cache does not hold fails the whole command with `cache_miss`, rows read so far included. Cache hits never count against `--max-requests`, so the cap does not stop a cache-only scan early.
 
+`--owned` reads your collection through the same cache: under `--cached`, the username or a collection page the cache does not hold fails the whole command with `cache_miss`, as for a scan, and nothing is sent.
+
 `--fresh` stores nothing, so under it a text `get releases` scan spends one request on the header every run: with `--max-requests 1` it returns the empty capped page, and its header says to continue with a higher `--max-requests`, since the same cap would spend itself on the header again.
 
 `--fresh` fetches every request from the API and does **not** store the response, so a later run without `--fresh` can still be served the older cached entry until its 1-hour TTL expires.
 
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` (and `--max-requests`), so the next page is read under the same cache policy and cap as the first.
+A collection read by `--owned` is cached for an hour like everything else, so a record added to your collection within the last hour may still show as not owned. `--fresh` re-reads the collection from Discogs.
+
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` (and `--max-requests`, `--owned`), so the next page is read under the same cache policy and cap as the first.
 
 ## Cache errors
 
@@ -61,17 +65,21 @@ What commands cost (network requests; listing rows are per ref):
 | `search artist\|label`, `search --release-type all`, `search --release-type unofficial` (filtered by Discogs, without `--format`) | 1 |
 | Other searches (`--release-type official`, the default, or `unofficial` with `--format`): client-side scans | one per 100 rows scanned |
 | `search release ... --added-since` (experimental) | 1 per release the search matches in the window (before `--release-type` filtering), plus 1 per 100 search results and 1 for the release that ends the scan |
+| `--owned` on `search`, `get versions`, `get releases` (added to the listing's own cost) | 1 for the username, plus 1 per 100 records of your collection, then free for an hour; nothing when the page has no release row (a master, artist or label row is never marked) or when the listing's own scan stopped on a 429 |
+| `get owned @r...` | 1 for the username, plus 1 per ref, plus 1 for the folder list when any ref is owned (`--json --full`: no folder list) |
 | Anything repeated within 1 hour | 0 (cached) |
 
 A scan reads 100-row pages until the page is full or the list ends: a dense filter costs one request, and a sparse one over 2,000 results up to 20.
 
 ## Capping requests with --max-requests
 
-`--max-requests N` caps the HTTP sends of the whole command, header lookups included (cache hits are free); it is accepted only where a scan runs (or with `--added-since`, see [Releases added since a date](commands.md#releases-added-since-a-date)) and with one ref, and must be 1 or more, otherwise `invalid_argument` before any request.
+`--max-requests N` caps the HTTP sends of the whole command (with `--owned`, see below), header lookups included (cache hits are free); it is accepted only where a scan runs (or with `--added-since`, see [Releases added since a date](commands.md#releases-added-since-a-date), or with `--owned`) and with one ref, and must be 1 or more, otherwise `invalid_argument` before any request.
 
 A scan that stops at the cap ends in a `Continue scan:` command that repeats `--max-requests`, with `scan stopped at --max-requests N` in the header (`capped: true`, `stop_reason: "max_requests"` in JSON).
 
 If text-mode header lookups use the whole budget, the scan has not started: the header says so and shows no counts, and JSON's `total_items`/`total_pages` are `null`.
+
+With `--owned`, the cap counts every send of the command but only stops what can stop: a scan and the collection read. The text header lookup and a server-side listing page are always sent (the header first, then the listing); the username and the collection pages are then asked only while the cap allows. So `get versions @m3719 --owned --max-requests 1` still sends the header and the listing (2 sends) and reads no collection: the rows read `owned ?`. With the cap already spent before the username, nothing is asked (JSON `owned: null`, `collection.records_read: 0`, `total_records: null`). A collection too big for the cap leaves the rows it did not reach `owned ?`, with a note saying how much was read (see [Marking rows with --owned](commands.md#marking-rows-with---owned)). Cache hits cost nothing, so a second run within the hour reads more of it for free.
 
 Agents whose tool calls have a time limit should pass `--max-requests`.
 
@@ -80,3 +88,5 @@ Agents whose tool calls have a time limit should pass `--max-requests`.
 The CLI reports; it never retries, sleeps, or throttles on your behalf. Each request is sent once: a 429, a 5xx, or a connection failure is reported as that request's error without a retry, and retrying is the caller's call. With several refs, the failing ref gets its error block and the rest still run (exit 1). What a 429 error says is in [Errors](errors.md#rate-limited-429).
 
 One exception: a 429 partway through a client-side scan returns the rows read so far, exit 0, with a `Continue scan:` command and `stop_reason: "rate_limited"` (plus `retry_after` when Discogs sent one) under `--json`. A 429 on a scan's first page is the usual error.
+
+A 429 during the `--owned` collection read never fails the command, on any page: the rows it did not reach read `owned ?`, and `collection.stop_reason` is `"rate_limited"`. A listing whose own scan stopped on a 429 skips the collection read entirely.

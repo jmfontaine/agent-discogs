@@ -23,6 +23,7 @@ from discogs_sdk import (
 )
 
 from agent_discogs import sanitize, style
+from agent_discogs.account import UserRequiredError
 from agent_discogs.client import auth_mode
 from agent_discogs.json_output import dumps
 
@@ -201,6 +202,24 @@ def _rate_budget(rl: RateLimit | None) -> str:
     return f"Discogs reported {rl.limit} req/min for the credentials in use ({mode})."
 
 
+def _user_required(exc: UserRequiredError) -> ErrorInfo:
+    """A command that reads the user's own data, run with credentials that
+    name no user. Caught before any request, so there is no status."""
+    sent = (
+        "no credentials are set"
+        if exc.mode == "none"
+        else "a consumer key/secret identifies an app, not a user"
+    )
+    return ErrorInfo(
+        "auth_required",
+        f"{exc.feature} reads your own Discogs account, but {sent}.",
+        "Set a token: export DISCOGS_TOKEN=<token> "
+        "(discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, "
+        "DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, "
+        f"DISCOGS_ACCESS_TOKEN_SECRET). {_SEE_STATUS}",
+    )
+
+
 def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
     """Map an exception to an ErrorInfo. `context` names the thing that
     failed, e.g. "Release @r847868", and is used in not-found messages."""
@@ -313,6 +332,9 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
             "Not caused by your arguments. Retry in a moment, or with --fresh "
             "if the same error repeats.",
         )
+
+    if isinstance(exc, UserRequiredError):
+        return _user_required(exc)
 
     # UnicodeError is a ValueError too, but an encoding failure says nothing
     # about the caller's arguments.

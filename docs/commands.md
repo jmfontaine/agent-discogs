@@ -22,6 +22,7 @@ agent-discogs search release "The Downward Spiral" --release-type all
 agent-discogs search release "When The Whip Comes Down" --release-type unofficial
 agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc
 agent-discogs search release --artist "Nine Inch Nails" --release-type all --added-since 2026-07-08
+agent-discogs search release --artist "Nine Inch Nails" --year 1994 --release-type unofficial --limit 100 --owned
 ```
 
 ### Types and paging
@@ -76,6 +77,26 @@ It is complete only while Discogs keeps that order; when a looked-up date breaks
 - It needs an explicit `search release ...` and rejects `--sort`, `--desc`, `--page` and `--after` (`invalid_argument`, before any request).
 - Under `--cached`, any lookup the cache does not hold fails the command with `cache_miss`.
 
+### Marking rows with --owned
+
+`--owned` marks every release row with the copies in your own Discogs collection, on `search`, `get versions` and `get releases` (artist and label). A row ends in `· owned` (one copy), `· owned ×2` (two or more), `· not owned`, or `· owned ?` when the read did not reach it (below). In `--json`, each row gets `owned`, the count, and the document gets a `collection` object (see [JSON output](json-output.md#owned-rows)).
+
+It is not the `have 1,234` on a row, which is Discogs' community count: how many Discogs users own that release. `owned` is the authenticated user's own copies.
+
+```bash
+agent-discogs search release --artist "Nine Inch Nails" --year 1994 --release-type unofficial --limit 100 --owned
+agent-discogs get versions @m3719 --country US --owned
+agent-discogs get releases @a3857 --role Main --owned --max-requests 6
+```
+
+- **Release rows only.** A collection holds releases and Discogs does not document a master id on its records, so master, artist and label rows (an untyped search, or an artist's discography, lists some) get no mark. `search artist|label|master ... --owned` and `--owned` with `--added-since` fail with `invalid_argument` before any request, as does `--owned` on any `get` noun but `releases` and `versions`. A page with no release row reads nothing.
+- **It needs a user.** A token or OAuth credentials name one; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned-and-get-owned-need-a-user)). It reads only the authenticated user's own collection: there is no `--user` flag.
+- **Cost.** After the listing page, one request for the username, then your whole collection (the "All" folder) at 100 records per request, read once per command even with several refs (`get versions @m... @m... --owned`). Every response is cached for an hour, so a rerun costs nothing. See [What commands cost](caching-and-budget.md#what-commands-cost).
+- **`--max-requests N`** counts every send of the command (the text header lookup, the listing page, the username and the collection pages; cache hits are free), but it only stops a scan and the collection read. The header and a server-side listing page are always sent, header first; the username and the collection pages are then asked only while the cap allows. So `get versions @m3719 --owned --max-requests 1` still sends the header and the listing (2 sends) and reads no collection, and a cold server-side `search release ... --release-type all --owned --max-requests 3` is the listing, the username and one collection page. It is accepted on `search` (otherwise rejected on a server-side search), on `get versions`, and on `get releases`, with one ref only.
+- **A read that stops early** (the cap, or a 429) never claims a release is not owned: a row found in the part read shows the count found so far (it may be short), and any other row reads `· owned ?` (JSON `owned: null`). A note before the footer says why: `Owned: the collection read stopped at --max-requests 2 (100 of 250 records read): "owned ?" rows are not in the part read, and a count may be short.` or `... the collection read was rate limited, retry in 30s (100 of 250 records read): ...`. Rerun with a higher `--max-requests`, or after the wait. A 429 on a later collection page keeps the records read. A 429 on the username or the first collection page, or a listing scan that already stopped on one (`pagination.stop_reason: "rate_limited"`; the collection is then not read at all, with no request), leaves every release row `owned ?`; the command still succeeds, and JSON `collection` is `{"complete":false,"records_read":0,"total_records":null,"stop_reason":"rate_limited","retry_after":N}` (the listing's `retry_after` in the second case).
+- **Paging.** The printed `Next page:` / `Continue scan:` command repeats `--owned`, so the next page is marked too; within the hour the collection comes from the cache.
+- **Freshness.** A record added to your collection within the last hour may still show as not owned; `--fresh` re-reads the collection. Under `--cached`, a collection page the cache does not hold fails the command with `cache_miss`.
+
 ## get
 
 Get entity details by noun and ref. Aliases: `fetch`, `show`.
@@ -89,9 +110,11 @@ agent-discogs get tracklist @r352665
 agent-discogs get releases @a3857 --limit 20
 agent-discogs get versions @m3719 --country US --format Vinyl
 agent-discogs get price @r352665
+agent-discogs get owned @r352665 @r847868
+agent-discogs get versions @m3719 --country US --owned
 ```
 
-Nouns: `artist`, `credits`, `identifiers` (alias `ids`), `label`, `master`, `price`, `release`, `releases`, `tracklist`, `versions`. Use `--json` for JSON output.
+Nouns: `artist`, `credits`, `identifiers` (alias `ids`), `label`, `master`, `owned`, `price`, `release`, `releases`, `tracklist`, `versions`. Use `--json` for JSON output.
 
 ### release
 
@@ -129,6 +152,21 @@ An opening tag Discogs never closes ends with the field, and a closing tag with 
 
 `identifiers` lists barcodes, matrix/runout etchings, and other codes: the data that tells two pressings with the same catalog number apart.
 
+### owned
+
+`get owned @r... [@r...]` tells whether the authenticated user owns each release, and in which folders:
+
+```
+@r352665 owned ×2: Vinyl, Uncategorized
+@r847868 not owned
+```
+
+It asks about one release at a time (`GET /users/{username}/collection/releases/{id}`), so it is the cheap way to check a few refs; for a page of rows, use `--owned` instead. Several refs work as with the other nouns: blocks separated by a blank line, a failing ref as its `✗` block, exit 1 if any failed.
+
+- **Cost:** one request for the username (once per command), one per ref, and one for the folder list when any ref is owned. A copy in a folder Discogs does not name adds no folder name: with no names at all the text is `@r352665 owned` (no colon) and JSON has no `folders`.
+- **`--json`:** `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}`, or `{"ref":"@r847868","owned":0}` when not owned; several refs give a list, with `{"ref","error"}` items for failures. `--json --full` is `{"instances":[...]}`, the collection records as the SDK normalizes them (each names its folder by id), and sends no folder-list request.
+- **Needs a token or OAuth**, like `--owned` (`auth_required` before any request otherwise). Only `--json` and `--full` apply.
+
 ### releases and versions
 
 Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) and `--page` (from 1); `releases --role` filters client-side and continues via the printed `--after` cursor instead.
@@ -136,6 +174,8 @@ Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) a
 `releases` takes an artist ref (discography, with `--role` and `--sort year|title|format`) or a label ref (catalogue; the API offers no filters or sorting there, so `--year` on a label is a client-side scan that continues via the printed `--after` cursor).
 
 `versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`.
+
+`releases` and `versions` also take `--owned`, which marks each release row with your own copies: see [Marking rows with --owned](#marking-rows-with---owned).
 
 ### artist and label
 
@@ -148,10 +188,10 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | Noun | Flags besides `--json` / `--full` |
 |---|---|
 | `release` | `-v, --verbose`, `-c, --compact` |
-| `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--after` and `--max-requests` (with `--role`) |
-| `releases @l...` | `--limit`, `--page`, `--year`, `--after` and `--max-requests` (with `--year`) |
-| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc` |
-| `artist`, `credits`, `identifiers`, `label`, `master`, `price`, `tracklist` | none |
+| `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
+| `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
+| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--owned` and `--max-requests` (with `--owned`) |
+| `artist`, `credits`, `identifiers`, `label`, `master`, `owned`, `price`, `tracklist` | none |
 
 ## tracks / price
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import httpx2
 import pytest
 from click.testing import CliRunner
 from discogs_sdk import (
@@ -93,6 +94,27 @@ class TestVersionsRequest:
             ),
             ("/masters/4917", {}),
         ]
+
+    @pytest.mark.parametrize("policy", [[], ["--cached"]])
+    def test_a_failing_listing_costs_one_request(
+        self, monkeypatch: pytest.MonkeyPatch, policy: list[str]
+    ) -> None:
+        """Without --owned the header title is read only after the listing
+        succeeded: a missing master costs its one request, and --cached names
+        the versions listing it could not serve."""
+
+        def missing(_path: str, _params: dict[str, str]) -> object:
+            return httpx2.Response(404, json={"message": "Master not found."})
+
+        api = _FakeAPI(monkeypatch, missing)
+        result = CliRunner().invoke(cli, [*policy, "get", "versions", "@m55"])
+        stderr = text_error(result)
+        if policy:
+            assert api.sends == []
+            assert "Not cached: GET /masters/55/versions" in stderr
+        else:
+            assert [path for path, _ in api.sends] == ["/masters/55/versions"]
+            assert "not found" in stderr
 
 
 class TestGetCommand:
@@ -679,7 +701,7 @@ class TestGetCommand:
                 (
                     "--country, --format do not apply to 'get releases'. "
                     "'get releases' takes --after, --desc, --limit, --max-requests, "
-                    "--page, --role, --sort, --year."
+                    "--owned, --page, --role, --sort, --year."
                 ),
             ),
             (

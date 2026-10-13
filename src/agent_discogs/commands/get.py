@@ -11,7 +11,9 @@ from click.core import ParameterSource
 from discogs_sdk import Discogs
 
 from agent_discogs import style
+from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
+from agent_discogs.collection import Ownership, copies, mark_rows, ownership_of
 from agent_discogs.errors import error_document, fail, format_error
 from agent_discogs.formatting import (
     format_artist,
@@ -22,6 +24,7 @@ from agent_discogs.formatting import (
     format_label_releases,
     format_master,
     format_master_versions,
+    format_owned,
     format_price_guide,
     format_release,
     format_tracklist,
@@ -30,6 +33,7 @@ from agent_discogs.formatting import (
 from agent_discogs.json_output import Mode, dump, full_dump
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
+    PageResult,
     fetch_filtered_page,
     fetch_page,
     max_requests_error,
@@ -61,6 +65,7 @@ NOUN_EXPECTED_TYPE = {
     "identifiers": "release",
     "label": "label",
     "master": "master",
+    "owned": "release",
     "price": "release",
     "release": "release",
     "releases": "artist",
@@ -167,6 +172,43 @@ def _get_master(client: Discogs, entity_id: int, mode: Mode) -> Any:
     return format_master(master)
 
 
+def _get_owned(client: Discogs, entity_id: int, mode: Mode) -> Any:
+    """The user's copies of one release, with their folder names. `--full`
+    gives the collection instances, which name their folders by id, so it
+    never asks for the folder list."""
+    found = copies(client, entity_id, folders=not mode.full)
+    if mode.full:
+        return {"instances": [full_dump(i) for i in found.instances]}
+    if mode.json:
+        return drop_empty(
+            {
+                "ref": make_ref("release", entity_id),
+                "owned": found.count,
+                "folders": found.folders,
+            }
+        )
+    return format_owned(entity_id, found)
+
+
+def _ownership(
+    client: Discogs, result: PageResult, *, owned: bool, max_requests: int | None
+) -> Ownership | None:
+    """Under `--owned`, the collection to mark the page's release rows with."""
+    if not owned:
+        return None
+    return ownership_of(client, result, max_requests=max_requests)
+
+
+def _page_json(
+    result: PageResult, project: Any, ownership: Ownership | None, mode: Mode
+) -> dict[str, Any]:
+    """A listing's JSON document, its release rows marked under `--owned`."""
+    document = mode.page(result, project)
+    if ownership is not None:
+        mark_rows(document, result.items, ownership)
+    return document
+
+
 def _get_price(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     price_suggestions = release.price_suggestions.get()
@@ -201,6 +243,7 @@ def _get_label_releases(
     after: str | None,
     year: str | None,
     max_requests: int | None,
+    owned: bool,
     mode: Mode,
 ) -> Any:
     """A label's catalogue. The API has no filters or sorting here, so `--year`
@@ -223,8 +266,9 @@ def _get_label_releases(
     else:
         result = fetch_page(label.releases.list, page=page or 1, per_page=limit)
 
+    ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
     if mode.json:
-        return mode.page(result, project_label_release)
+        return _page_json(result, project_label_release, ownership, mode)
 
     footer_cmd = next_page_cmd(
         ["get", "releases", label_ref],
@@ -232,6 +276,7 @@ def _get_label_releases(
         limit=limit,
         year=year,
         max_requests=max_requests,
+        owned=owned,
     )
     return format_label_releases(
         result.items,
@@ -243,6 +288,7 @@ def _get_label_releases(
         filtered=result.filtered,
         stop=result.stop,
         header_resent=_fresh(),
+        ownership=ownership,
     )
 
 
@@ -259,6 +305,7 @@ def _get_releases(
     sort: str | None,
     desc: bool,
     max_requests: int | None,
+    owned: bool,
     mode: Mode,
 ) -> Any:
     if entity_type == "label":
@@ -270,6 +317,7 @@ def _get_releases(
             after=after,
             year=year,
             max_requests=max_requests,
+            owned=owned,
             mode=mode,
         )
 
@@ -294,8 +342,9 @@ def _get_releases(
     else:
         result = fetch_page(listing, page=page or 1, per_page=limit)
 
+    ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
     if mode.json:
-        return mode.page(result, project_artist_release)
+        return _page_json(result, project_artist_release, ownership, mode)
 
     footer_cmd = next_page_cmd(
         ["get", "releases", artist_ref],
@@ -305,6 +354,7 @@ def _get_releases(
         sort=sort,
         desc=desc,
         max_requests=max_requests,
+        owned=owned,
     )
 
     return format_artist_releases(
@@ -317,6 +367,7 @@ def _get_releases(
         filtered=result.filtered,
         stop=result.stop,
         header_resent=_fresh(),
+        ownership=ownership,
     )
 
 
@@ -343,6 +394,8 @@ def _get_versions(
     year: str | None,
     sort: str | None,
     desc: bool,
+    owned: bool,
+    max_requests: int | None,
     mode: Mode,
 ) -> Any:
     master_id = entity_id
@@ -365,6 +418,10 @@ def _get_versions(
         titled = client.masters.get(master_id)
 
     master_ref = make_ref("master", master_id)
+    # Under --owned the header goes before the listing, so --max-requests
+    # counts it first; otherwise it stays lazy, read only once the listing
+    # succeeded, so a listing that fails costs its one request.
+    early_title = titled.title if owned and not mode.json else None
 
     # The SDK drops the filters left unset; `released` is the API's year filter.
     listing = functools.partial(
@@ -377,8 +434,9 @@ def _get_versions(
     )
     result = fetch_page(listing, page=page or 1, per_page=limit)
 
+    ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
     if mode.json:
-        return mode.page(result, project_master_version)
+        return _page_json(result, project_master_version, ownership, mode)
 
     # Versions page server-side only: `result` is never filtered, so this
     # always continues with `--page`.
@@ -392,15 +450,18 @@ def _get_versions(
         year=year,
         sort=sort,
         desc=desc,
+        owned=owned,
+        max_requests=max_requests,
     )
 
     return format_master_versions(
         result.items,
         master_ref,
-        titled.title,
+        titled.title if early_title is None else early_title,
         result.page,
         result.total_items,
         footer_cmd,
+        ownership=ownership,
     )
 
 
@@ -432,10 +493,31 @@ def _complete_sort(
 NOUN_OPTIONS: dict[str, frozenset[str]] = {
     "release": frozenset({"compact", "verbose"}),
     "releases": frozenset(
-        {"after", "desc", "limit", "max_requests", "page", "role", "sort", "year"},
+        {
+            "after",
+            "desc",
+            "limit",
+            "max_requests",
+            "owned",
+            "page",
+            "role",
+            "sort",
+            "year",
+        },
     ),
     "versions": frozenset(
-        {"country", "desc", "format_", "label", "limit", "page", "sort", "year"},
+        {
+            "country",
+            "desc",
+            "format_",
+            "label",
+            "limit",
+            "max_requests",
+            "owned",
+            "page",
+            "sort",
+            "year",
+        },
     ),
 }
 
@@ -481,6 +563,7 @@ def _flag_error(
     sort: str | None,
     desc: bool,
     max_requests: int | None,
+    owned: bool,
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
@@ -503,12 +586,19 @@ def _flag_error(
             "--after continues one listing, so it takes exactly one ref "
             f"({len(refs)} given)."
         )
-    if max_requests is not None and noun == "releases" and not filtered:
-        return (
-            "--max-requests caps a client-side filtered scan (get releases "
-            "--role, or get releases @l... --year). This listing pages "
-            "server-side and sends one request per page."
-        )
+    if max_requests is not None and noun in ("releases", "versions") and not owned:
+        if noun == "versions":
+            return (
+                "--max-requests caps the --owned collection read; get versions "
+                "pages server-side and sends one request per page."
+            )
+        if not filtered:
+            return (
+                "--max-requests caps a client-side filtered scan (get releases "
+                "--role, or get releases @l... --year) or the --owned collection "
+                "read. This listing pages server-side and sends one request per "
+                "page."
+            )
     if max_requests is not None and len(refs) > 1:
         return (
             "--max-requests caps one scan, so it takes exactly one ref "
@@ -592,6 +682,7 @@ def _run_one(
     desc: bool,
     role: str | None,
     max_requests: int | None,
+    owned: bool,
     verbose: bool,
     compact: bool,
     mode: Mode,
@@ -609,6 +700,8 @@ def _run_one(
         return _get_master(client, entity_id, mode)
     if noun == "label":
         return _get_label(client, entity_id, mode)
+    if noun == "owned":
+        return _get_owned(client, entity_id, mode)
     if noun == "price":
         return _get_price(client, entity_id, mode)
     if noun == "release":
@@ -628,6 +721,7 @@ def _run_one(
             sort=sort,
             desc=desc,
             max_requests=max_requests,
+            owned=owned,
             mode=mode,
         )
     if noun == "tracklist":
@@ -645,6 +739,8 @@ def _run_one(
         year=year,
         sort=sort,
         desc=desc,
+        owned=owned,
+        max_requests=max_requests,
         mode=mode,
     )
 
@@ -664,6 +760,7 @@ def _dispatch(
     desc: bool,
     role: str | None,
     max_requests: int | None,
+    owned: bool,
     verbose: bool,
     compact: bool,
     mode: Mode,
@@ -690,6 +787,7 @@ def _dispatch(
         sort=sort,
         desc=desc,
         max_requests=max_requests,
+        owned=owned,
     )
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
@@ -698,6 +796,11 @@ def _dispatch(
             ValueError(f"At most {MAX_REFS} refs per command ({len(refs)} given)."),
             json_output=mode.json,
         )
+    if noun == "owned" or owned:
+        try:
+            require_user("get owned" if noun == "owned" else "--owned")
+        except UserRequiredError as e:
+            fail(e, json_output=mode.json)
 
     try:
         client = get_client()
@@ -728,6 +831,7 @@ def _dispatch(
                     desc=desc,
                     role=role,
                     max_requests=max_requests,
+                    owned=owned,
                     verbose=verbose,
                     compact=compact,
                     mode=mode,
@@ -802,7 +906,15 @@ def _json_options(command: Any) -> Any:
 @click.option(
     "--max-requests",
     type=int,
-    help="releases --role / @l --year: cap the command's HTTP sends (default: no cap)",
+    help="releases --role / @l --year, or --owned: cap the command's HTTP sends "
+    "(default: no cap)",
+)
+@click.option(
+    "--owned",
+    is_flag=True,
+    default=False,
+    help="releases / versions: mark each release row with the copies in your own "
+    "collection (needs DISCOGS_TOKEN or OAuth)",
 )
 @click.option("--page", type=int, help="Page number, from 1 (server-side pages only)")
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
@@ -839,6 +951,7 @@ def get(
     label: str | None,
     limit: int,
     max_requests: int | None,
+    owned: bool,
     page: int | None,
     role: str | None,
     sort: str | None,
@@ -848,7 +961,7 @@ def get(
     """Get entity details for one or more refs.
 
     NOUN is the entity type: artist, credits, identifiers (alias: ids), label,
-    master, price, release, releases, tracklist, versions.
+    master, owned, price, release, releases, tracklist, versions.
     REF is a typed ref (@r123, @a456) or raw Discogs ID. Several refs run in
     sequence (at most 10).
     """
@@ -866,6 +979,7 @@ def get(
         desc=desc,
         role=role,
         max_requests=max_requests,
+        owned=owned,
         verbose=verbose,
         compact=compact,
         mode=_mode(json_output, full),
@@ -887,6 +1001,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         desc=False,
         role=None,
         max_requests=None,
+        owned=False,
         verbose=False,
         compact=False,
         mode=_mode(json_output, full),

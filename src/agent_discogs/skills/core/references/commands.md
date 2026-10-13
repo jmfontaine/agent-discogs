@@ -6,8 +6,8 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 
 | Flag | Description |
 |------|-------------|
-| `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. A cache that cannot be opened fails with `cache_error` instead. A client-side scan reads cached pages until its page is full and fails with `cache_miss` at the first uncached one (cache hits never count against `--max-requests`). |
-| `--fresh` | Bypass the cache for this command. Every request goes to the API; the response is not stored, so a later run without `--fresh` may still see the older cached entry until its 1h TTL expires. It never opens the cache, so it works even when other commands fail with `cache_error`. Mutually exclusive with `--cached` (exit 2). |
+| `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. A cache that cannot be opened fails with `cache_error` instead. A client-side scan reads cached pages until its page is full and fails with `cache_miss` at the first uncached one (cache hits never count against `--max-requests`). An `--owned` read fails the same way on the username or a collection page the cache does not hold. |
+| `--fresh` | Bypass the cache for this command. Every request goes to the API; the response is not stored, so a later run without `--fresh` may still see the older cached entry until its 1h TTL expires. It never opens the cache, so it works even when other commands fail with `cache_error`. Mutually exclusive with `--cached` (exit 2). `--owned` then re-reads your collection from Discogs (a record added within the last hour can otherwise still show as not owned). |
 | `--debug` | Trace panel on stderr after the budget line: one row per response (path, status, timing or `cache`; a `--cached` miss or a failed connection has no row), scan statistics, cache size (`unknown (no home directory)` when the cache location cannot be resolved), output size with a token estimate, plus the SDK's own log lines in real time. `AGENT_DISCOGS_DEBUG=1` does the same. stdout and the exit code are unchanged. |
 | `--color auto\|always\|never` | Color the text output's framing (refs, section labels, the `✗` of an error, the `⚠` budget warning, page counts and the `Next page:` prefix), never a Discogs value. `auto` (the default) colors stdout and stderr separately, each only when it is a terminal, `NO_COLOR` is unset or empty, and `TERM` is not `dumb`; `always` and `never` override that. A pipe gets no color, so piped output is unchanged. If your harness runs commands in a pseudo-terminal, set `NO_COLOR=1` or pass `--color never`. A `--json` command is never colored, stderr included, and neither are `--help` and `skills`. |
 | `--help` | Show help |
@@ -15,7 +15,7 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 
 After any command that talks to the API, stderr ends with a budget line such as `api: 3 requests · 43/60 left this minute` (`⚠` when 10 or fewer remain). See the Budget section of the core skill.
 
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and repeats `--max-requests` when it was given.
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and repeats `--max-requests` and `--owned` when they were given.
 
 **`bad_response` (exit 1):** Discogs answered with something the CLI cannot read: a non-JSON body (a gateway error page), a record that does not fit the SDK's models, or a malformed results page (`"results" is an object, expected an array`). The message names the problem (a validation failure names its first failing field, never the value), bounded to one line. It is never caused by your arguments, so do not change the command: retry in a moment. Such a response is not cached, so a plain retry asks Discogs again, with one exception: a price guide whose conditions are malformed is cached before they are read, so if the same error repeats, rerun with `--fresh`.
 
@@ -27,6 +27,8 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 | `consumer` | `Authentication failed with the consumer key/secret (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET).` | Check both at discogs.com/settings/developers. They identify an app, not a user: price suggestions need DISCOGS_TOKEN or OAuth. |
 | `oauth` | `Authentication failed with OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET).` | Check all four; the access token may have been revoked. |
 | `none` | `Authentication failed: no credentials are set.` | Set token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers). |
+
+**`auth_required` before any request (`--owned`, `get owned`):** these read the authenticated user's own collection, so they need `token` or `oauth` in `status`. Under `consumer` or `none` they fail without sending anything: message `--owned reads your own Discogs account, but no credentials are set.` (or `... but a consumer key/secret identifies an app, not a user.`; `get owned reads ...` for the noun), hint `Set a token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET). agent-discogs status shows the credentials in use.` No `status` field in the JSON envelope. A 403 stays the generic `forbidden`.
 
 **`rate_limited` (429, exit 1):** the message says what is left of the minute (`Rate limited: 0/60 requests left this minute.`; `Rate limit exceeded.` when Discogs sent no rate-limit headers), with `limit`/`remaining` in JSON when Discogs sends them. The hint starts with the wait (`Retry in 30s.`, `retry_after` in JSON; `Wait a moment and retry.` without a usable `Retry-After`), then the limit that applies:
 
@@ -41,6 +43,8 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 With a tool-call time limit, pass `--max-requests`.
 
 In a filtered list's JSON `pagination`, `page` counts your pages of `--limit` matches, but `total_items` is the unfiltered total (the text header's `≤N`) and `total_pages` counts the 100-row Discogs pages the scan reads, so page 2 can report `"total_pages":28`. Neither says how many pages of matches remain: continue until `next_cursor` is `null` (in text, until no `Next page:` / `Continue scan:` is printed).
+
+**`--owned` collection read:** `--owned` (on `search`, `get versions`, `get releases`) marks release rows with the copies you own. After the listing page it asks for the username (1 request), then reads your whole collection, the "All" folder, at 100 records per request, once per command (every response cached 1h, so a rerun is free). `--max-requests N` counts every send of the command (the text header, the listing page, the username and the collection pages) but only stops scans and the collection read: the header and a server-side listing page are always sent, header first, then the username and collection pages are asked only while the cap allows. `get versions @m... --owned --max-requests 1` therefore sends the header and the listing (2 sends) and reads no collection; with the cap already spent before the username, nothing is asked (`records_read: 0`, `total_records: null`). Rows the read did not reach say `· owned ?` (JSON `owned: null`) and never `not owned`; a count found in the part read may be short. A note line before the footer gives the cause: `Owned: the collection read stopped at --max-requests 2 (100 of 250 records read): "owned ?" rows are not in the part read, and a count may be short.` or `... the collection read was rate limited, retry in 30s (100 of 250 records read): ...`. A 429 on a later collection page keeps the records read. A 429 on the username or the first collection page never fails the command: no collection is read and every release row is `owned ?`, with `collection` = `{"complete":false,"records_read":0,"total_records":null,"stop_reason":"rate_limited","retry_after":N}`. Likewise, when the listing's own client-side scan stopped on a 429 (`pagination.stop_reason: "rate_limited"`), the collection is not read at all (no request) and the rows are `owned ?` with the listing's `retry_after`. See `--owned` under search.
 
 
 ## search
@@ -75,7 +79,8 @@ agent-discogs search [type] <query> [--flags]
 | `--full` | With `--json`: the complete record instead of the projection, normalized (consistent field names such as `catalog_number`, RFC 3339 timestamps, `null` for an absent or unparseable timestamp; unmodeled fields as Discogs sends them) |
 | `--label` | Filter by label name |
 | `--limit` | Results per page, 1-100 (default: 5) |
-| `--max-requests` | Cap the command's HTTP sends during a client-side scan (`--release-type official`, or `unofficial` with `--format`) or `--added-since`; cache hits are free. Default: no cap. Rejected on server-side pages. See Client-side scans above. |
+| `--max-requests` | Cap the command's HTTP sends during a client-side scan (`--release-type official`, or `unofficial` with `--format`), `--added-since`, or the `--owned` collection read; cache hits are free. Default: no cap. Rejected on server-side pages without `--owned`. See Client-side scans above. |
+| `--owned` | Mark each release row with the copies in your own collection (needs a token or OAuth). See `--owned` below. |
 | `--added-since` | `search release` only, experimental: releases added on or after `YYYY-MM-DD`, newest first, the whole window. See `--added-since` above. |
 | `--page` | Page number, from 1. Only for server-side pages: `--release-type all`, `--release-type unofficial` (without `--format`), or artist/label searches. Rejected on the client-side filtered path. |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (client-side filtered searches only: `--release-type official`, or `unofficial` with `--format`) |
@@ -103,7 +108,10 @@ agent-discogs search release "When The Whip Comes Down" --release-type unofficia
 agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc   # newest additions first
 agent-discogs search release --artist "Nine Inch Nails" --release-type all --added-since 2026-07-08 --max-requests 60
 agent-discogs search release --artist "Nine Inch Nails" --release-type unofficial --added-since 2025-10-09   # unofficial releases (bootlegs, counterfeits, pirates) added in the last year
+agent-discogs search release --artist "Nine Inch Nails" --year 1994 --release-type unofficial --limit 100 --owned
 ```
+
+**`--owned`:** `search ... --owned` (an untyped search or `search release` that returns release rows) ends each release row in `· owned` (one copy), `· owned ×2` (two or more), `· not owned`, or `· owned ?` (not in the part of the collection read; see the `--owned` collection read above). Master, artist and label rows get no mark: a collection holds releases and Discogs does not document a master id on its records, so `search artist|label|master ... --owned` and `--owned` with `--added-since` fail with `invalid_argument` before any request, and a page with no release row reads nothing. `--json` gives each release row `owned` (an integer, `0` when not owned, or `null`) and the document a `collection` object: `{"complete": true, "records_read": 250, "total_records": 250}`, plus `stop_reason` (`max_requests` or `rate_limited`) and `retry_after` when the read stopped early; a page with no release row has neither. `--json --full` adds `owned` to the SDK record. The row's `have N` is Discogs' community count (how many Discogs users own the release); `owned` is your own. Cost: the listing, plus 1 for the username and 1 per 100 collection records, free for an hour; `--max-requests N` counts all of it but stops only scans and the collection read. `Next page:` / `Continue scan:` repeats `--owned`. Under `--cached`, any request not cached fails with `cache_miss`.
 
 Each row starts with a ref. A result of any other type than the four above starts with `id N [type]` instead (`[no type]` when Discogs sends none) and has no ref (`id` instead of `ref` under `--json`); the rest of the page is unaffected.
 
@@ -126,6 +134,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `identifiers` (alias `ids`) | `@r` or numeric ID | Barcodes, matrix/runout, label codes, rights societies |
 | `label` | `@l` or numeric ID | Label profile, with Discogs' markup converted (linked entities as refs, see below); `URLs:` lists linked sites by domain, omitting empty entries |
 | `master` | `@m` or numeric ID | Master release details |
+| `owned` | `@r` or numeric ID | Your own copies of a release: `@r352665 owned ×2: Vinyl, Uncategorized` (one copy: `owned: Vinyl`) or `@r847868 not owned`. JSON `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}` / `{"ref":"@r847868","owned":0}`; `--json --full` is `{"instances":[...]}` (the SDK's collection records, folders by id; no folder-list request). A copy in a folder Discogs does not name adds no folder name; with no names at all the text is `@r352665 owned` (no colon) and JSON has no `folders`. Cost: 1 for the username, 1 per ref, 1 for the folder list when any ref is owned. Needs a token or OAuth (`auth_required` before any request otherwise). Takes only `--json` / `--full`. Several refs behave as for the other nouns |
 | `price` | `@r` or numeric ID | Marketplace pricing (requires a token or OAuth *and* seller settings on that account), each amount with its ISO currency code |
 | `release` | `@r` or numeric ID | Full release details with inline artist/label refs, country, release date, `Added: YYYY-MM-DD` (day added to Discogs, in the timestamp's own offset; JSON `added`, RFC 3339), tracklist |
 | `releases` | `@a` or `@l` (numeric ID = artist) | Artist discography, or a label's catalogue (paginated) |
@@ -154,7 +163,8 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--limit` | `releases`, `versions` only: results per page, 1-100 (default: 5) |
 | `--page` | Page number, from 1 (server-side pages: `versions`, `releases` without `--role` / label `--year`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role` and `releases @l... --year`, one ref only) |
-| `--max-requests` | `releases --role` and `releases @l... --year`, one ref only: cap the command's HTTP sends, the text header lookup included (it runs first). Default: no cap. In text under `--fresh` the header is sent again on every run, so a cap it uses up ends in an empty capped page whose header says to continue with a higher `--max-requests`. See Client-side scans above. |
+| `--max-requests` | `releases --role`, `releases @l... --year`, and `releases` / `versions` with `--owned`; one ref only: cap the command's HTTP sends, the text header lookup and the `--owned` collection read included (the header runs first). Default: no cap. With `--owned` the cap only stops scans and the collection read: the header and a server-side listing page are always sent. In text under `--fresh` the header is sent again on every run, so a cap it uses up ends in an empty capped page whose header says to continue with a higher `--max-requests`. See Client-side scans above. |
+| `--owned` | `releases` and `versions` only: mark each release row with the copies in your own collection (`· owned` for one copy, `· owned ×2` for more, `· not owned`, `· owned ?`; JSON `owned` and a `collection` object). Master, artist and label rows (an artist discography lists masters) get no mark. Needs a token or OAuth. Cost: 1 for the username + 1 per 100 collection records, once per command, free for an hour; `--max-requests` counts it with the listing but stops only the collection read. `have N` on a row is the Discogs community count, `owned` is yours. See the `--owned` collection read above, and `--owned` under search. |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 | `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; an index track counts as its parts, timed by their sum or, when a part is untimed, by the index track's own duration; otherwise the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
 
@@ -183,10 +193,10 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | Noun | Flags besides `--json` / `--full` |
 |------|-----------------------------------|
 | `release` | `-v, --verbose`, `-c, --compact` |
-| `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--after` and `--max-requests` (with `--role`) |
-| `releases @l...` | `--limit`, `--page`, `--year`, `--after` and `--max-requests` (with `--year`) |
-| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc` |
-| `artist`, `credits`, `identifiers`, `label`, `master`, `price`, `tracklist` | none |
+| `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
+| `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
+| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc`, `--owned` and `--max-requests` (with `--owned`) |
+| `artist`, `credits`, `identifiers`, `label`, `master`, `owned`, `price`, `tracklist` | none |
 
 **Smart resolution:** `get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. Errors with a hint if the release has no master.
 
@@ -215,6 +225,9 @@ agent-discogs get versions @m3719
 agent-discogs get versions @m3719 --country US --format "Vinyl"
 agent-discogs get versions @m3719 --year 1994 --sort released
 agent-discogs get release @r847868 --verbose
+agent-discogs get versions @m3719 --country US --owned
+agent-discogs get releases @a3857 --role Main --owned --max-requests 6
+agent-discogs get owned @r847868 @r352665
 ```
 
 ## status
