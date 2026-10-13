@@ -27,7 +27,37 @@ Or with pip:
 pip install agent-discogs
 ```
 
-Requires Python 3.10+.
+pipx, uv and pip need Python 3.10 or later; Homebrew brings its own Python.
+
+Or with [Homebrew](https://brew.sh/):
+
+```bash
+brew install jmfontaine/tap/agent-discogs
+```
+
+The formula comes from the maintainer's tap and follows each PyPI release after a short delay, which can be a day or more.
+
+### Homebrew
+
+The formula installs the PyPI release into a virtualenv on Homebrew's own Python, whatever Python you have.
+
+To tap once and then use the short name:
+
+```bash
+brew tap jmfontaine/tap
+brew install agent-discogs
+```
+
+Or in a Brewfile:
+
+```ruby
+tap "jmfontaine/tap"
+brew "agent-discogs"
+```
+
+A prebuilt bottle exists only for Apple Silicon Macs on macOS 26 or later. Everywhere else (Intel Macs, earlier macOS, Linux) Homebrew builds from source, which needs Rust (for pydantic-core; Homebrew installs it as a build dependency) and takes a few minutes.
+
+`brew upgrade` installs a new release once the tap has picked it up from PyPI.
 
 ### AI Coding Agent Skill
 
