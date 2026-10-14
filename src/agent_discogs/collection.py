@@ -1,15 +1,19 @@
-"""The authenticated user's collection: which releases they own, how many
-copies, in which folders.
+"""The authenticated user's collection: its records, which releases they
+own, how many copies, in which folders.
 
 `--owned` reads the whole "All" folder once per invocation through the
 filtered-scan machinery (`fetch_filtered_page`, keeping every row), so
 `--max-requests` and a 429 stop it the way they stop any scan, and matches
-list rows against it. `get owned` asks about one release at a time.
+list rows against it. `get owned` asks about one release at a time. `get
+collection` lists the same folder (`records()`), a page at a time or, with
+a filter (`record_filter()`), through a scan.
 """
 
 from __future__ import annotations
 
+import functools
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -19,11 +23,13 @@ from discogs_sdk import RateLimitError
 from agent_discogs import account, trace
 from agent_discogs.pagination import (
     MAX_LIMIT,
+    Listing,
     PageResult,
     ScanStop,
     fetch_filtered_page,
     fetch_page,
     rate_limited_stop,
+    sort_params,
 )
 
 if TYPE_CHECKING:
@@ -36,6 +42,51 @@ _ALL_FOLDER = 0
 # for several refs under --fresh.
 _OWNERSHIP = "agent_discogs.ownership"
 _FOLDER_NAMES = "agent_discogs.folder_names"
+
+
+def records(user: Any, *, sort: str | None = None, desc: bool = False) -> Listing:
+    """Every record of the user's collection: the "All" folder, in `sort`
+    order (Discogs' own without one). `get collection` and the `--owned`
+    read both list it here, so without `--sort` they send the same requests
+    and share their cache entries."""
+    return functools.partial(
+        user.collection.folders.get(_ALL_FOLDER).releases.list,
+        **sort_params(sort, desc),
+    )
+
+
+def _record_values(record: Any) -> dict[str, set[str]]:
+    """What each `get collection` filter matches on a record, casefolded: its
+    format names and descriptions, genres, styles, label names and year."""
+    release = getattr(record, "basic_information", None)
+    formats = getattr(release, "formats", None) or []
+    year = getattr(release, "year", None)
+    values = {
+        "format": [
+            value for f in formats for value in (f.name, *(f.descriptions or []))
+        ],
+        "genre": getattr(release, "genres", None) or [],
+        "style": getattr(release, "styles", None) or [],
+        "label": [label.name for label in getattr(release, "labels", None) or []],
+        "year": [str(year)] if year else [],
+    }
+    return {key: {v.casefold() for v in found if v} for key, found in values.items()}
+
+
+def record_filter(filters: dict[str, str]) -> Callable[[Any], bool] | None:
+    """The `keep` predicate of a filtered `get collection`, or None without a
+    filter. `filters` maps `format`, `genre`, `style`, `label` or `year` to
+    the value asked for; a record is kept when, for every filter, one of its
+    values equals it, ignoring case."""
+    wanted = {key: value.casefold() for key, value in filters.items()}
+    if not wanted:
+        return None
+
+    def keep(record: Any) -> bool:
+        values = _record_values(record)
+        return all(value in values[key] for key, value in wanted.items())
+
+    return keep
 
 
 @dataclass(frozen=True)
@@ -132,7 +183,7 @@ def _read_ownership(
     try:
         user = account.user(client)
         result = fetch_filtered_page(
-            user.collection.folders.get(_ALL_FOLDER).releases.list,
+            records(user),
             limit=None,
             keep=_every,
             max_requests=max_requests,
@@ -158,11 +209,21 @@ class Copies:
     folders: list[str]
 
 
-def _folder_names(user: Any) -> dict[int, str]:
+def folder_names(user: Any) -> dict[int, str]:
+    """The user's folder names by id: one request (`GET .../collection/
+    folders`), at most once per invocation."""
     meta = click.get_current_context().meta
     if _FOLDER_NAMES not in meta:
         meta[_FOLDER_NAMES] = {f.id: f.name for f in user.collection.folders.list()}
     return meta[_FOLDER_NAMES]
+
+
+def folder_name(names: dict[int, str], folder_id: int | None) -> str | None:
+    """The name of the folder a copy is in, `folder 123` for one the folder
+    list does not name, or None when the copy names no folder."""
+    if folder_id is None:
+        return None
+    return names.get(folder_id, f"folder {folder_id}")
 
 
 def copies(client: Discogs, release_id: int, *, folders: bool) -> Copies:
@@ -174,12 +235,10 @@ def copies(client: Discogs, release_id: int, *, folders: bool) -> Copies:
     )
     names: list[str] = []
     if folders and page.items:
-        by_id = _folder_names(user)
+        by_id = folder_names(user)
         for item in page.items:
-            if item.folder_id is None:
-                continue
-            name = by_id.get(item.folder_id, f"folder {item.folder_id}")
-            if name not in names:
+            name = folder_name(by_id, item.folder_id)
+            if name is not None and name not in names:
                 names.append(name)
     # fetch_page always reports a total; it counts copies past the first 100.
     return Copies(page.total_items or len(page.items), page.items, names)

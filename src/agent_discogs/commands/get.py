@@ -12,15 +12,24 @@ import click
 from click.core import ParameterSource
 from discogs_sdk import CurrencyCode, Discogs
 
-from agent_discogs import account, style
+from agent_discogs import account, style, trace
 from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
-from agent_discogs.collection import Ownership, copies, mark_rows, ownership_of
+from agent_discogs.collection import (
+    Ownership,
+    copies,
+    folder_names,
+    mark_rows,
+    ownership_of,
+    record_filter,
+    records,
+)
 from agent_discogs.config import RELEASE_TYPES, UNOFFICIAL
 from agent_discogs.errors import classify, error_document, fail, format_error
 from agent_discogs.formatting import (
     format_artist,
     format_artist_releases,
+    format_collection,
     format_credits,
     format_identifiers,
     format_label,
@@ -61,6 +70,7 @@ from agent_discogs.projections import (
     project_master,
     project_master_version,
     project_price,
+    project_record,
     project_release,
     project_tracklist,
     project_want,
@@ -89,7 +99,7 @@ NOUN_ALIASES = {"ids": "identifiers"}
 ID_NOUNS = ("list",)
 
 # Nouns about the user behind the credentials, which take no ref.
-REFLESS_NOUNS = ("lists", "wantlist")
+REFLESS_NOUNS = ("collection", "lists", "wantlist")
 
 GET_NOUNS = [*NOUN_EXPECTED_TYPE, *ID_NOUNS, *REFLESS_NOUNS, *NOUN_ALIASES]
 
@@ -569,6 +579,65 @@ def _amount(value: float) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
+def _get_collection(
+    client: Discogs,
+    *,
+    page: int | None,
+    limit: int,
+    after: str | None,
+    filters: dict[str, str],
+    sort: str | None,
+    desc: bool,
+    max_requests: int | None,
+    mode: Mode,
+) -> Any:
+    """The user's collection, one row per copy: server-side pages, or with a
+    filter a client-side scan of 100-record pages."""
+    # The username and the folder list go before the listing, the way a
+    # header does, so --max-requests counts them first. --full names folders
+    # by id, and once the cap is spent the scan reads no row to name.
+    user = account.user(client)
+    spent = max_requests is not None and trace.sends() >= max_requests
+    names = {} if mode.full or spent else folder_names(user)
+    listing = records(user, sort=sort, desc=desc)
+    keep = record_filter(filters)
+    if keep:
+        result = fetch_filtered_page(
+            listing, limit=limit, keep=keep, cursor=after, max_requests=max_requests
+        )
+    else:
+        result = fetch_page(listing, page=page or 1, per_page=limit)
+
+    if mode.json:
+        return mode.page(result, lambda record: project_record(record, names))
+
+    footer_cmd = next_page_cmd(
+        ["get", "collection"],
+        result,
+        limit=limit,
+        format=filters.get("format"),
+        genre=filters.get("genre"),
+        style=filters.get("style"),
+        year=filters.get("year"),
+        label=filters.get("label"),
+        sort=sort,
+        desc=desc,
+        max_requests=max_requests,
+    )
+    return format_collection(
+        result.items,
+        account.username(client),
+        result.page,
+        result.total_items,
+        footer_cmd,
+        folders=names,
+        filters=filters,
+        filtered=result.filtered,
+        stop=result.stop,
+        header_resent=_fresh(),
+    )
+
+
 def _get_wantlist(
     client: Discogs,
     *,
@@ -648,6 +717,16 @@ def _get_wantlist(
 SORT_KEYS: dict[str, tuple[str, ...]] = {
     "releases": ("year", "title", "format"),
     "versions": ("released", "title", "format", "label", "catno", "country"),
+    "collection": (
+        "label",
+        "artist",
+        "title",
+        "catno",
+        "format",
+        "rating",
+        "added",
+        "year",
+    ),
 }
 
 
@@ -671,6 +750,21 @@ def _complete_sort(
 # noun takes only --json/--full. The per-ref nuances of `releases` (--role and
 # --sort need an artist, --year a label) are checked in _flag_error.
 NOUN_OPTIONS: dict[str, frozenset[str]] = {
+    "collection": frozenset(
+        {
+            "after",
+            "desc",
+            "format_",
+            "genre",
+            "label",
+            "limit",
+            "max_requests",
+            "page",
+            "sort",
+            "style_",
+            "year",
+        },
+    ),
     "lists": frozenset({"limit", "page"}),
     "release": frozenset({"compact", "verbose"}),
     "releases": frozenset(
@@ -793,6 +887,27 @@ def _wantlist_error(
     return None
 
 
+def _collection_error(
+    refs: tuple[str, ...], *, filters: dict[str, str], max_requests: int | None
+) -> str | None:
+    """What `get collection` cannot take: a ref, an empty filter (it would
+    match nothing), or --max-requests without a filter, which leaves no scan
+    to cap."""
+    if refs:
+        return "get collection takes no ref: it lists your own collection."
+    empty = [f"--{key}" for key, value in filters.items() if not value.strip()]
+    if empty:
+        verb = "needs a value" if len(empty) == 1 else "need values"
+        return f"{', '.join(empty)} {verb}: a filter matches one value exactly."
+    if max_requests is not None and not filters:
+        return (
+            "--max-requests caps a filtered get collection scan (--format, "
+            "--genre, --style, --year or --label); get collection alone pages "
+            "server-side and sends one request per page."
+        )
+    return None
+
+
 def _flag_error(
     noun: str,
     refs: tuple[str, ...],
@@ -812,6 +927,7 @@ def _flag_error(
     for_sale: bool,
     max_price: float | None,
     currency: str | None,
+    collection_filters: dict[str, str],
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
@@ -819,7 +935,8 @@ def _flag_error(
     masked by an auth/network failure. Client-side filtered listings (which
     page by cursor, not by number) are `releases --role` on an artist,
     `releases --year` on a label, `versions --release-type official` (or
-    `unofficial` with `--format`) and `wantlist --for-sale`.
+    `unofficial` with `--format`), `collection` with a filter and `wantlist
+    --for-sale`.
     """
     if noun == "lists" and refs:
         return (
@@ -836,18 +953,26 @@ def _flag_error(
         )
         if wantlist_error:
             return wantlist_error
+    if noun == "collection":
+        collection_error = _collection_error(
+            refs, filters=collection_filters, max_requests=max_requests
+        )
+        if collection_error:
+            return collection_error
     label_refs = noun == "releases" and any(r.startswith("@l") for r in refs)
     artist_refs = noun == "releases" and not all(r.startswith("@l") for r in refs)
     filtered = (
         (noun == "releases" and (bool(role) or (label_refs and bool(year))))
         or (noun == "versions" and _versions_scan(release_type, format))
         or (noun == "wantlist" and for_sale)
+        or (noun == "collection" and bool(collection_filters))
     )
     if after is not None and not filtered:
         return (
             "--after only continues a client-side filtered listing "
             "(get releases --role, get releases @l... --year, get versions "
-            "--release-type official or unofficial with --format, or get "
+            "--release-type official or unofficial with --format, get "
+            "collection with --format, --genre, --style, --year or --label, or get "
             "wantlist --for-sale). This command pages server-side or is not "
             "paginated; use --page where applicable."
         )
@@ -883,8 +1008,9 @@ def _flag_error(
         return (
             "--page is not available while results are filtered client-side "
             "(--role, --year on a label catalogue, --release-type official or "
-            "unofficial with --format on versions, or --for-sale). Use the Next "
-            "page / Continue scan command from the previous output."
+            "unofficial with --format on versions, a get collection filter, or "
+            "--for-sale). Use the Next page / Continue scan command from the "
+            "previous output."
         )
     if after is not None:
         try:
@@ -1037,6 +1163,8 @@ def _dispatch(
     format: str | None,  # noqa: A002  # click option name for --format
     label: str | None,
     year: str | None,
+    genre: str | None,
+    style_: str | None,
     sort: str | None,
     desc: bool,
     release_type: str,
@@ -1058,8 +1186,22 @@ def _dispatch(
     block and the rest still run; JSON becomes a list with `{"ref", "error"}`
     items for failures. Exit 1 if any ref failed. With one ref the shape is
     unchanged, including the single-error path (`fail()`: stderr text or a
-    JSON envelope). `lists` and `wantlist` take no ref and print one document.
+    JSON envelope). `collection`, `lists` and `wantlist` take no ref and print
+    one document.
     """
+    # The `get collection` filters, in the order the header and the
+    # continuation repeat them.
+    collection_filters = {
+        key: value
+        for key, value in (
+            ("format", format),
+            ("genre", genre),
+            ("style", style_),
+            ("year", year),
+            ("label", label),
+        )
+        if value is not None
+    }
     flag_error = _flag_error(
         noun,
         refs,
@@ -1078,6 +1220,7 @@ def _dispatch(
         for_sale=for_sale,
         max_price=max_price,
         currency=currency,
+        collection_filters=collection_filters,
     )
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
@@ -1087,6 +1230,7 @@ def _dispatch(
             json_output=mode.json,
         )
     feature = {
+        "collection": "get collection",
         "lists": "get lists",
         "owned": "get owned",
         "wantlist": "get wantlist",
@@ -1106,7 +1250,22 @@ def _dispatch(
 
     if noun in REFLESS_NOUNS:
         try:
-            if noun == "lists":
+            if noun == "collection":
+                output, failed = (
+                    _get_collection(
+                        client,
+                        page=page,
+                        limit=limit,
+                        after=after,
+                        filters=collection_filters,
+                        sort=sort,
+                        desc=desc,
+                        max_requests=max_requests,
+                        mode=mode,
+                    ),
+                    False,
+                )
+            elif noun == "lists":
                 output = _get_lists(client, page=page, limit=limit, mode=mode)
                 failed = False
             else:
@@ -1227,15 +1386,24 @@ def _json_options(command: Any) -> Any:
 @click.option(
     "--desc", is_flag=True, default=False, help="With --sort: descending order"
 )
-@click.option("--format", "format_", help="Filter versions by format")
+@click.option(
+    "--format",
+    "format_",
+    help="versions: filter by format; collection: keep records with this format "
+    'name or description (e.g. Vinyl, 12")',
+)
 @click.option(
     "--for-sale",
     is_flag=True,
     default=False,
     help="wantlist: keep the wants with copies for sale (one stats request each)",
 )
+@click.option("--genre", help="collection: keep records with this genre")
 @_json_options
-@click.option("--label", help="Filter versions by label")
+@click.option(
+    "--label",
+    help="versions: filter by label; collection: keep records with this label name",
+)
 @click.option(
     "--limit", type=int, default=DEFAULT_LIMIT, help="Results per page (1-100)"
 )
@@ -1249,7 +1417,8 @@ def _json_options(command: Any) -> Any:
     "--max-requests",
     type=int,
     help="releases --role / @l --year, versions --release-type official, --owned, "
-    "or wantlist --for-sale: cap the command's HTTP sends (default: no cap)",
+    "a collection filter, or wantlist --for-sale: cap the command's HTTP sends "
+    "(default: no cap)",
 )
 @click.option(
     "--owned",
@@ -1273,9 +1442,11 @@ def _json_options(command: Any) -> Any:
     shell_complete=_complete_sort,
     help=(
         "Server-side order. releases @a: year|title|format; "
-        "versions: released|title|format|label|catno|country"
+        "versions: released|title|format|label|catno|country; "
+        "collection: label|artist|title|catno|format|rating|added|year"
     ),
 )
+@click.option("--style", "style_", help="collection: keep records with this style")
 @click.option(
     "-v",
     "--verbose",
@@ -1285,8 +1456,8 @@ def _json_options(command: Any) -> Any:
 )
 @click.option(
     "--year",
-    help="versions: filter by release year; releases @l: keep that year "
-    "(client-side scan, continues via --after)",
+    help="versions: filter by release year; releases @l, collection: keep that "
+    "year (client-side scan, continues via --after)",
 )
 def get(
     noun: str,
@@ -1300,6 +1471,7 @@ def get(
     desc: bool,
     format_: str | None,
     for_sale: bool,
+    genre: str | None,
     label: str | None,
     limit: int,
     max_price: float | None,
@@ -1309,6 +1481,7 @@ def get(
     release_type: str,
     role: str | None,
     sort: str | None,
+    style_: str | None,
     verbose: bool,
     year: str | None,
 ) -> None:
@@ -1316,7 +1489,8 @@ def get(
 
     NOUN is the entity type: artist, credits, identifiers (alias: ids), label,
     list, master, owned, price, release, releases, tracklist, versions; or
-    lists and wantlist, your own lists and wantlist, which take no REF.
+    collection, lists and wantlist, your own collection, lists and wantlist,
+    which take no REF.
     REF is a typed ref (@r123, @a456) or raw Discogs ID; a list is a raw ID
     only. Several refs run in sequence (at most 10).
     """
@@ -1334,6 +1508,8 @@ def get(
         format=format_,
         label=label,
         year=year,
+        genre=genre,
+        style_=style_,
         sort=sort,
         desc=desc,
         release_type=release_type,
@@ -1360,6 +1536,8 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         format=None,
         label=None,
         year=None,
+        genre=None,
+        style_=None,
         sort=None,
         desc=False,
         release_type="all",

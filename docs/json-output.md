@@ -43,6 +43,18 @@ Under `--owned` (`search`, `get versions`, `get releases`; see [Marking rows wit
 
 `get owned @r... --json` prints `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}`, or `{"ref":"@r847868","owned":0}` when not owned. Several refs give a list, with `{"ref","error"}` items for failures. `--full` prints `{"instances":[...]}`, your collection records for the release as the SDK normalizes them (their folders by id, not name).
 
+## Collection
+
+`get collection --json` is the paginated envelope (see [get collection](commands.md#collection)), one row per copy:
+
+```json
+{"pagination":{"page":1,"total_items":250,"total_pages":50},"results":[{"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral","year":1994,"label":"Nothing Records","catno":"92346-2","format":"CD (Album)","folder":"Vinyl","added":"2024-01-04T10:00:00-08:00","rating":4}]}
+```
+
+- Rows carry `ref`, `title` (`artist - title`), `year`, `label`, `catno` and `format`, then the copy's `folder` by name (`folder 123` for a folder the folder list does not name), `added` (when it was added to the collection, RFC 3339) and `rating`; `rating` `0` (unrated) is omitted, like any empty field. A record has no `url`. A release owned twice is two rows.
+- With a filter (`--format`, `--genre`, `--style`, `--year`, `--label`) it is a filtered scan: `pagination` carries `filtered`, `capped`, `next_cursor`, and `stop_reason` / `retry_after` when it stopped early, and `total_items` is the whole collection, an upper bound on the matches (see [Pagination](#pagination)).
+- `--full` prints the records as the SDK normalizes them (`CollectionItem`: `id`, `instance_id`, `folder_id`, `date_added`, `rating`, `notes`, `basic_information`): folders by id, so the folder list is not requested.
+
 ## Wantlist
 
 `get wantlist --json` is the paginated envelope (see [get wantlist](commands.md#wantlist)):

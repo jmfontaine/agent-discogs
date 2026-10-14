@@ -411,7 +411,9 @@ def _release_row(
     fmt: str | None = None,
     role: str | None = None,
     have: int | None = None,
+    folder: str | None = None,
     added: str | None = None,
+    rating: int | None = None,
     master_ref: Span | None = None,
     notes: str | None = None,
     owned: Span | None = None,
@@ -419,9 +421,9 @@ def _release_row(
 ) -> list[Part]:
     """One list row: everything an agent needs to pick or navigate, nothing else.
 
-    Shared by search, versions, discography and wantlist views so a release
-    looks the same wherever it appears. Every part is optional and omitted
-    when empty; `tail` ends the row (a want's Marketplace stats).
+    Shared by search, versions, discography, collection and wantlist views so
+    a release looks the same wherever it appears. Every part is optional and
+    omitted when empty; `tail` ends the row (a want's Marketplace stats).
     """
     words: list[list[Part]] = [[ref]]
     if type_:
@@ -441,8 +443,12 @@ def _release_row(
         words.append([f"· {role}"])
     if have is not None:
         words.append([f"· have {have:,}"])
+    if folder:
+        words.append([f"· folder {folder}"])
     if added:
         words.append([f"· added {added}"])
+    if rating:
+        words.append([f"· rating {rating}"])
     if master_ref:
         words.append(["→ ", master_ref])
     if notes:
@@ -647,6 +653,64 @@ def format_list(found: Any) -> str:
         lines.append(
             _release_row(ref=ref, type_=type_, title=item.display_title, tail=comment)
         )
+    return _text(lines)
+
+
+def format_collection(
+    records: list[Any],
+    username: str,
+    page: int,
+    total_results: int | None,
+    next_page_cmd: str | None,
+    *,
+    folders: dict[int, str],
+    filters: dict[str, str] | None = None,
+    filtered: bool = False,
+    stop: ScanStop | None = None,
+    header_resent: bool = False,
+) -> str:
+    """`get collection`: one row per copy, the release titled like a search
+    result, then the copy's folder by name (`folders`), the day it was added
+    and its rating when set. A filter makes it a scan (`filtered`)."""
+    counts = _page_counts(
+        page,
+        len(records),
+        total_results,
+        "records",
+        filtered=filtered,
+        stop=stop,
+        header_resent=header_resent,
+    )
+    subject = " ".join(p for p in (username, _format_filters(filters)) if p)
+    lines: list[Line] = [
+        [_label("Collection"), f" {subject} ", Span(counts, "dim")],
+        "",
+    ]
+    for record in records:
+        release = getattr(record, "basic_information", None)
+        labels = getattr(release, "labels", None) or []
+        first = labels[0] if labels else None
+        folder_id = getattr(record, "folder_id", None)
+        added = getattr(record, "date_added", None)
+        lines.append(
+            _release_row(
+                ref=_ref("release", record.id),
+                title=artist_title(release),
+                year=getattr(release, "year", None),
+                label=getattr(first, "name", None),
+                catno=getattr(first, "catalog_number", None),
+                fmt=_format_string(getattr(release, "formats", None)) or None,
+                # `· folder 99` for a folder the list does not name.
+                folder=None
+                if folder_id is None
+                else folders.get(folder_id, str(folder_id)),
+                # The day in the timestamp's own offset, as `get release` and
+                # the JSON `added` beside it give it.
+                added=added.date().isoformat() if added else None,
+                rating=getattr(record, "rating", None),
+            )
+        )
+    lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
 

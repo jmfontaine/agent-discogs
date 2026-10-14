@@ -49,8 +49,8 @@ Search Auth:   Discogs documents search as needing credentials (see
                Environment); unauthenticated searches currently get answers,
                but Discogs may refuse one with auth_required
 Get Nouns:     artist, credits, identifiers (ids), label, list, master, owned,
-               price, release, releases, tracklist, versions; lists and
-               wantlist (no ref)
+               price, release, releases, tracklist, versions; collection, lists
+               and wantlist (no ref)
                (artist/label 'URLs:' lists site domains, empty entries omitted)
 Get Credits:   release, track, and sub-track credits by role; each person once
                per role with the tracks covered (none = whole release);
@@ -61,6 +61,22 @@ Get Owned:     get owned <release ref>...: your own copies of each release, as
                --json --full: instances). Needs DISCOGS_TOKEN or OAuth. 1
                request for your username, 1 per ref, and 1 more for your
                folder names when any is owned
+Get Collection:
+               get collection: your own collection, one row per copy, 5 a
+               page (--limit, --page), as '@r847868 "Nine Inch Nails - The
+               Downward Spiral" 1994 · Nothing Records 92346-2 · CD (Album) ·
+               folder Vinyl · added 2024-01-04 · rating 4'. No ref. Needs
+               DISCOGS_TOKEN or OAuth. --sort label|artist|title|catno|format|
+               rating|added|year and --desc are sent to Discogs. --format,
+               --genre, --style, --year, --label keep records where one value
+               (format name or description, genre, style, year, label name)
+               equals it, any case; a filter makes it a client-side scan
+               (--after, --max-requests; no --page, no --country). 1 request
+               for your username, 1 for your folder names (not with --json
+               --full), then 1 per page or per 100 records scanned; without
+               --sort a scan reuses the pages --owned cached. --json: ref,
+               title, year, label, catno, format, folder, added, rating;
+               --json --full: the collection records (folder_id)
 Get Wantlist:  get wantlist: your own wants, 5 a page (--limit, --page), as
                '@r847868 "Nine Inch Nails - The Downward Spiral" 1994 · Nothing
                Records 92346-2 · CD (Album)'. No ref.
@@ -143,20 +159,22 @@ Options:
                    Continue scan (search with --release-type official, or
                    unofficial with --format; get releases --role, get releases
                    @l --year, get versions --release-type official, or
-                   unofficial with --format; get wantlist --for-sale)
+                   unofficial with --format; get collection with a filter; get
+                   wantlist --for-sale)
   --max-requests N Cap the command's HTTP sends (header lookups included; cache
                    hits are free) for a client-side scan, --added-since, the
                    --owned collection read or get wantlist --for-sale: search
                    or get versions with --release-type official, or unofficial
                    with --format; get releases --role / @l --year; get
-                   releases and get versions with --owned; get wantlist
-                   --for-sale; one ref only. Default: no cap, the scan runs
-                   until the page fills or the list ends (--for-sale: about 1
-                   request per want, 500 wants = ~9 minutes of the 60/min
-                   budget, so always pass it; 3 or more there: the username, a
-                   wants page and one want's stats; a page is read only while
-                   2 sends remain). Pass it if your tool calls have a time
-                   limit. Text get releases and get versions scans under
+                   collection with a filter (its username and folder list
+                   count first); get releases and get versions with --owned;
+                   get wantlist --for-sale; one ref only. Default: no cap, the
+                   scan runs until the page fills or the list ends (--for-sale:
+                   about 1 request per want, 500 wants = ~9 minutes of the
+                   60/min budget, so always pass it; 3 or more there: the
+                   username, a wants page and one want's stats; a page is read
+                   only while 2 sends remain). Pass it if your tool calls have
+                   a time limit. Text get releases and get versions scans under
                    --fresh resend their header every run: 2 or more there.
                    Under --owned the cap counts every send but stops only
                    scans and the collection read: the text header and a
@@ -223,13 +241,19 @@ Options:
                    own duration; total omitted if any track lacks a duration)
   --sort KEY       Server-side order. get releases @a: year|title|format;
                    get versions: released|title|format|label|catno|country;
+                   get collection: label|artist|title|catno|format|rating|
+                   added|year;
                    search release: date_added (undocumented by Discogs and only
                    seen on release searches; if Discogs drops it, results most
                    likely come back in relevance order with no error)
   --desc           With --sort: descending
   --year YEAR      search: filter by release year (server-side); get versions:
-                   filter by year (server-side); get releases @l: filter by
-                   year (client-side scan, continues via --after)
+                   filter by year (server-side); get releases @l and get
+                   collection: keep that year (client-side scan, continues via
+                   --after)
+  --format, --label, --genre, --style
+                   get collection: keep records with that format name or
+                   description, label name, genre or style (any case)
   --version        Show version and exit
   --help           Show this message and exit
 
@@ -243,6 +267,9 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --sort, --desc, --release-type, --owned, --after (with a
                    --release-type scan) and --max-requests (with a scan or
                    --owned)
+  collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
+                   --style, --year, --label, --after and --max-requests (with a
+                   filter)
   lists            no ref; --limit, --page
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
                    --currency (both with --for-sale), --after and
@@ -268,10 +295,10 @@ Environment:
 
 Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
-  it repeats --cached or --fresh, --max-requests, --owned and, for get
-  lists and get wantlist, --limit (and --for-sale, --max-price and
-  --currency), and puts a search's type and query after --, so a query such
-  as -ambient survives.
+  it repeats --cached or --fresh, --max-requests, --owned, for get collection
+  --limit, its filters, --sort and --desc, and, for get lists and get
+  wantlist, --limit (and --for-sale, --max-price and --currency), and puts a
+  search's type and query after --, so a query such as -ambient survives.
   Filtered lists scan Discogs' 100-row pages until --limit rows match or the
   list ends. 'Continue scan:' means the scan stopped early: --max-requests ran
   out (the header says so; before the scan started, it shows no counts and JSON
@@ -300,11 +327,11 @@ Errors:
   shape). It is not your input: retry in a moment, with --fresh if it repeats.
   auth_required names the credentials that were sent (DISCOGS_TOKEN, the
   consumer key/secret, or OAuth), or says none are set, as 'status' reports.
-  --owned, get owned, get lists and get wantlist raise it before any request
-  when 'status' shows consumer or none: they read your own account, which an
-  app key does not identify; the hint says to set a token or use OAuth. A
-  403 stays forbidden. get list needs no user: a public list reads without
-  credentials, and someone else's private list fails with the error its
+  --owned, get owned, get collection, get lists and get wantlist raise it
+  before any request when 'status' shows consumer or none: they read your own
+  account, which an app key does not identify; the hint says to set a token or
+  use OAuth. A 403 stays forbidden. get list needs no user: a public list reads
+  without credentials, and someone else's private list fails with the error its
   status maps to (not_found, auth_required or forbidden).
 
 Price data also needs seller settings filled out on the Discogs account the
@@ -345,6 +372,7 @@ Examples:
   agent-discogs search release --artist Wire --added-since 2026-07-08
   agent-discogs search release --artist Wire --limit 20 --owned
   agent-discogs get owned @r847868 @r352665
+  agent-discogs get collection --style Techno --format 12\\" --max-requests 20
   agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
   agent-discogs get lists
 """
