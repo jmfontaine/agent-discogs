@@ -4,7 +4,7 @@ requires = [ "uv-build>=0.12.13,<0.14" ]
 
 [project]
 name = "agent-discogs"
-version = "0.2.0"
+version = "0.3.0"
 description = "Token-efficient Discogs CLI for AI agents"
 readme = "README.md"
 keywords = [ "ai-agent", "cli", "discogs", "discogs-api", "music-database" ]
