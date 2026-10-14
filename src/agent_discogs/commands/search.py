@@ -13,6 +13,7 @@ from discogs_sdk.experimental import releases_added_since
 from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import mark_rows, ownership_of
+from agent_discogs.config import RELEASE_TYPES, UNOFFICIAL
 from agent_discogs.errors import fail
 from agent_discogs.formatting import format_added_releases, format_search_results
 from agent_discogs.json_output import dump, full_dump, page_document
@@ -79,9 +80,6 @@ def _build_search_params(
     )
 
     return params
-
-
-UNOFFICIAL = "Unofficial Release"
 
 
 def _is_unofficial(item: SearchResult) -> bool:
@@ -280,9 +278,9 @@ def _search_added_since(
 )
 @click.option(
     "--release-type",
-    type=click.Choice(["official", "unofficial", "all"]),
+    type=click.Choice(RELEASE_TYPES),
     default="official",
-    help="Filter by release type",
+    help="Filter by release type (default: official, a client-side scan)",
 )
 @click.option(
     "--sort",

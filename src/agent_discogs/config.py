@@ -1,5 +1,5 @@
 """Shared configuration: where the cache lives and how long it keeps
-responses.
+responses, and the release types `--release-type` filters on.
 
 A leaf module: it imports nothing from the package, so any module can import
 it without creating a cycle.
@@ -13,6 +13,12 @@ from pathlib import Path
 # Passed to Discogs(cache_ttl=...); `status` and --debug show CACHE_TTL_LABEL.
 CACHE_TTL = 3600.0
 CACHE_TTL_LABEL = f"{CACHE_TTL / 3600:g}h"
+
+# The format description Discogs tags bootlegs, counterfeits and pirates with,
+# and the `--release-type` values of `search` and `get versions` that filter
+# on it. "Partially Unofficial" is another description: it counts as official.
+UNOFFICIAL = "Unofficial Release"
+RELEASE_TYPES = ("official", "unofficial", "all")
 
 
 def cache_dir() -> Path:

@@ -236,10 +236,10 @@ def _empty_listing(path: str, params: dict[str, str]) -> object:
 class _Catalogue:
     """`rows` rows (default 300) behind every listing, titled `Row<id>e<edition>`.
     Only the last two rows of each API page pass the client-side filters
-    (official format, role Main, year 1999), so a `--limit 2` filtered page
-    fills on the last row of each 100-row scan page and every continuation
-    needs a new request; with `sparse`, no row passes. Bumping `edition`
-    stands in for Discogs changing data after a page was cached."""
+    (official format, role Main, year 1999, official version), so a `--limit
+    2` filtered page fills on the last row of each 100-row scan page and every
+    continuation needs a new request; with `sparse`, no row passes. Bumping
+    `edition` stands in for Discogs changing data after a page was cached."""
 
     def __init__(self, rows: int = 300, *, sparse: bool = False) -> None:
         self.rows, self.sparse = rows, sparse
@@ -262,6 +262,7 @@ class _Catalogue:
                 row["year"] = 1999 if match else 2000
             else:  # version rows print the label, not the title
                 row["label"] = title
+                row["format"] = "LP, Album" if match else "LP, Unofficial Release"
             rows.append(row)
         pagination = {"page": page, "pages": -(-self.rows // per), "items": self.rows}
         return {"pagination": pagination, key: rows}

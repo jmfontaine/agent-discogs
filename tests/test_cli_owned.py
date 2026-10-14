@@ -30,12 +30,13 @@ def _too_many() -> httpx2.Response:
 
 class _Account:
     """Discogs as the token's user `me` sees it. Every listing holds releases
-    1-5 (an artist's release 4 is a master); the "All" folder holds `size`
-    records, all of other releases except release 2 once (record 10),
-    release 3 twice (records 20 and 150, the second on page 2) and release 6
-    once, in no folder Discogs named (record 30). `throttle` answers with a
-    429: `"identity"` the username, `"collection:N"` collection page N, and
-    `"search:2"` a second search page (the search then has two)."""
+    1-5 (an artist's release 4 is a master; versions 2 and 3 are tagged
+    "Unofficial Release", which a versions `format` filter matches); the
+    "All" folder holds `size` records, all of other releases except release 2
+    once (record 10), release 3 twice (records 20 and 150, the second on page
+    2) and release 6 once, in no folder Discogs named (record 30). `throttle`
+    answers with a 429: `"identity"` the username, `"collection:N"` collection
+    page N, and `"search:2"` a second search page (the search then has two)."""
 
     def __init__(self, size: int = 250, *, throttle: tuple[str, ...] = ()) -> None:
         self.size, self.throttle = size, throttle
@@ -66,7 +67,12 @@ class _Account:
             {"id": i, "title": f"Title {i}"} for i in range(1, 6)
         ]
         if key == "versions":
-            return {"pagination": _one_page(5), "versions": rows}
+            for row in rows:
+                unofficial = row["id"] in (2, 3)
+                row["format"] = "CD, Unofficial Release" if unofficial else "CD"
+            if "format" in params:
+                rows = [r for r in rows if params["format"] in r["format"].split(", ")]
+            return {"pagination": _one_page(len(rows)), "versions": rows}
         if key == "releases" and path.startswith("/labels/"):
             return {"pagination": _one_page(5), "releases": rows}
         for row in rows:
@@ -172,6 +178,17 @@ class TestOwnedRows:
             "@r5": "not owned",
         }
         assert "?" not in text.stdout
+
+    @pytest.mark.parametrize("args", [(), ("--format", "CD")], ids=["server", "scan"])
+    def test_versions_release_type_marks_the_rows_kept(
+        self, monkeypatch: pytest.MonkeyPatch, args: tuple[str, ...]
+    ) -> None:
+        h = _Harness(monkeypatch, _Account())
+        argv = ["get", "versions", "@m1", "--release-type", "unofficial", *args]
+        result, _ = h.run(*argv, "--owned", "--json")
+        assert _owned(result) == {"@r2": 1, "@r3": 2}
+        text, _ = h.run(*argv, "--owned")
+        assert _marks(text) == {"@r2": "owned", "@r3": "owned x2"}
 
     def test_without_owned_nothing_changes(
         self, monkeypatch: pytest.MonkeyPatch

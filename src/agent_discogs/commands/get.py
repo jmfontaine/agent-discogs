@@ -16,6 +16,7 @@ from agent_discogs import account, style
 from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import Ownership, copies, mark_rows, ownership_of
+from agent_discogs.config import RELEASE_TYPES, UNOFFICIAL
 from agent_discogs.errors import classify, error_document, fail, format_error
 from agent_discogs.formatting import (
     format_artist,
@@ -395,6 +396,20 @@ def _get_releases(
     )
 
 
+def _versions_scan(release_type: str, format: str | None) -> bool:  # noqa: A002
+    """Whether `get versions --release-type` filters client-side: `official`
+    always, as Discogs has no filter for it; `unofficial` only with
+    `--format`, which takes the `format` filter Discogs applies it with."""
+    return release_type == "official" or (release_type == "unofficial" and bool(format))
+
+
+def _is_unofficial_version(version: Any) -> bool:
+    """Whether a version row lists the "Unofficial Release" description. Its
+    `format` is one string of descriptions joined by `, `, so the match is on
+    a whole description: "Partially Unofficial" is not one."""
+    return UNOFFICIAL in (version.format or "").split(", ")
+
+
 def _get_tracklist(client: Discogs, entity_id: int, mode: Mode) -> Any:
     release = client.releases.get(entity_id)
     if mode.full:
@@ -418,6 +433,8 @@ def _get_versions(
     year: str | None,
     sort: str | None,
     desc: bool,
+    release_type: str,
+    after: str | None,
     owned: bool,
     max_requests: int | None,
     mode: Mode,
@@ -442,28 +459,40 @@ def _get_versions(
         titled = client.masters.get(master_id)
 
     master_ref = make_ref("master", master_id)
-    # Under --owned the header goes before the listing, so --max-requests
-    # counts it first; otherwise it stays lazy, read only once the listing
-    # succeeded, so a listing that fails costs its one request.
-    early_title = titled.title if owned and not mode.json else None
+    scan = _versions_scan(release_type, format)
+    # Under --owned or a scan the header goes before the listing, so
+    # --max-requests counts it first; otherwise it stays lazy, read only once
+    # the listing succeeded, so a listing that fails costs its one request.
+    early_title = titled.title if (owned or scan) and not mode.json else None
 
     # The SDK drops the filters left unset; `released` is the API's year filter.
+    # Discogs filters `unofficial` itself, on the whole description, so it
+    # pages server-side with an exact total.
+    server_unofficial = release_type == "unofficial" and not scan
     listing = functools.partial(
         client.masters.get(master_id).versions.list,
         country=country,
-        format=format,
+        format=UNOFFICIAL if server_unofficial else format,
         label=label,
         released=year,
         **sort_params(sort, desc),
     )
-    result = fetch_page(listing, page=page or 1, per_page=limit)
+    if scan:
+        unofficial = release_type == "unofficial"
+        result = fetch_filtered_page(
+            listing,
+            limit=limit,
+            keep=lambda version: _is_unofficial_version(version) == unofficial,
+            cursor=after,
+            max_requests=max_requests,
+        )
+    else:
+        result = fetch_page(listing, page=page or 1, per_page=limit)
 
     ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
     if mode.json:
         return _page_json(result, project_master_version, ownership, mode)
 
-    # Versions page server-side only: `result` is never filtered, so this
-    # always continues with `--page`.
     footer_cmd = next_page_cmd(
         ["get", "versions", master_ref],
         result,
@@ -472,6 +501,7 @@ def _get_versions(
         format=format,
         label=label,
         year=year,
+        release_type=None if release_type == "all" else release_type,
         sort=sort,
         desc=desc,
         owned=owned,
@@ -485,6 +515,9 @@ def _get_versions(
         result.page,
         result.total_items,
         footer_cmd,
+        filtered=result.filtered,
+        stop=result.stop,
+        header_resent=_fresh(),
         ownership=ownership,
     )
 
@@ -615,6 +648,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
     ),
     "versions": frozenset(
         {
+            "after",
             "country",
             "desc",
             "format_",
@@ -623,6 +657,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "max_requests",
             "owned",
             "page",
+            "release_type",
             "sort",
             "year",
         },
@@ -730,6 +765,8 @@ def _flag_error(
     year: str | None,
     sort: str | None,
     desc: bool,
+    format: str | None,  # noqa: A002  # click option name for --format
+    release_type: str,
     max_requests: int | None,
     owned: bool,
     for_sale: bool,
@@ -741,7 +778,8 @@ def _flag_error(
     Checked before any API call so a bad flag never costs a request or gets
     masked by an auth/network failure. Client-side filtered listings (which
     page by cursor, not by number) are `releases --role` on an artist,
-    `releases --year` on a label and `wantlist --for-sale`.
+    `releases --year` on a label, `versions --release-type official` (or
+    `unofficial` with `--format`) and `wantlist --for-sale`.
     """
     if noun == "wantlist":
         wantlist_error = _wantlist_error(
@@ -755,34 +793,42 @@ def _flag_error(
             return wantlist_error
     label_refs = noun == "releases" and any(r.startswith("@l") for r in refs)
     artist_refs = noun == "releases" and not all(r.startswith("@l") for r in refs)
-    filtered = (noun == "releases" and (bool(role) or (label_refs and bool(year)))) or (
-        noun == "wantlist" and for_sale
+    filtered = (
+        (noun == "releases" and (bool(role) or (label_refs and bool(year))))
+        or (noun == "versions" and _versions_scan(release_type, format))
+        or (noun == "wantlist" and for_sale)
     )
     if after is not None and not filtered:
         return (
             "--after only continues a client-side filtered listing "
-            "(get releases --role, get releases @l... --year, or get wantlist "
-            "--for-sale). This command pages server-side or is not paginated; "
-            "use --page where applicable."
+            "(get releases --role, get releases @l... --year, get versions "
+            "--release-type official or unofficial with --format, or get "
+            "wantlist --for-sale). This command pages server-side or is not "
+            "paginated; use --page where applicable."
         )
     if after is not None and len(refs) > 1:
         return (
             "--after continues one listing, so it takes exactly one ref "
             f"({len(refs)} given)."
         )
-    if max_requests is not None and noun in ("releases", "versions") and not owned:
+    if (
+        max_requests is not None
+        and noun in ("releases", "versions")
+        and not (owned or filtered)
+    ):
         if noun == "versions":
             return (
-                "--max-requests caps the --owned collection read; get versions "
-                "pages server-side and sends one request per page."
+                "--max-requests caps a client-side filtered scan (get versions "
+                "--release-type official, or unofficial with --format) or the "
+                "--owned collection read. This listing pages server-side and "
+                "sends one request per page."
             )
-        if not filtered:
-            return (
-                "--max-requests caps a client-side filtered scan (get releases "
-                "--role, or get releases @l... --year) or the --owned collection "
-                "read. This listing pages server-side and sends one request per "
-                "page."
-            )
+        return (
+            "--max-requests caps a client-side filtered scan (get releases "
+            "--role, or get releases @l... --year) or the --owned collection "
+            "read. This listing pages server-side and sends one request per "
+            "page."
+        )
     if max_requests is not None and len(refs) > 1:
         return (
             "--max-requests caps one scan, so it takes exactly one ref "
@@ -791,7 +837,8 @@ def _flag_error(
     if filtered and page is not None:
         return (
             "--page is not available while results are filtered client-side "
-            "(--role, --year on a label catalogue, or --for-sale). Use the Next "
+            "(--role, --year on a label catalogue, --release-type official or "
+            "unofficial with --format on versions, or --for-sale). Use the Next "
             "page / Continue scan command from the previous output."
         )
     if after is not None:
@@ -864,6 +911,7 @@ def _run_one(
     year: str | None,
     sort: str | None,
     desc: bool,
+    release_type: str,
     role: str | None,
     max_requests: int | None,
     owned: bool,
@@ -923,6 +971,8 @@ def _run_one(
         year=year,
         sort=sort,
         desc=desc,
+        release_type=release_type,
+        after=after,
         owned=owned,
         max_requests=max_requests,
         mode=mode,
@@ -942,6 +992,7 @@ def _dispatch(
     year: str | None,
     sort: str | None,
     desc: bool,
+    release_type: str,
     role: str | None,
     max_requests: int | None,
     owned: bool,
@@ -973,6 +1024,8 @@ def _dispatch(
         year=year,
         sort=sort,
         desc=desc,
+        format=format,
+        release_type=release_type,
         max_requests=max_requests,
         owned=owned,
         for_sale=for_sale,
@@ -1045,6 +1098,7 @@ def _dispatch(
                     year=year,
                     sort=sort,
                     desc=desc,
+                    release_type=release_type,
                     role=role,
                     max_requests=max_requests,
                     owned=owned,
@@ -1141,8 +1195,8 @@ def _json_options(command: Any) -> Any:
 @click.option(
     "--max-requests",
     type=int,
-    help="releases --role / @l --year, --owned, or wantlist --for-sale: cap the "
-    "command's HTTP sends (default: no cap)",
+    help="releases --role / @l --year, versions --release-type official, --owned, "
+    "or wantlist --for-sale: cap the command's HTTP sends (default: no cap)",
 )
 @click.option(
     "--owned",
@@ -1152,6 +1206,14 @@ def _json_options(command: Any) -> Any:
     "collection (needs DISCOGS_TOKEN or OAuth)",
 )
 @click.option("--page", type=int, help="Page number, from 1 (server-side pages only)")
+@click.option(
+    "--release-type",
+    type=click.Choice(RELEASE_TYPES),
+    default="all",
+    help="versions: all (default, unlike search), unofficial (filtered by Discogs; "
+    "with --format a client-side scan) or official (client-side scan, continues "
+    "via --after)",
+)
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
 @click.option(
     "--sort",
@@ -1191,6 +1253,7 @@ def get(
     max_requests: int | None,
     owned: bool,
     page: int | None,
+    release_type: str,
     role: str | None,
     sort: str | None,
     verbose: bool,
@@ -1220,6 +1283,7 @@ def get(
         year=year,
         sort=sort,
         desc=desc,
+        release_type=release_type,
         role=role,
         max_requests=max_requests,
         owned=owned,
@@ -1245,6 +1309,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         year=None,
         sort=None,
         desc=False,
+        release_type="all",
         role=None,
         max_requests=None,
         owned=False,
