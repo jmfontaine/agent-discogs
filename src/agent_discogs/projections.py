@@ -19,7 +19,7 @@ from agent_discogs import markup
 from agent_discogs.formatting import (
     _community_have,
     _format_string,
-    _search_result_type,
+    _ref_type,
     _urls_short,
     artist_title,
     credits_by_role,
@@ -53,14 +53,15 @@ def _timestamp(value: datetime | None) -> str | None:
 _SITE_URL = "https://www.discogs.com"
 
 
-def _url(entity: Any) -> str | None:
-    """The entity's Discogs web page: its `uri`, always absolute.
+def _url(entity: Any, attr: str = "uri") -> str | None:
+    """The entity's Discogs web page: its `uri` (or the field `attr` names),
+    always absolute.
 
     The SDK makes a search result's site-relative `uri` absolute; a list row
     keeps an unmodeled `uri` as sent, so a relative one is completed the same
     way here.
     """
-    uri = getattr(entity, "uri", None)
+    uri = getattr(entity, attr, None)
     if isinstance(uri, str) and uri.startswith("/"):
         return _SITE_URL + uri
     return uri
@@ -95,7 +96,7 @@ def _tracks(tracklist: list[Any] | None) -> list[dict[str, Any]]:
 
 
 def project_search_result(r: Any) -> dict[str, Any]:
-    entity_type = _search_result_type(r)
+    entity_type = _ref_type(r)
     if entity_type is None:
         # What the text row shows: no ref, since nothing says what the ID is.
         return drop_empty(
@@ -388,5 +389,53 @@ def project_want(want: Any) -> dict[str, Any]:
             "format": _format_string(getattr(release, "formats", None)),
             "notes": getattr(want, "notes", None),
             "rating": getattr(want, "rating", None) or None,
+        }
+    )
+
+
+def _description(entity: Any) -> str:
+    """A list's description with its markup converted, kept whole."""
+    return markup.plain(markup.parse(getattr(entity, "description", None) or ""))
+
+
+def project_list_summary(summary: Any) -> dict[str, Any]:
+    """A `get lists` row: what the text row shows, plus the description, the
+    timestamp the list was added and its page. `public` is kept when false."""
+    return drop_empty(
+        {
+            "id": summary.id,
+            "name": summary.name,
+            "description": _description(summary),
+            "public": summary.public,
+            "added": _timestamp(summary.date_added),
+            "changed": _timestamp(summary.date_changed),
+            "url": _url(summary),
+        }
+    )
+
+
+def _list_item(item: Any) -> dict[str, Any]:
+    """One list item: its ref, or for a type with no ref prefix its id and
+    type, as a search row; its comment as Discogs sent it."""
+    entity_type = _ref_type(item)
+    if entity_type is None:
+        head = {"id": item.id, "type": item.type}
+    else:
+        head = {"ref": make_ref(entity_type, item.id)}
+    return drop_empty({**head, "title": item.display_title, "comment": item.comment})
+
+
+def project_list(found: Any) -> dict[str, Any]:
+    """`get list`: the list and every item in it."""
+    return drop_empty(
+        {
+            "id": found.id,
+            "name": found.name,
+            "description": _description(found),
+            "public": found.public,
+            # Discogs sends the list's page as `uri` (unmodeled); its docs
+            # show `url`, which the SDK models.
+            "url": _url(found) or _url(found, "url"),
+            "items": [_list_item(item) for item in found.items or []],
         }
     )

@@ -18,6 +18,8 @@ from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
 from agent_discogs.style import Span
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from discogs_sdk import AuthMode
 
     from agent_discogs.collection import Copies, Ownership
@@ -352,13 +354,14 @@ def _format_track_lines(tracklist: list[Any], depth: int = 1) -> list[Line]:
     return lines
 
 
-def _search_result_type(result: Any) -> str | None:
-    """The result's entity type if it has a ref prefix, else None.
+def _ref_type(entity: Any) -> str | None:
+    """The entity type of a search result or list item if it has a ref
+    prefix, else None.
 
     Discogs may send any type string, or none. Only a known type says which
-    kind of ID `result.id` is, so any other result gets no ref.
+    kind of ID `entity.id` is, so anything else gets no ref.
     """
-    return result.type if result.type in TYPE_TO_PREFIX else None
+    return entity.type if entity.type in TYPE_TO_PREFIX else None
 
 
 def _community_have(obj: Any) -> int | None:
@@ -579,6 +582,74 @@ def format_wantlist(
     return _text(lines)
 
 
+def _visibility(public: bool | None) -> str | None:
+    """`public` or `private`; nothing when Discogs did not say."""
+    if public is None:
+        return None
+    return "public" if public else "private"
+
+
+def format_lists(
+    lists: list[Any],
+    username: str,
+    page: int,
+    total_results: int | None,
+    next_page_cmd: str | None,
+) -> str:
+    """`get lists`: one row per list, its id, name, visibility and the UTC
+    day it last changed, ending in the command that opens it. Discogs sends
+    no item count here."""
+    counts = _page_counts(page, len(lists), total_results, "lists", filtered=False)
+    lines: list[Line] = [[_label("Lists"), f" {username} ", Span(counts, "dim")], ""]
+    for summary in lists:
+        words = [f'{summary.id} "{summary.name}"']
+        visibility = _visibility(summary.public)
+        if visibility:
+            words.append(f"· {visibility}")
+        day = _utc_day(summary.date_changed)
+        if day:
+            words.append(f"· changed {day}")
+        words.append(f"→ get list {summary.id}")
+        lines.append(" ".join(words))
+    lines.extend(_footer(next_page_cmd, capped=False))
+    return _text(lines)
+
+
+def format_list(found: Any) -> str:
+    """`get list`: the list's name, visibility and whole description (markup
+    converted, never truncated), then one row per item, its ref and title
+    with its comment. An item of a type with no ref prefix starts `id N`
+    and shows its type, as a search row does."""
+    visibility = _visibility(found.public)
+    lines: list[Line] = [
+        [
+            _label("List"),
+            f' {found.id} "{found.name}"',
+            f" · {visibility}" if visibility else "",
+        ]
+    ]
+    lines.extend(_paragraph("Description", markup.parse(found.description or "")))
+    lines.append("")
+    items = found.items or []
+    if not items:
+        lines.append("No items.")
+    for item in items:
+        item_type = _ref_type(item)
+        comment: list[Part] | None = (
+            [f"· comment: {item.comment}"] if item.comment else None
+        )
+        if item_type is None:
+            ref: Part = f"id {item.id}"
+            type_: str | None = item.type or "no type"
+        else:
+            ref = _ref(item_type, item.id)
+            type_ = None
+        lines.append(
+            _release_row(ref=ref, type_=type_, title=item.display_title, tail=comment)
+        )
+    return _text(lines)
+
+
 def _format_filters(filters: dict[str, str] | None) -> str:
     """Render applied filters for a list header: `year=1994 label="R & S"`."""
     if not filters:
@@ -618,6 +689,19 @@ def _profile(text: str | None) -> list[Line]:
     if not plain(parts):
         return []
     return [[_label("Profile"), " ", *_joined(markup.split_lines(parts), " ")]]
+
+
+def _paragraph(label: str, parts: list[Part]) -> list[Line]:
+    """`Notes: ...`: converted markup kept whole, its line breaks kept. The
+    continuation lines are indented: nothing in the text may start a line
+    at column 0, where it could pass for CLI framing."""
+    if not plain(parts):
+        return []
+    first, *rest = markup.split_lines(parts)
+    return [
+        [_label(label), " ", *first],
+        *(["  ", *part] if plain(part).strip() else "" for part in rest),
+    ]
 
 
 def format_artist(artist: Any) -> str:
@@ -1086,13 +1170,9 @@ def format_release(
         lines.append([_label("Master"), " ", _ref("master", master_id)])
 
     if verbose:
-        notes = markup.parse(getattr(release, "notes", None) or "")
-        if plain(notes):
-            # Continuation lines are indented: nothing in the notes may start
-            # a line at column 0, where it could pass for CLI framing.
-            first, *rest = markup.split_lines(notes)
-            lines.append([_label("Notes"), " ", *first])
-            lines.extend(["  ", *part] if plain(part).strip() else "" for part in rest)
+        lines.extend(
+            _paragraph("Notes", markup.parse(getattr(release, "notes", None) or ""))
+        )
 
     tracklist = getattr(release, "tracklist", None) or []
     if tracklist and compact:
@@ -1138,7 +1218,7 @@ def format_search_results(
     lines: list[Line] = [[*head, " ", Span(counts, "dim")], ""]
 
     for result in results:
-        result_type = _search_result_type(result)
+        result_type = _ref_type(result)
         if result_type is None:
             lines.append(
                 _release_row(
@@ -1208,11 +1288,15 @@ def artist_title(release: Any) -> str | None:
     return f"{names.rstrip()} - {title}" if names else title
 
 
+def _utc_day(moment: datetime | None) -> str | None:
+    """`YYYY-MM-DD`: the UTC day of an aware timestamp."""
+    return moment.astimezone(timezone.utc).date().isoformat() if moment else None
+
+
 def added_day(release: Any) -> str | None:
     """The UTC day a release was added: the day `--added-since` compares, so
     a row never shows a day before the cutoff it passed."""
-    added = getattr(release, "date_added", None)
-    return added.astimezone(timezone.utc).date().isoformat() if added else None
+    return _utc_day(getattr(release, "date_added", None))
 
 
 def format_added_releases(

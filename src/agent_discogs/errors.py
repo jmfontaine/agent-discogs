@@ -220,6 +220,13 @@ def _user_required(exc: UserRequiredError) -> ErrorInfo:
     )
 
 
+# Search finds no lists, so a missing list (`get list 123`, context
+# "List 123") points at where list ids come from instead.
+_LIST_NOT_FOUND = (
+    "get lists shows your own list ids; another user's private list cannot be read."
+)
+
+
 def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
     """Map an exception to an ErrorInfo. `context` names the thing that
     failed, e.g. "Release @r847868", and is used in not-found messages."""
@@ -243,7 +250,9 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
         return ErrorInfo(
             "not_found",
             f"{context or 'Resource'} not found.",
-            'Try: agent-discogs search "<title>"',
+            _LIST_NOT_FOUND
+            if (context or "").startswith("List ")
+            else 'Try: agent-discogs search "<title>"',
             status=404,
         )
 

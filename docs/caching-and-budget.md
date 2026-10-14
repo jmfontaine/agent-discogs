@@ -31,7 +31,9 @@ A collection read by `--owned` is cached for an hour like everything else, so a 
 
 Marketplace stats read by `get wantlist --for-sale` are cached for an hour too, so a copy listed or sold within the last hour may not show up. Pass `--fresh` when current Marketplace numbers matter; it re-reads the stats of every want checked, one request each.
 
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` (and `--max-requests`, `--owned`, and for `get wantlist` `--limit`, `--for-sale`, `--max-price`, `--currency`), so the next page is read under the same cache policy, cap and filter as the first.
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` (and `--max-requests`, `--owned`, and for `get lists` and `get wantlist` `--limit`, plus `--for-sale`, `--max-price`, `--currency` for the wantlist), so the next page is read under the same cache policy, cap and filter as the first.
+
+A list read by `get list` is cached for an hour like everything else, so an item added to the list or a comment changed within the last hour may not show; `--fresh` re-reads it.
 
 ## Cache errors
 
@@ -73,6 +75,8 @@ What commands cost (network requests; listing rows are per ref):
 | `get owned @r...` | 1 for the username, plus 1 per ref, plus 1 for the folder list when any ref is owned (`--json --full`: no folder list) |
 | `get wantlist` | 1 for the username (shared with `--owned`), plus 1 per page of up to 100 wants (`--limit`) |
 | `get wantlist --for-sale` (on top of the above) | 1 per want checked (its Marketplace stats), with wants read 100 a request: a sparse match costs about one request per want on the list, so 500 wants is about 500 requests, roughly nine minutes of the 60 a minute budget. Pass `--max-requests` |
+| `get lists` | 1 for the username (shared with `--owned` and `get wantlist`), plus 1 per page of up to 100 lists (`--limit`) |
+| `get list <id>...` | 1 per list, whatever its length (every item comes in one response) |
 | Anything repeated within 1 hour | 0 (cached) |
 
 A scan reads 100-row pages until the page is full or the list ends: a dense filter costs one request, and a sparse one over 2,000 results up to 20.

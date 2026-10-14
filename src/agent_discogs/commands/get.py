@@ -25,6 +25,8 @@ from agent_discogs.formatting import (
     format_identifiers,
     format_label,
     format_label_releases,
+    format_list,
+    format_lists,
     format_master,
     format_master_versions,
     format_owned,
@@ -54,6 +56,8 @@ from agent_discogs.projections import (
     project_identifiers,
     project_label,
     project_label_release,
+    project_list,
+    project_list_summary,
     project_master,
     project_master_version,
     project_price,
@@ -81,10 +85,13 @@ NOUN_EXPECTED_TYPE = {
 
 NOUN_ALIASES = {"ids": "identifiers"}
 
-# Nouns about the user behind the credentials, which take no ref.
-REFLESS_NOUNS = ("wantlist",)
+# Nouns whose ref is a bare Discogs id of something with no ref prefix.
+ID_NOUNS = ("list",)
 
-GET_NOUNS = [*NOUN_EXPECTED_TYPE, *REFLESS_NOUNS, *NOUN_ALIASES]
+# Nouns about the user behind the credentials, which take no ref.
+REFLESS_NOUNS = ("lists", "wantlist")
+
+GET_NOUNS = [*NOUN_EXPECTED_TYPE, *ID_NOUNS, *REFLESS_NOUNS, *NOUN_ALIASES]
 
 # The currencies Discogs prices the Marketplace in (`curr_abbr`).
 CURRENCIES: tuple[CurrencyCode, ...] = get_args(CurrencyCode)
@@ -115,6 +122,14 @@ def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
     This accommodates AI agents that pass raw Discogs IDs without our
     typed-prefix convention.
     """
+    if noun in ID_NOUNS:
+        if not ref_string.isdecimal():
+            raise ValueError(
+                f"get {noun} takes a {noun} id, a plain number such as 123 "
+                f"({ref_string!r} given): {noun}s have no ref prefix."
+            )
+        return noun, int(ref_string)
+
     entity_type, entity_id = parse_ref(ref_string)
 
     expected = NOUN_EXPECTED_TYPE.get(noun)
@@ -213,6 +228,30 @@ def _get_owned(client: Discogs, entity_id: int, mode: Mode) -> Any:
             }
         )
     return format_owned(entity_id, found)
+
+
+def _get_list(client: Discogs, entity_id: int, mode: Mode) -> Any:
+    """One list, every item in one response."""
+    found = client.lists.get(entity_id)
+    if mode.json:
+        return mode.entity(found, project_list)
+    return format_list(found)
+
+
+def _get_lists(client: Discogs, *, page: int | None, limit: int, mode: Mode) -> Any:
+    """The user's own lists, private ones included, server-side pages."""
+    # The username, before the listing, as for the wantlist.
+    user = account.user(client)
+    result = fetch_page(user.lists.list, page=page or 1, per_page=limit)
+    if mode.json:
+        return mode.page(result, project_list_summary)
+    return format_lists(
+        result.items,
+        account.username(client),
+        result.page,
+        result.total_items,
+        next_page_cmd(["get", "lists"], result, limit=limit),
+    )
 
 
 def _ownership(
@@ -632,6 +671,7 @@ def _complete_sort(
 # noun takes only --json/--full. The per-ref nuances of `releases` (--role and
 # --sort need an artist, --year a label) are checked in _flag_error.
 NOUN_OPTIONS: dict[str, frozenset[str]] = {
+    "lists": frozenset({"limit", "page"}),
     "release": frozenset({"compact", "verbose"}),
     "releases": frozenset(
         {
@@ -781,6 +821,11 @@ def _flag_error(
     `releases --year` on a label, `versions --release-type official` (or
     `unofficial` with `--format`) and `wantlist --for-sale`.
     """
+    if noun == "lists" and refs:
+        return (
+            "get lists takes no ref: it lists your own lists. "
+            "Open one with get list ID."
+        )
     if noun == "wantlist":
         wantlist_error = _wantlist_error(
             refs,
@@ -932,6 +977,8 @@ def _run_one(
         return _get_master(client, entity_id, mode)
     if noun == "label":
         return _get_label(client, entity_id, mode)
+    if noun == "list":
+        return _get_list(client, entity_id, mode)
     if noun == "owned":
         return _get_owned(client, entity_id, mode)
     if noun == "price":
@@ -1011,7 +1058,7 @@ def _dispatch(
     block and the rest still run; JSON becomes a list with `{"ref", "error"}`
     items for failures. Exit 1 if any ref failed. With one ref the shape is
     unchanged, including the single-error path (`fail()`: stderr text or a
-    JSON envelope). `wantlist` takes no ref and prints one document.
+    JSON envelope). `lists` and `wantlist` take no ref and print one document.
     """
     flag_error = _flag_error(
         noun,
@@ -1039,9 +1086,11 @@ def _dispatch(
             ValueError(f"At most {MAX_REFS} refs per command ({len(refs)} given)."),
             json_output=mode.json,
         )
-    feature = {"owned": "get owned", "wantlist": "get wantlist"}.get(
-        noun, "--owned" if owned else None
-    )
+    feature = {
+        "lists": "get lists",
+        "owned": "get owned",
+        "wantlist": "get wantlist",
+    }.get(noun, "--owned" if owned else None)
     if feature:
         try:
             require_user(feature)
@@ -1055,21 +1104,25 @@ def _dispatch(
     except Exception as e:  # noqa: BLE001
         fail(e, json_output=mode.json)
 
-    if noun == "wantlist":
+    if noun in REFLESS_NOUNS:
         try:
-            output, failed = _get_wantlist(
-                client,
-                page=page,
-                limit=limit,
-                after=after,
-                for_sale=for_sale,
-                max_price=max_price,
-                currency=_currency(currency) if currency else None,
-                max_requests=max_requests,
-                mode=mode,
-            )
+            if noun == "lists":
+                output = _get_lists(client, page=page, limit=limit, mode=mode)
+                failed = False
+            else:
+                output, failed = _get_wantlist(
+                    client,
+                    page=page,
+                    limit=limit,
+                    after=after,
+                    for_sale=for_sale,
+                    max_price=max_price,
+                    currency=_currency(currency) if currency else None,
+                    max_requests=max_requests,
+                    mode=mode,
+                )
         except Exception as e:  # noqa: BLE001
-            fail(e, "Wantlist", json_output=mode.json)
+            fail(e, noun.title(), json_output=mode.json)
         if mode.json:
             dump(output)
         else:
@@ -1262,10 +1315,10 @@ def get(
     """Get entity details for one or more refs.
 
     NOUN is the entity type: artist, credits, identifiers (alias: ids), label,
-    master, owned, price, release, releases, tracklist, versions; or wantlist,
-    your own wantlist, which takes no REF.
-    REF is a typed ref (@r123, @a456) or raw Discogs ID. Several refs run in
-    sequence (at most 10).
+    list, master, owned, price, release, releases, tracklist, versions; or
+    lists and wantlist, your own lists and wantlist, which take no REF.
+    REF is a typed ref (@r123, @a456) or raw Discogs ID; a list is a raw ID
+    only. Several refs run in sequence (at most 10).
     """
     if not refs and noun not in REFLESS_NOUNS:
         ctx = click.get_current_context()

@@ -15,7 +15,7 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 
 After any command that talks to the API, stderr ends with a budget line such as `api: 3 requests · 43/60 left this minute` (`⚠` when 10 or fewer remain). See the Budget section of the core skill.
 
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and repeats `--max-requests` and `--owned` when they were given (and, for `get wantlist`, `--limit`, `--for-sale`, `--max-price` and `--currency`).
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and repeats `--max-requests` and `--owned` when they were given (and, for `get lists` and `get wantlist`, `--limit`, plus `--for-sale`, `--max-price` and `--currency` for the wantlist).
 
 **`bad_response` (exit 1):** Discogs answered with something the CLI cannot read: a non-JSON body (a gateway error page), a record that does not fit the SDK's models, or a malformed results page (`"results" is an object, expected an array`). The message names the problem (a validation failure names its first failing field, never the value), bounded to one line. It is never caused by your arguments, so do not change the command: retry in a moment. Such a response is not cached, so a plain retry asks Discogs again, with one exception: a price guide whose conditions are malformed is cached before they are read, so if the same error repeats, rerun with `--fresh`.
 
@@ -28,7 +28,7 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 | `oauth` | `Authentication failed with OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET).` | Check all four; the access token may have been revoked. |
 | `none` | `Authentication failed: no credentials are set.` | Set token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers). |
 
-**`auth_required` before any request (`--owned`, `get owned`, `get wantlist`):** these read the authenticated user's own collection or wantlist, so they need `token` or `oauth` in `status`. Under `consumer` or `none` they fail without sending anything: message `--owned reads your own Discogs account, but no credentials are set.` (or `... but a consumer key/secret identifies an app, not a user.`; `get owned reads ...` and `get wantlist reads ...` for the nouns), hint `Set a token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET). agent-discogs status shows the credentials in use.` No `status` field in the JSON envelope. A 403 stays the generic `forbidden`.
+**`auth_required` before any request (`--owned`, `get owned`, `get lists`, `get wantlist`):** these read the authenticated user's own collection, lists or wantlist, so they need `token` or `oauth` in `status`. Under `consumer` or `none` they fail without sending anything: message `--owned reads your own Discogs account, but no credentials are set.` (or `... but a consumer key/secret identifies an app, not a user.`; `get owned reads ...`, `get lists reads ...` and `get wantlist reads ...` for the nouns), hint `Set a token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET). agent-discogs status shows the credentials in use.` No `status` field in the JSON envelope. A 403 stays the generic `forbidden`. `get list` needs no user: a public list reads without credentials, and someone else's private list fails with whatever Discogs answered (`not_found`, `auth_required` or `forbidden`).
 
 **`rate_limited` (429, exit 1):** the message says what is left of the minute (`Rate limited: 0/60 requests left this minute.`; `Rate limit exceeded.` when Discogs sent no rate-limit headers), with `limit`/`remaining` in JSON when Discogs sends them. The hint starts with the wait (`Retry in 30s.`, `retry_after` in JSON; `Wait a moment and retry.` without a usable `Retry-After`), then the limit that applies:
 
@@ -127,7 +127,7 @@ agent-discogs get <noun> <ref-or-id>... [--flags]
 
 One or more refs (at most 10), run in sequence. Text blocks are separated by a blank line; a failing ref reports inline and the others still run (exit 1 if any failed). `--json` with several refs returns a list, with `{"ref": ..., "error": {...}}` items for failures; with one ref the shape is the single document.
 
-`wantlist` is the exception: it takes no ref (`agent-discogs get wantlist [--flags]`; a ref is `invalid_argument`) and prints one document for your own wantlist.
+`lists` and `wantlist` are the exceptions: they take no ref (`agent-discogs get lists [--flags]`, `agent-discogs get wantlist [--flags]`; a ref is `invalid_argument`) and print one document for your own lists or wantlist. `list` takes list ids, plain numbers only: lists have no ref prefix, so a typed ref such as `@r123` is `invalid_argument`.
 
 **Nouns:**
 
@@ -137,6 +137,8 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `credits` | `@r` or numeric ID | Release, track, and sub-track credits grouped by role, each person once per role with an artist ref and track scope (none = whole release) |
 | `identifiers` (alias `ids`) | `@r` or numeric ID | Barcodes, matrix/runout, label codes, rights societies |
 | `label` | `@l` or numeric ID | Label profile, with Discogs' markup converted (linked entities as refs, see below); `URLs:` lists linked sites by domain, omitting empty entries |
+| `list` | numeric ID only | One of your lists, or anyone's public list: `List: 123 "Pressings" · private`, `Description:` with the whole description (markup converted, never cut, line breaks kept), then one row per item, its ref (from the item's type: `@r`, `@m`, `@a`, `@l`) and title, with `· comment: ...` when set: `@r847868 "Nine Inch Nails - The Downward Spiral" · comment: check the matrix`. An item of another type reads `id 9 [type] "..."` with no ref. JSON `{"id","name","description","public","url","items":[{"ref","title","comment"}]}` (`id` and `type` instead of `ref` for another type; each comment as Discogs sent it); `--json --full` is the SDK's list record. Cost: 1 per list, whatever its length. No user needed; someone else's private list fails with `not_found`, `auth_required` or `forbidden`. Takes only `--json` / `--full`. Several ids behave as several refs |
+| `lists` | none | Your own lists, private ones included, one row per list: `123 "Pressings" · private · changed 2016-06-02 → get list 123` (id, name, visibility, the UTC day it last changed; Discogs sends no item count), under `Lists: me (page 1, 5 of 7 lists)` and a `Next page:` command. JSON rows: `id`, `name`, `description` (markup converted), `public`, `added`, `changed` (RFC 3339), `url`; `--json --full` is the SDK's list summaries. Cost: 1 for the username (cached 1h) + 1 per page of up to 100 lists. Needs a token or OAuth (`auth_required` before any request otherwise). Only your own lists: no `--user`, no editing |
 | `master` | `@m` or numeric ID | Master release details |
 | `owned` | `@r` or numeric ID | Your own copies of a release: `@r352665 owned ×2: Vinyl, Uncategorized` (one copy: `owned: Vinyl`) or `@r847868 not owned`. JSON `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}` / `{"ref":"@r847868","owned":0}`; `--json --full` is `{"instances":[...]}` (the SDK's collection records, folders by id; no folder-list request). A copy in a folder Discogs does not name adds no folder name; with no names at all the text is `@r352665 owned` (no colon) and JSON has no `folders`. Cost: 1 for the username, 1 per ref, 1 for the folder list when any ref is owned. Needs a token or OAuth (`auth_required` before any request otherwise). Takes only `--json` / `--full`. Several refs behave as for the other nouns |
 | `price` | `@r` or numeric ID | Marketplace pricing (requires a token or OAuth *and* seller settings on that account), each amount with its ISO currency code |
@@ -146,7 +148,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `versions` | `@m` or numeric ID | Master release versions (paginated) |
 | `wantlist` | none | Your own wantlist, one row per want: `@r847868 "Nine Inch Nails - The Downward Spiral" 1994 · Nothing Records 92346-2 · CD (Album) · notes: Sealed only`, under `Wantlist: me (page 1, 5 of 150 wants)` and a `Next page:` command. JSON rows: `ref`, `title`, `year`, `label`, `catno`, `format`, and `notes`/`rating` when set (`rating` 0 = unrated is omitted); `--json --full` is the SDK's want records (`id`, `basic_information`, `notes`, `rating`, `resource_url`). Cost: 1 for the username (cached 1h) + 1 per page of up to 100 wants. Needs a token or OAuth (`auth_required` before any request otherwise). Only your own wantlist: no `--user`, no editing. `--for-sale` keeps the wants on sale (see below) |
 
-**Markup in profiles and notes:** artist and label profiles (cut to about 300 characters, never inside a ref) and release notes (`-v`) convert Discogs' markup, in text and `--json` alike; `--json --full` keeps it as sent.
+**Markup in profiles and notes:** artist and label profiles (cut to about 300 characters, never inside a ref), release notes (`-v`) and list descriptions (never cut) convert Discogs' markup, in text and `--json` alike; `--json --full` keeps it as sent.
 
 | Discogs markup | Printed |
 |----------------|---------|
@@ -163,10 +165,10 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 
 | Flag | Description |
 |------|-------------|
-| `--json` | JSON output: a compact projection of the text view, plus `url` on `release`, `master`, `artist`, and `label`: the absolute Discogs web page (never in text; `versions` and `releases` rows only when Discogs sends one, which it does not today; never on `tracklist`, `price`, `credits`, and `identifiers`: use `release` for the link). Errors become `{"error":{"code",...}}` on stdout |
+| `--json` | JSON output: a compact projection of the text view, plus `url` on `release`, `master`, `artist`, `label`, `list` and each `lists` row: the absolute Discogs web page (never in text; `versions` and `releases` rows only when Discogs sends one, which it does not today; never on list items, `tracklist`, `price`, `credits`, and `identifiers`: use `release` for the link). Errors become `{"error":{"code",...}}` on stdout |
 | `--full` | With `--json`: the complete record instead of the projection, normalized (consistent field names such as `catalog_number` and a track's `type`, RFC 3339 timestamps, `null` for an absent or unparseable timestamp; unmodeled fields as Discogs sends them) |
-| `--limit` | `releases`, `versions`, `wantlist`: results per page, 1-100 (default: 5); with `wantlist --for-sale`, how many for-sale wants to collect |
-| `--page` | Page number, from 1 (server-side pages: `versions` without a `--release-type` scan, `wantlist`, `releases` without `--role` / label `--year`); rejected with `wantlist --for-sale` and `versions --release-type official` (or `unofficial --format ...`) |
+| `--limit` | `releases`, `versions`, `lists`, `wantlist`: results per page, 1-100 (default: 5); with `wantlist --for-sale`, how many for-sale wants to collect |
+| `--page` | Page number, from 1 (server-side pages: `versions` without a `--release-type` scan, `lists`, `wantlist`, `releases` without `--role` / label `--year`); rejected with `wantlist --for-sale` and `versions --release-type official` (or `unofficial --format ...`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role`, `releases @l... --year`, `versions --release-type official` or `unofficial --format ...`, and `wantlist --for-sale`, one ref only) |
 | `--max-requests` | `releases --role`, `releases @l... --year`, `versions --release-type official` (or `unofficial --format ...`), `releases` / `versions` with `--owned`, and `wantlist --for-sale` (3 or more there: the username, a wants page and one want's stats); one ref only: cap the command's HTTP sends, the text header lookup, the `--owned` collection read and the `--for-sale` username, wants pages and stats lookups included (the header runs first). Default: no cap. With `--owned` the cap only stops scans and the collection read: the header and a server-side listing page are always sent. In text under `--fresh` the header is sent again on every run, so a cap it uses up ends in an empty capped page whose header says to continue with a higher `--max-requests`. See Client-side scans above. |
 | `--owned` | `releases` and `versions` only: mark each release row with the copies in your own collection (`· owned` for one copy, `· owned ×2` for more, `· not owned`, `· owned ?`; JSON `owned` and a `collection` object). Master, artist and label rows (an artist discography lists masters) get no mark. Needs a token or OAuth. Cost: 1 for the username + 1 per 100 collection records, once per command, free for an hour; `--max-requests` counts it with the listing but stops only the collection read. `have N` on a row is the Discogs community count, `owned` is yours. See the `--owned` collection read above, and `--owned` under search. |
@@ -214,8 +216,9 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc`, `--release-type`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |
+| `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
-| `artist`, `credits`, `identifiers`, `label`, `master`, `owned`, `price`, `tracklist` | none |
+| `artist`, `credits`, `identifiers`, `label`, `list`, `master`, `owned`, `price`, `tracklist` | none |
 
 **Smart resolution:** `get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. Errors with a hint if the release has no master.
 
@@ -252,6 +255,10 @@ agent-discogs get owned @r847868 @r352665
 agent-discogs get wantlist
 agent-discogs get wantlist --limit 100 --page 2
 agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
+agent-discogs get lists
+agent-discogs get lists --limit 100 --page 2
+agent-discogs get list 123
+agent-discogs get list 123 456 --json
 ```
 
 ## status
