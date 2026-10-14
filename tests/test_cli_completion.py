@@ -20,6 +20,8 @@ _NOUNS = [
     "releases",
     "tracklist",
     "versions",
+    "list",
+    "lists",
     "wantlist",
     "ids",
 ]

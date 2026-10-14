@@ -48,8 +48,9 @@ Search Flags:  --artist, --barcode, --catno, --country, --format, --genre,
 Search Auth:   Discogs documents search as needing credentials (see
                Environment); unauthenticated searches currently get answers,
                but Discogs may refuse one with auth_required
-Get Nouns:     artist, credits, identifiers (ids), label, master, owned, price,
-               release, releases, tracklist, versions, wantlist (no ref)
+Get Nouns:     artist, credits, identifiers (ids), label, list, master, owned,
+               price, release, releases, tracklist, versions; lists and
+               wantlist (no ref)
                (artist/label 'URLs:' lists site domains, empty entries omitted)
 Get Credits:   release, track, and sub-track credits by role; each person once
                per role with the tracks covered (none = whole release);
@@ -71,6 +72,20 @@ Get Wantlist:  get wantlist: your own wants, 5 a page (--limit, --page), as
                seller location and shipping cannot be filtered: the API lists
                no copies, only a count and one lowest price per release; see
                the release's Marketplace page on discogs.com
+Get Lists:     get lists: your own lists, private ones included, 5 a page
+               (--limit, --page), as '123 "Pressings" · private · changed
+               2016-06-02 → get list 123' (the day in UTC; Discogs sends no
+               item count). No ref. Needs DISCOGS_TOKEN or OAuth. 1 request
+               for your username, then 1 per page. --json: id, name,
+               description, public, added, changed, url
+Get List:      get list <id>...: a list by its id, a plain number (a typed ref
+               such as @r123 is invalid_argument): its name, its whole
+               description, then one row per item, its ref and title, with
+               '· comment: ...' when set; an item of a type with no ref shows
+               'id N [type]'. 1 request per list, whatever its length; a
+               public list needs no credentials. --json: id, name,
+               description, public, url, items (ref, title, comment);
+               --json --full: the list records
 
 On a row, 'have N' is Discogs' community count (how many Discogs users own the
 release); 'owned' is your own copies (--owned).
@@ -90,8 +105,9 @@ drops a zero month or day (1994-05-00 prints as 1994-05, 1994-00-00 as 1994).
 Text output:
   Discogs text never prints raw: line breaks and tabs in a field become spaces,
   other control and bidi characters print as escapes (\\x1b, \\u202e). Notes
-  keep their line breaks, indented under 'Notes:'. --json keeps values exact,
-  except Discogs markup in profiles and notes, converted in text and --json
+  and list descriptions keep their line breaks, indented under 'Notes:' or
+  'Description:'. --json keeps values exact, except Discogs markup in
+  profiles, notes and list descriptions, converted in text and --json
   (not --full): [l647] prints as the ref @l647, [a=Name] as Name, a [url] as
   'text (host)', [b]/[i]/[u]/[s] as their text. Color marks only the CLI's
   own framing (refs, labels, the error mark, the budget warning, dimmed counts
@@ -227,10 +243,11 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --sort, --desc, --release-type, --owned, --after (with a
                    --release-type scan) and --max-requests (with a scan or
                    --owned)
+  lists            no ref; --limit, --page
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
                    --currency (both with --for-sale), --after and
                    --max-requests (with --for-sale, 3 or more)
-  any other noun   none beyond --json and --full (owned included)
+  any other noun   none beyond --json and --full (list and owned included)
   --after and --max-requests continue or cap one listing, so they take exactly
   one ref.
 
@@ -252,8 +269,9 @@ Environment:
 Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
   it repeats --cached or --fresh, --max-requests, --owned and, for get
-  wantlist, --limit, --for-sale, --max-price and --currency, and puts a
-  search's type and query after --, so a query such as -ambient survives.
+  lists and get wantlist, --limit (and --for-sale, --max-price and
+  --currency), and puts a search's type and query after --, so a query such
+  as -ambient survives.
   Filtered lists scan Discogs' 100-row pages until --limit rows match or the
   list ends. 'Continue scan:' means the scan stopped early: --max-requests ran
   out (the header says so; before the scan started, it shows no counts and JSON
@@ -282,10 +300,12 @@ Errors:
   shape). It is not your input: retry in a moment, with --fresh if it repeats.
   auth_required names the credentials that were sent (DISCOGS_TOKEN, the
   consumer key/secret, or OAuth), or says none are set, as 'status' reports.
-  --owned, get owned and get wantlist raise it before any request when
-  'status' shows consumer or none: they read your own account, which an app
-  key does not identify; the hint says to set a token or use OAuth. A 403
-  stays forbidden.
+  --owned, get owned, get lists and get wantlist raise it before any request
+  when 'status' shows consumer or none: they read your own account, which an
+  app key does not identify; the hint says to set a token or use OAuth. A
+  403 stays forbidden. get list needs no user: a public list reads without
+  credentials, and someone else's private list fails with the error its
+  status maps to (not_found, auth_required or forbidden).
 
 Price data also needs seller settings filled out on the Discogs account the
 token or OAuth credentials belong to (discogs.com/settings/seller). Without
@@ -302,10 +322,10 @@ the account's buyer currency (USD without a token); 'price' names the currency.
 get release prints 'Added: YYYY-MM-DD', the day the release was added to
 Discogs (--json: 'added', an RFC 3339 timestamp), at no extra request.
 
---json gives each release, master, artist, label, and search result a 'url':
-its Discogs web page, absolute, to hand to a person. Text output omits it.
-versions/releases rows carry it only if Discogs sends one (not today); tracks,
-price, credits, and identifiers never do.
+--json gives each release, master, artist, label, search result, list and
+get lists row a 'url': its Discogs web page, absolute, to hand to a person.
+Text output omits it. versions/releases rows carry it only if Discogs sends
+one (not today); list items, tracks, price, credits, and identifiers never do.
 
 Piping into a reader that closes early (| head -1) exits 1 with no message.
 
@@ -326,6 +346,7 @@ Examples:
   agent-discogs search release --artist Wire --limit 20 --owned
   agent-discogs get owned @r847868 @r352665
   agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
+  agent-discogs get lists
 """
 
 

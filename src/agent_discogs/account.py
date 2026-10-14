@@ -1,6 +1,6 @@
 """The Discogs user behind the credentials: the check that there is one, and
 their username. Every command that reads the user's own data (collection,
-wantlist) goes through here."""
+lists, wantlist) goes through here."""
 
 from __future__ import annotations
 
@@ -57,5 +57,5 @@ def username(client: Discogs) -> str:
 
 def user(client: Discogs) -> Any:
     """The SDK's handle on the user behind the credentials, for their
-    collection and wantlist: the username lookup, nothing more."""
+    collection, lists and wantlist: the username lookup, nothing more."""
     return client.users.get(username(client))

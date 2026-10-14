@@ -54,14 +54,20 @@ A 401 names the credentials that were sent, as `status` reports them: `DISCOGS_T
 
 With no credentials set, the message reads `Authentication failed: no credentials are set.` and the hint says to export `DISCOGS_TOKEN`.
 
-## --owned, get owned and get wantlist need a user
+## --owned, get owned, get lists and get wantlist need a user
 
-`--owned`, `get owned` and `get wantlist` read the authenticated user's own data (the collection, the wantlist), so they need credentials that name a user: a token or OAuth. When `agent-discogs status` shows `consumer` or `none`, they fail with `auth_required` before any request is sent (the budget footer is absent):
+`--owned`, `get owned`, `get lists` and `get wantlist` read the authenticated user's own data (the collection, the lists, the wantlist), so they need credentials that name a user: a token or OAuth. When `agent-discogs status` shows `consumer` or `none`, they fail with `auth_required` before any request is sent (the budget footer is absent):
 
-- `--owned reads your own Discogs account, but no credentials are set.` (no credentials), or `--owned reads your own Discogs account, but a consumer key/secret identifies an app, not a user.` (`get owned reads ...` for the noun, `get wantlist reads ...` for the wantlist);
+- `--owned reads your own Discogs account, but no credentials are set.` (no credentials), or `--owned reads your own Discogs account, but a consumer key/secret identifies an app, not a user.` (`get owned reads ...` for the noun, `get lists reads ...` for the lists, `get wantlist reads ...` for the wantlist);
 - the hint: `Set a token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET). agent-discogs status shows the credentials in use.`
 
 Under `--json` this is the usual envelope, without `status`, since no HTTP response exists. A 401 on a request that was sent is the [Authentication failed](#authentication-failed-401) case above; a 403 on the collection keeps the generic `forbidden` error.
+
+`get list` needs no user: a public list reads without credentials. Someone else's private list fails with the error Discogs' status maps to (`not_found`, `auth_required` or `forbidden`); a `not_found` list's hint reads `get lists shows your own list ids; another user's private list cannot be read.` instead of suggesting a search, which finds no lists.
+
+## get lists and get list argument errors
+
+Before any request, with `invalid_argument` (no budget footer): `get lists` with a ref (`get lists takes no ref: it lists your own lists. Open one with get list ID.`) or any flag but `--limit` and `--page`; `get list` with anything but a plain number, such as a typed ref (`get list takes a list id, a plain number such as 123 ('@r123' given): lists have no ref prefix.`; with several ids, that id's block reports it and the others still run), or with any flag but `--json` and `--full`.
 
 ## get wantlist argument errors
 

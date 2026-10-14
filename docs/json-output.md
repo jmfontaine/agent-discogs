@@ -6,11 +6,11 @@
 
 Empty fields are omitted, so test for a key rather than for null; for the `pagination` envelope, see [Pagination](#pagination).
 
-Each release, master, artist, label, and search result also carries `url`, its page on the Discogs website, always absolute: `"url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral"`. Use it to hand a person a link; text output leaves it out to save tokens.
+Each release, master, artist, label, search result, list (`get list`) and `get lists` row also carries `url`, its page on the Discogs website, always absolute: `"url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral"`. Use it to hand a person a link; text output leaves it out to save tokens.
 
 Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link.
 
-An artist or label `profile` and release `notes` (`-v`) carry Discogs' markup converted as in the text view, line breaks kept: `[l647]` → `@l647`, `[a=Name]` → `Name`, `[url=https://host/path]text[/url]` → `text (host)`, and `[b]` and the other formatting tags removed, their text kept. The conversion adds no escape code. See [Profiles and notes](commands.md#profiles-and-notes) for every tag. `--json --full` keeps both fields as Discogs sent them, markup included.
+An artist or label `profile`, release `notes` (`-v`) and a list's `description` carry Discogs' markup converted as in the text view, line breaks kept: `[l647]` → `@l647`, `[a=Name]` → `Name`, `[url=https://host/path]text[/url]` → `text (host)`, and `[b]` and the other formatting tags removed, their text kept. The conversion adds no escape code. See [Profiles and notes](commands.md#profiles-and-notes) for every tag. `--json --full` keeps these fields as Discogs sent them, markup included.
 
 `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`.
 
@@ -63,6 +63,27 @@ With `--for-sale` (a filtered scan, so `pagination` carries `filtered`, `capped`
 - `market` is `{"for_sale": int, "lowest": number, "currency": string}`: copies on sale and the lowest asking price across every condition and location, in the `--currency` asked for. `lowest` and `currency` are omitted when Discogs gives no price. Condition, sleeve condition, seller location and shipping are not available: the API lists no individual copies.
 - `total_items` is the whole wantlist, not the number for sale; `capped: true` with `stop_reason: "max_requests"` or `"rate_limited"` means more wants remain unchecked, and `next_cursor` continues from the first one.
 - Under `--cached`, a want whose stats are not cached is a row with no `market` and `error: {"code":"cache_miss","message":"Not cached: GET /marketplace/stats/5","hint":"..."}`, and the command exits 1. It was not checked: do not read it as not for sale. `--full` keeps the `error` and adds `market` to the want records the same way.
+
+## Lists
+
+`get lists --json` is the paginated envelope (see [lists and list](commands.md#lists-and-list)):
+
+```json
+{"pagination":{"page":1,"total_items":7,"total_pages":2},"results":[{"id":123,"name":"Pressings","description":"The best pressings.","public":false,"added":"2016-05-31T10:30:51-07:00","changed":"2016-06-01T20:00:00-07:00","url":"https://www.discogs.com/lists/Pressings/123"}]}
+```
+
+- Rows carry `id` (what `get list` takes), `name`, `description` (markup converted), `public` (kept when `false`), `added` and `changed` (RFC 3339 timestamps, as `--full` gives them), and `url`. Discogs sends no item count.
+- `--full` prints the list records as the SDK normalizes them: `id`, `name`, `description`, `public`, `date_added`, `date_changed`, `uri`, `resource_url`.
+
+`get list <id> --json` is one document per list (a JSON list of them, with `{"ref","error"}` items for failures, when several ids are given):
+
+```json
+{"id":123,"name":"Pressings","description":"The best pressings of @a3857.","public":false,"url":"https://www.discogs.com/lists/Pressings/123","items":[{"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral","comment":"check the matrix"},{"ref":"@l647","title":"Nothing Records"}]}
+```
+
+- Each item carries `ref` (`@r`, `@m`, `@a` or `@l`, from its type), `title` (Discogs' `display_title`) and `comment` when set, exactly as Discogs sent it. An item of a type with no ref prefix carries `id` and `type` instead of `ref`. An item has no `url`.
+- `--full` prints the list record as the SDK normalizes it, its `items` with `display_title`, `comment`, `uri`, `resource_url` and `image_url`.
+- A list with no items has no `items` key, like any empty field.
 
 ## --full
 
