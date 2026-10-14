@@ -23,7 +23,7 @@ That includes client-side scans: under `--cached` a scan reads cached pages unti
 
 `get wantlist --for-sale` reads your wantlist through the same cache: under `--cached`, the username or a wants page the cache does not hold fails the whole command with `cache_miss` and nothing is sent. A want whose Marketplace stats are not cached does not fail the command: it becomes a row carrying its own `cache_miss` (`· ✗ Not cached: GET /marketplace/stats/5` in text, `error.code == "cache_miss"` under `--json`), counts toward `--limit`, and the command exits 1, like a missed ref of a multi-ref `get`. The want is never reported as not for sale; rerun without `--cached` to check it.
 
-`--fresh` stores nothing, so under it a text `get releases` scan spends one request on the header every run: with `--max-requests 1` it returns the empty capped page, and its header says to continue with a higher `--max-requests`, since the same cap would spend itself on the header again.
+`--fresh` stores nothing, so under it a text `get releases` scan, or a text `get versions --release-type official` (or `unofficial` with `--format`) scan, spends one request on the header every run: with `--max-requests 1` it returns the empty capped page, and its header says to continue with a higher `--max-requests`, since the same cap would spend itself on the header again.
 
 `--fresh` fetches every request from the API and does **not** store the response, so a later run without `--fresh` can still be served the older cached entry until its 1-hour TTL expires.
 
