@@ -27,6 +27,10 @@ _FOLDERS = [
 # The Techno records: 12 of 250, on each of the three 100-record pages.
 _TECHNO = (5, 17, 40, 99, 100, 130, 160, 199, 200, 210, 230, 249)
 
+_VALUE_PATH = f"{_USER}/collection/value"
+# The collection value as Discogs writes it, in the profile's currency.
+_VALUE = {"minimum": "€75.50", "median": "€100.25", "maximum": "€1,250.00"}
+
 
 def _too_many() -> httpx2.Response:
     return httpx2.Response(429, json={}, headers={"Retry-After": "30"})
@@ -38,9 +42,11 @@ class _Collection:
     House LP from 2001 in Uncategorized, added on 2024-01-(n % 28 + 1), except
     that the `_TECHNO` records are Techno 12" singles from 1992 on Tresor,
     record 3 is release 7, rated 4, in Vinyl, record 120 is release 7 again,
-    in Uncategorized, and `odd` replaces records by number. `throttle`
-    answers with a 429: `"identity"` the username, `"folders"` the folder
-    list, `"page:N"` collection page N. A search lists releases 1 and 2."""
+    in Uncategorized, and `odd` replaces records by number. The profile
+    adds `profile` (by default `curr_abbr: EUR`) and the collection value is
+    `value` (by default `_VALUE`). `throttle` answers with a 429:
+    `"identity"` the username, `"folders"` the folder list, `"page:N"`
+    collection page N. A search lists releases 1 and 2."""
 
     def __init__(
         self,
@@ -48,8 +54,12 @@ class _Collection:
         *,
         throttle: tuple[str, ...] = (),
         odd: dict[int, dict[str, Any]] | None = None,
+        profile: dict[str, Any] | None = None,
+        value: dict[str, Any] | None = None,
     ) -> None:
         self.size, self.throttle, self.odd = size, throttle, odd or {}
+        self.profile = {"curr_abbr": "EUR"} if profile is None else profile
+        self.value = _VALUE if value is None else value
 
     def __call__(self, path: str, params: dict[str, str]) -> object:
         if path == "/oauth/identity":
@@ -65,6 +75,10 @@ class _Collection:
             if f"page:{page}" in self.throttle:
                 return _too_many()
             return self._page(page, int(params["per_page"]))
+        if path == _USER:
+            return {"id": 7, "username": "me", **self.profile}
+        if path == _VALUE_PATH:
+            return self.value
         if path == _SEARCH:
             rows = [{"id": i, "title": f"Title {i}", "type": "release"} for i in (1, 2)]
             pages = {"page": 1, "pages": 1, "items": 2, "per_page": 100}
@@ -534,6 +548,112 @@ class TestArguments:
         assert sent == []
 
 
+class TestValue:
+    def test_prints_the_value_in_the_profile_currency(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", "collection", "--value", "--json")
+        assert result.exit_code == 0, result.output
+        assert result.stdout == (
+            '{"currency":"EUR","minimum":75.5,"median":100.25,"maximum":1250.0}\n'
+        )
+        assert _paths(sent) == ["/oauth/identity", _USER, _VALUE_PATH]
+
+        again, sent = h.run("get", "collection", "--value", "--json")
+        assert sent == []
+        assert again.stdout == result.stdout
+
+        text, _ = h.run("get", "collection", "--value")
+        assert text.stdout == (
+            "Collection value (EUR): min 75.50 · median 100.25 · max 1250.00\n"
+        )
+
+    def test_full_prints_the_record_as_sent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unparsed, so an amount the CLI cannot read can still be seen."""
+        value = {**_VALUE, "maximum": "about 1.250.000,0,0"}
+        h = _Harness(monkeypatch, _Collection(value=value))
+        result, sent = h.run("get", "collection", "--value", "--json", "--full")
+        assert _document(result) == {"currency": "EUR", "value": value}
+        assert len(sent) == 3
+
+    @pytest.mark.parametrize(
+        ("profile", "value", "field"),
+        [
+            ({}, _VALUE, "currency_code"),
+            ({"curr_abbr": "€"}, _VALUE, "currency_code"),
+            ({"curr_abbr": "EUR"}, {**_VALUE, "median": "€12.34.56"}, "median"),
+            ({"curr_abbr": "EUR"}, {**_VALUE, "maximum": "N/A"}, "maximum"),
+            ({"curr_abbr": "EUR"}, {"median": "€1", "maximum": "€2"}, "minimum"),
+        ],
+    )
+    def test_an_unreadable_value_is_a_bad_response(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        profile: dict[str, Any],
+        value: dict[str, Any],
+        field: str,
+    ) -> None:
+        h = _Harness(monkeypatch, _Collection(profile=profile, value=value))
+        result, _ = h.run("get", "collection", "--value", "--json")
+        error = json_error(result)
+        assert error["code"] == "bad_response"
+        assert field in error["message"]
+        assert "retrying will not help" in error["hint"]
+        for raw in ("€", "12.34.56", "N/A"):
+            assert raw not in error["message"]
+
+        text, _ = h.run("get", "collection", "--value")
+        assert text_error(text).startswith(
+            "✗ Discogs sent a response that cannot be read: "
+        )
+
+    @pytest.mark.parametrize(
+        "flags", [["--limit", "5"], ["--style", "Techno"], ["--sort", "added"]]
+    )
+    def test_takes_no_other_flag(
+        self, monkeypatch: pytest.MonkeyPatch, flags: list[str]
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", "collection", "--value", *flags, "--json")
+        error = json_error(result)
+        assert error["code"] == "invalid_argument"
+        assert error["message"].startswith(
+            f"--value takes no other get collection flag ({flags[0]} given)"
+        )
+        assert sent == []
+
+    @pytest.mark.parametrize(
+        ("argv", "message"),
+        [
+            (
+                ["collection", "--value", "--limit", "5", "--desc"],
+                "--value takes no other get collection flag (--desc, --limit given)",
+            ),
+            (
+                ["collection", "@r1", "--value"],
+                "get collection takes no ref",
+            ),
+            (["release", "@r1", "--value"], "--value does not apply to 'get release'"),
+        ],
+    )
+    def test_misplaced_value_fails_before_any_request(
+        self, monkeypatch: pytest.MonkeyPatch, argv: list[str], message: str
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", *argv)
+        assert text_error(result).startswith(f"✗ {message}")
+        assert sent == []
+
+    def test_cached_misses_fail(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("--cached", "get", "collection", "--value", "--json")
+        assert json_error(result)["code"] == "cache_miss"
+        assert sent == []
+
+
 class TestNeedsAUser:
     @pytest.mark.parametrize("mode", ["none", "consumer"])
     def test_fails_before_any_request(
@@ -549,6 +669,7 @@ class TestNeedsAUser:
         assert "get collection" in error["message"]
         assert sent == []
 
-        result, sent = h.run("get", "collection", "--style", "Techno")
-        assert "DISCOGS_TOKEN" in text_error(result)
-        assert sent == []
+        for argv in (["--style", "Techno"], ["--value"]):
+            result, sent = h.run("get", "collection", *argv)
+            assert "DISCOGS_TOKEN" in text_error(result)
+            assert sent == []

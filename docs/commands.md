@@ -114,6 +114,7 @@ agent-discogs get owned @r352665 @r847868
 agent-discogs get versions @m3719 --country US --owned
 agent-discogs get collection --sort added --desc
 agent-discogs get collection --style Techno --format 12\" --max-requests 20
+agent-discogs get collection --value
 agent-discogs get wantlist
 agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
 agent-discogs get lists
@@ -195,6 +196,20 @@ Each row is the ref, `artist - title`, year, label and catalog number, format, t
 - **It takes no ref and needs a user.** `get collection @r847868` fails with `invalid_argument`, as do `--max-requests` and `--after` without a filter. A token or OAuth credentials name a user; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own collection: there is no `--user` flag, no folder selection, and the CLI neither adds, moves, rates nor removes records.
 - **`--cached`.** The username, the folder list or a page the cache does not hold fails the command with `cache_miss`.
 - **`--json`:** `{"pagination":{...},"results":[{"ref","title","year","label","catno","format","folder","added","rating"}]}`, `added` an RFC 3339 timestamp and `rating` omitted when unrated. `--json --full` prints the records as the SDK normalizes them (`CollectionItem`: `id`, `instance_id`, `folder_id`, `date_added`, `rating`, `notes`, `basic_information`). See [JSON output](json-output.md#collection).
+
+#### --value
+
+`get collection --value` prints what your collection is worth, by Discogs' estimate from Marketplace sales, in place of the listing:
+
+```
+Collection value (EUR): min 75.50 · median 100.25 · max 250.00
+```
+
+- **Currency.** Discogs writes the three amounts as formatted strings (`"€1.250,00"`) and names no currency, and a symbol cannot name one (`$` is USD, CAD, AUD...). So the code comes from your profile's currency (`curr_abbr`), and each amount is printed as a bare number after it, like every price the CLI prints.
+- **Reading the amounts.** Whatever stands before the first digit or after the last one (`$`, `€`, `kr`, `CHF `) is the currency symbol and is dropped, unless it holds a sign or parentheses (`-$5.00`, `($5.00)`) or ends in `.` or `,` right before the first digit (`.50`). The decimal separator is the last `.` or `,` when one or two digits follow it; every other `.`, `,`, `'` (or `’`), space, no-break space or narrow no-break space separates thousands, in groups of three after a first group that does not start with 0 (`1,250` and `1.250` both read 1250; `0.250` is rejected). An amount in any other shape, or a profile without a currency code, fails with `bad_response`, naming the field but never its value, and a hint saying the format is unknown: retrying will not help, so report it at https://github.com/jmfontaine/agent-discogs/issues. `--json --full` prints the amounts as Discogs sent them.
+- **Cost.** One request for the username (shared with the rest of the command, as for every user noun), one for your profile, one for the value; a rerun within the hour costs nothing.
+- **It takes no other flag.** `get collection --value --limit 5`, or any other `get collection` flag with it, fails with `invalid_argument` before any request. Like the listing, it needs a token or OAuth (`auth_required` before any request otherwise), and Discogs serves the value to the collection's owner only.
+- **`--json`:** `{"currency":"EUR","minimum":75.5,"median":100.25,"maximum":250.0}`. `--json --full`: `{"currency":"EUR","value":{"maximum":"€250.00","median":"€100.25","minimum":"€75.50"}}`, the SDK's `CollectionValue` record as sent, unparsed. See [JSON output](json-output.md#collection).
 
 ### wantlist
 
@@ -322,7 +337,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |
-| `collection` | no ref; `--limit`, `--page`, `--sort label\|artist\|title\|catno\|format\|rating\|added\|year`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--after` and `--max-requests` (with a filter) |
+| `collection` | no ref; `--limit`, `--page`, `--sort label\|artist\|title\|catno\|format\|rating\|added\|year`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--after` and `--max-requests` (with a filter); or `--value` alone |
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
 | `artist`, `credits`, `identifiers`, `label`, `list`, `master`, `owned`, `price`, `tracklist` | none |

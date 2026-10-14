@@ -19,6 +19,8 @@ The `Next page:` / `Continue scan:` command printed under a list repeats `--cach
 
 **`bad_response` (exit 1):** Discogs answered with something the CLI cannot read: a non-JSON body (a gateway error page), a record that does not fit the SDK's models, or a malformed results page (`"results" is an object, expected an array`). The message names the problem (a validation failure names its first failing field, never the value), bounded to one line. It is never caused by your arguments, so do not change the command: retry in a moment. Such a response is not cached, so a plain retry asks Discogs again, with one exception: a price guide whose conditions are malformed is cached before they are read, so if the same error repeats, rerun with `--fresh`.
 
+**`bad_response` with an unknown format (exit 1):** `get collection --value` reads numbers out of the formatted amounts Discogs sends (`"€1.250,00"`) and the currency from your profile's `curr_abbr`. An amount in a shape it does not know, or a profile without a currency code, is `bad_response` too, but its hint says the format is unknown and asks for a report at https://github.com/jmfontaine/agent-discogs/issues: retrying will not help. The message names the field (`the collection value's median`, `currency_code`), never the value; `get collection --value --json --full` prints the amounts as sent.
+
 **`auth_required` (401, exit 1):** the message names the credentials that were sent, in the mode `status` reports. The hint says what to check, then `agent-discogs status shows the credentials in use.` Relay it to the user, who fixes the credentials; retrying the same command will not help.
 
 | Mode | Message | Hint (before the `status` pointer) |
@@ -208,6 +210,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 | `--style` | Keep records with this style |
 | `--year` | Keep records from this year |
 | `--label` | Keep records with this label name |
+| `--value` | Instead of the listing, print the collection's value from Discogs' Marketplace sales, in your profile's currency: `Collection value (EUR): min 75.50 · median 100.25 · max 250.00` (JSON `{"currency":"EUR","minimum":75.5,"median":100.25,"maximum":250.0}`; `--json --full`: `{"currency":"EUR","value":{...}}`, the amounts as sent). Amounts are parsed out of Discogs' strings: what precedes the first digit or follows the last is the symbol (a sign, parentheses, or a `.`/`,` right before the first digit is rejected); the last `.` or `,` followed by one or two digits is the decimal point; other `.`, `,`, spaces (no-break included) and `'` separate thousands in groups of three (`1,250` = 1250). Cost: 3 (username, profile, value). Takes no other flag (`invalid_argument` before any request). |
 
 A filter matches one value of the record exactly, ignoring case (`--style techno` matches `Techno`, `--style Tech` matches nothing); several filters must all match. There is no `--country`: collection records carry none. Any filter makes it a client-side scan of 100-record pages in the requested order: `≤N` totals, `--page` rejected, continue with the printed `Continue scan:` / `Next page:` (`--after`), cap with `--max-requests N` (1 request per 100 records scanned; a 429 after the first page keeps the rows read). The username and the folder list are read before the scan and count against `--max-requests`: on a cold cache `--max-requests 2` returns an empty capped page (`--max-requests 2 ran out before the scan started`). Without `--sort` the scan reads the pages the `--owned` read caches, so within the hour of an `--owned` listing it costs only the folder list. `--max-requests` and `--after` without a filter fail with `invalid_argument` before any request, as do an unknown `--sort` key and `--desc` without `--sort`.
 
@@ -231,7 +234,7 @@ A filter matches one value of the record exactly, ignoring case (`--style techno
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc`, `--release-type`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |
-| `collection` | no ref; `--limit`, `--page`, `--sort`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--after` and `--max-requests` (with a filter) |
+| `collection` | no ref; `--limit`, `--page`, `--sort`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--after` and `--max-requests` (with a filter); or `--value` alone |
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
 | `artist`, `credits`, `identifiers`, `label`, `list`, `master`, `owned`, `price`, `tracklist` | none |
@@ -271,6 +274,7 @@ agent-discogs get owned @r847868 @r352665
 agent-discogs get collection
 agent-discogs get collection --sort added --desc --limit 20                       # newest additions first
 agent-discogs get collection --style Techno --format 12\" --max-requests 20      # client-side scan; continue with the printed --after
+agent-discogs get collection --value                                              # what it is worth, in your currency
 agent-discogs get wantlist
 agent-discogs get wantlist --limit 100 --page 2
 agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60

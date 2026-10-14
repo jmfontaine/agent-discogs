@@ -44,7 +44,7 @@ Codes:
 - `cache_error`: with `path`, the cache database; see [Cache errors](caching-and-budget.md#cache-errors)
 - `api_error`
 - `connection_error`
-- `bad_response`: Discogs answered with something the CLI cannot read: a non-JSON page, data that does not fit the expected shape, or a malformed results page; never your arguments, so retry later, with `--fresh` if the same error repeats
+- `bad_response`: Discogs answered with something the CLI cannot read: a non-JSON page, data that does not fit the expected shape, or a malformed results page; never your arguments, so retry later, with `--fresh` if the same error repeats. One kind is not worth retrying: a value written in a format the CLI does not know (an amount of `get collection --value`, or a profile with no currency code). Its message names the field, never the value, and its hint says the format is unknown and asks for a report at https://github.com/jmfontaine/agent-discogs/issues
 - `invalid_argument`
 - `unexpected`: the message names the exception class
 
@@ -72,6 +72,8 @@ Before any request, with `invalid_argument` (no budget footer): `get lists` with
 ## get collection argument errors
 
 Before any request, `get collection` rejects with `invalid_argument` (no budget footer): a ref (`get collection takes no ref: it lists your own collection.`); an empty filter (`--style needs a value: a filter matches one value exactly.`); an unknown `--sort` key (`--sort 'price' is not valid for 'get collection'. Keys: label, artist, title, catno, format, rating, added, year.`); `--desc` without `--sort`; `--max-requests` or `--after` without a filter (`--format`, `--genre`, `--style`, `--year`, `--label`); `--page` with a filter (use the `Continue scan:` / `Next page:` command); a flag of another noun (`--country`, `--owned`, `--for-sale`, ...). See [get collection](commands.md#collection).
+
+`get collection --value` takes no other `get collection` flag: `get collection --value --limit 5` fails with `--value takes no other get collection flag (--limit given): it prints your collection's value, not a listing.`
 
 ## get wantlist argument errors
 

@@ -75,6 +75,7 @@ What commands cost (network requests; listing rows are per ref):
 | `get owned @r...` | 1 for the username, plus 1 per ref, plus 1 for the folder list when any ref is owned (`--json --full`: no folder list) |
 | `get collection` | 1 for the username (shared with `--owned`), plus 1 for the folder list (`--json --full`: none, it names folders by id), plus 1 per page of up to 100 records (`--limit`) |
 | `get collection` with `--format`, `--genre`, `--style`, `--year` or `--label` (a client-side scan) | 1 for the username, plus 1 for the folder list (`--json --full`: none), plus 1 per 100 records scanned; without `--sort`, the pages are the ones the `--owned` read caches |
+| `get collection --value` | 3: the username (shared with `--owned`), your profile (its currency) and the collection value |
 | `get wantlist` | 1 for the username (shared with `--owned`), plus 1 per page of up to 100 wants (`--limit`) |
 | `get wantlist --for-sale` (on top of the above) | 1 per want checked (its Marketplace stats), with wants read 100 a request: a sparse match costs about one request per want on the list, so 500 wants is about 500 requests, roughly nine minutes of the 60 a minute budget. Pass `--max-requests` |
 | `get lists` | 1 for the username (shared with `--owned` and `get wantlist`), plus 1 per page of up to 100 lists (`--limit`) |

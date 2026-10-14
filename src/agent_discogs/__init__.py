@@ -76,7 +76,13 @@ Get Collection:
                --full), then 1 per page or per 100 records scanned; without
                --sort a scan reuses the pages --owned cached. --json: ref,
                title, year, label, catno, format, folder, added, rating;
-               --json --full: the collection records (folder_id)
+               --json --full: the collection records (folder_id).
+               get collection --value instead prints its value from Discogs'
+               Marketplace sales in your profile's currency, as 'Collection
+               value (EUR): min 75.50 · median 100.25 · max 250.00' (--json:
+               currency, minimum, median, maximum; --json --full: currency
+               and the value record as sent). No other flag. 3 requests:
+               username, profile (currency), value
 Get Wantlist:  get wantlist: your own wants, 5 a page (--limit, --page), as
                '@r847868 "Nine Inch Nails - The Downward Spiral" 1994 · Nothing
                Records 92346-2 · CD (Album)'. No ref.
@@ -254,6 +260,8 @@ Options:
   --format, --label, --genre, --style
                    get collection: keep records with that format name or
                    description, label name, genre or style (any case)
+  --value          get collection: its value (min, median, max) in your
+                   currency instead of the listing; takes no other flag
   --version        Show version and exit
   --help           Show this message and exit
 
@@ -269,7 +277,7 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --owned)
   collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
                    --style, --year, --label, --after and --max-requests (with a
-                   filter)
+                   filter); or --value alone
   lists            no ref; --limit, --page
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
                    --currency (both with --for-sale), --after and
@@ -325,6 +333,8 @@ Errors:
   command line instead exits 2 with text on stderr.
   bad_response means Discogs sent something unreadable (not JSON, or the wrong
   shape). It is not your input: retry in a moment, with --fresh if it repeats.
+  When its hint says the format is unknown (a collection value amount or the
+  profile's currency code), retrying will not help: report it.
   auth_required names the credentials that were sent (DISCOGS_TOKEN, the
   consumer key/secret, or OAuth), or says none are set, as 'status' reports.
   --owned, get owned, get collection, get lists and get wantlist raise it
@@ -373,6 +383,7 @@ Examples:
   agent-discogs search release --artist Wire --limit 20 --owned
   agent-discogs get owned @r847868 @r352665
   agent-discogs get collection --style Techno --format 12\\" --max-requests 20
+  agent-discogs get collection --value
   agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
   agent-discogs get lists
 """
