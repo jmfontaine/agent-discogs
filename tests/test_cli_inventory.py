@@ -374,8 +374,10 @@ class TestFilters:
         ]
         result, _ = h.run(*argv)
         assert result.exit_code == 0, result.output
+        # The header shows each grade as the minimum it is; the
+        # continuation repeats the plain flags.
         assert result.stdout.splitlines()[0].startswith(
-            "Inventory: seller condition=NM sleeve=G ships-from=France "
+            "Inventory: seller condition≥NM sleeve≥G ships-from=France "
             "max-price=45.5 currency=EUR (page 1, 2 of ≤300 listings"
         )
         continuation = _continuation(result)

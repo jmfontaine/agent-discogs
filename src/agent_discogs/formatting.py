@@ -814,6 +814,8 @@ def format_inventory(
     total_results: int | None,
     next_page_cmd: str | None,
     *,
+    condition: str | None,
+    sleeve: str | None,
     filters: dict[str, str],
     in_wantlist: bool,
     filtered: bool,
@@ -824,8 +826,9 @@ def format_inventory(
     ownership: Ownership | None,
 ) -> str:
     """`get inventory`: one row per listing of `username`, under a header
-    naming the filters, with how many listings priced in another currency
-    were skipped."""
+    naming the filters, the minimum grades (short codes) as
+    `condition≥NM sleeve≥VG+`, with how many listings priced in another
+    currency were skipped."""
     skipped = None
     if skipped_currency:
         where = "another currency" if skipped_currency == 1 else "other currencies"
@@ -840,11 +843,17 @@ def format_inventory(
         stop=stop,
         note=skipped,
     )
+    grades = [
+        f"{name}≥{code}"
+        for name, code in (("condition", condition), ("sleeve", sleeve))
+        if code
+    ]
     subject = " ".join(
         p
         for p in (
             username,
             "in wantlist" if in_wantlist else "",
+            *grades,
             _format_filters(filters),
         )
         if p

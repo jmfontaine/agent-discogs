@@ -830,19 +830,15 @@ def _get_inventory(
         owned=owned,
         max_requests=max_requests,
     )
-    filters = {
-        "condition": condition_code,
-        "sleeve": sleeve_code,
-        "ships-from": ships_from,
-        "max-price": amount,
-        "currency": currency,
-    }
+    filters = {"ships-from": ships_from, "max-price": amount, "currency": currency}
     return format_inventory(
         result.items,
         username,
         result.page,
         result.total_items,
         footer_cmd,
+        condition=condition_code,
+        sleeve=sleeve_code,
         filters={k: v for k, v in filters.items() if v},
         in_wantlist=in_wantlist,
         filtered=result.filtered,
