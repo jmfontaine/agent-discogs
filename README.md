@@ -84,7 +84,7 @@ The CLI sends whichever credentials discogs-sdk finds in the environment, in thi
 3. a consumer key and secret alone (`DISCOGS_CONSUMER_KEY` and `DISCOGS_CONSUMER_SECRET`);
 4. otherwise none.
 
-A consumer key and secret get 60 requests/minute but identify an app, not a user, so `price` needs a token or OAuth, and so do `--owned`, `get owned`, `get collection`, `get lists` and `get wantlist`, which read your own collection, lists and wantlist. `agent-discogs status` reports the mode in use.
+A consumer key and secret get 60 requests/minute but identify an app, not a user, so `price` needs a token or OAuth, and so do `--owned`, `--in-wantlist`, `get owned`, `get collection`, `get lists` and `get wantlist`, which read your own collection, lists and wantlist. `get inventory` alone works without credentials: Discogs shows anyone a seller's For Sale listings. `agent-discogs status` reports the mode in use.
 
 > [!TIP]
 > Use a `.env` file with [direnv](https://direnv.net/) to avoid exporting tokens manually in every shell.
@@ -100,6 +100,7 @@ agent-discogs get owned @r352665 @r847868
 agent-discogs search release --artist "Nine Inch Nails" --year 1994 --limit 20 --owned
 agent-discogs get collection --style Techno --format 12\" --max-requests 20
 agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
+agent-discogs get inventory <seller> --in-wantlist --condition VG+ --max-requests 60
 agent-discogs get lists
 agent-discogs get list 123
 agent-discogs get release @r352665 --json
@@ -134,8 +135,8 @@ Smart resolution: `get versions @r352665` auto-resolves the release to its maste
 
 ## Documentation
 
-- [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md): `search` (filters, sorting, client-side scans, `--added-since`, `--owned`), `get` and its nouns (`get owned`, `get collection` and its filters, `get wantlist` and its `--for-sale` scan, `get lists` and `get list`), `tracks` / `price`, `status`, `cache`, `skills`, shell completion.
-- [JSON output](https://github.com/jmfontaine/agent-discogs/blob/main/docs/json-output.md): projections, `--full`, the pagination envelope, `owned` rows, collection rows, wantlist rows and their `market`, lists and their items, non-ASCII and control-character escaping.
+- [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md): `search` (filters, sorting, client-side scans, `--added-since`, `--owned`), `get` and its nouns (`get owned`, `get collection` and its filters, `get wantlist` and its `--for-sale` scan, `get inventory` and its grade, origin, price and `--in-wantlist` filters, `get lists` and `get list`), `tracks` / `price`, `status`, `cache`, `skills`, shell completion.
+- [JSON output](https://github.com/jmfontaine/agent-discogs/blob/main/docs/json-output.md): projections, `--full`, the pagination envelope, `owned` rows, collection rows, wantlist rows and their `market`, inventory listings and their `wantlist` object, lists and their items, non-ASCII and control-character escaping.
 - [Caching and request budget](https://github.com/jmfontaine/agent-discogs/blob/main/docs/caching-and-budget.md): `--cached` / `--fresh`, cache errors, rate limits, what each command costs, `--max-requests`.
 - [Errors](https://github.com/jmfontaine/agent-discogs/blob/main/docs/errors.md): the error layout, error codes, and the 401, 429 and connection-error hints.
 - [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md): the `--debug` panel, output encoding, how Discogs text is neutralized, and `--color`.

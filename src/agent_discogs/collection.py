@@ -28,11 +28,14 @@ from agent_discogs.pagination import (
     ScanStop,
     fetch_filtered_page,
     fetch_page,
+    keep_all,
     rate_limited_stop,
     sort_params,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from discogs_sdk import Discogs
 
 # The folder every collection has, holding every record of the others.
@@ -134,11 +137,14 @@ class Ownership:
     def complete(self) -> bool:
         return self.stop is None
 
-    def owned(self, row: Any) -> int | None:
-        """Copies of the release `row` is: 0 (not owned) only once the whole
-        collection was read, None when the part read does not hold it. A
-        copy found in a partial read counts, though more may be unread."""
-        copies = self.counts[row.id]
+    def owned(self, release_id: int | None) -> int | None:
+        """Copies of the release `release_id`: 0 (not owned) only once the
+        whole collection was read, None when the part read does not hold it,
+        or for no release id. A copy found in a partial read counts, though
+        more may be unread."""
+        if release_id is None:
+            return None
+        copies = self.counts[release_id]
         return copies if copies or self.complete else None
 
     def document(self) -> dict[str, Any]:
@@ -162,18 +168,27 @@ def is_release_row(row: Any) -> bool:
     return getattr(row, "type", "release") == "release"
 
 
-def mark_rows(document: dict[str, Any], items: list[Any], ownership: Ownership) -> None:
+def _row_id(row: Any) -> int | None:
+    """The release a list row is: the row itself, so its own `id`. An
+    inventory row is a listing, whose release is `inventory.release_id()`."""
+    return row.id
+
+
+def mark_rows(
+    document: dict[str, Any],
+    items: list[Any],
+    ownership: Ownership,
+    *,
+    release_id: Callable[[Any], int | None] = _row_id,
+) -> None:
     """Give each release row of a page document (`results`, projected or
-    `--full`, in `items` order) its `owned` count, null when undecided, and
-    the document its `collection` object."""
+    `--full`, in `items` order) the `owned` count of its release (by
+    `release_id`), null when undecided, and the document its `collection`
+    object."""
     for row, item in zip(document["results"], items, strict=True):
         if is_release_row(item):
-            row["owned"] = ownership.owned(item)
+            row["owned"] = ownership.owned(release_id(item))
     document["collection"] = ownership.document()
-
-
-def _every(_item: Any) -> bool:
-    return True
 
 
 def ownership_of(
@@ -216,7 +231,7 @@ def _read_ownership(
         result = fetch_filtered_page(
             records(user),
             limit=None,
-            keep=_every,
+            keep=keep_all,
             max_requests=max_requests,
         )
     except RateLimitError as exc:

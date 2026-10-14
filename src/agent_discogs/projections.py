@@ -26,10 +26,12 @@ from agent_discogs.formatting import (
     credits_by_role,
     field,
     known_year,
+    listing_title,
     release_date,
     split_members,
     track_summary,
 )
+from agent_discogs.inventory import release_id, short_grade
 from agent_discogs.refs import make_ref
 
 
@@ -460,5 +462,28 @@ def project_record(record: Any, folders: dict[int, str]) -> dict[str, Any]:
             "folder": folder_name(folders, getattr(record, "folder_id", None)),
             "added": _timestamp(getattr(record, "date_added", None)),
             "rating": getattr(record, "rating", None) or None,
+        }
+    )
+
+
+def project_listing(listing: Any) -> dict[str, Any]:
+    """A `get inventory` row: the listing's own id (`listing`), the release
+    it is a copy of, the grades as short codes, the price with its currency,
+    and `listed`, its RFC 3339 timestamp."""
+    rid = release_id(listing)
+    price = listing.price
+    return drop_empty(
+        {
+            "listing": listing.id,
+            "ref": None if rid is None else make_ref("release", rid),
+            "title": listing_title(listing.release),
+            "format": getattr(listing.release, "format", None),
+            "condition": short_grade(listing.condition),
+            "sleeve": short_grade(listing.sleeve_condition),
+            "price": getattr(price, "value", None),
+            "currency": getattr(price, "currency", None),
+            "ships_from": listing.ships_from,
+            "listed": _timestamp(listing.posted),
+            "url": _url(listing),
         }
     )

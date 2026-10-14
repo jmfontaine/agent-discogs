@@ -1,7 +1,7 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "agent-discogs",
-  "description": "Token-efficient Discogs CLI for AI agents (PyPI package agent-discogs): searches the Discogs music database and shows releases, masters, artists, labels, tracklists, credits, price suggestions, your collection (filtered and sorted), its value and which releases you own in it, which wants on your wantlist are for sale, and the items and comments of Discogs lists, as compact text or JSON.",
+  "description": "Token-efficient Discogs CLI for AI agents (PyPI package agent-discogs): searches the Discogs music database and shows releases, masters, artists, labels, tracklists, credits, price suggestions, your collection (filtered and sorted), its value and which releases you own in it, which wants on your wantlist are for sale, a seller's inventory browsed and filtered by grade, origin, price and your wantlist, and the items and comments of Discogs lists, as compact text or JSON.",
   "folders": ["docs"],
   "excludeFolders": ["./reference", "./tests", "./scripts", "./src", "./skills"],
   "excludeFiles": [

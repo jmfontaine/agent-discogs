@@ -21,7 +21,11 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
 ]
-dependencies = [ "click>=8.3.1", "discogs-sdk>=0.8.0", "pydantic>=2.12.5" ]
+dependencies = [
+  "click>=8.3.1",
+  "discogs-sdk>=0.8.1",
+  "pydantic>=2.12.5",
+]
 urls.Homepage = "https://github.com/jmfontaine/agent-discogs"
 urls.Issues = "https://github.com/jmfontaine/agent-discogs/issues"
 urls.Repository = "https://github.com/jmfontaine/agent-discogs"

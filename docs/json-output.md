@@ -30,7 +30,7 @@ For example, the second page of `get releases @l647 --year 1994 --limit 2 --json
 
 ## Owned rows
 
-Under `--owned` (`search`, `get versions`, `get releases`; see [Marking rows with --owned](commands.md#marking-rows-with---owned)), each release row gets `owned`, and the document gets `collection` next to `pagination`:
+Under `--owned` (`search`, `get versions`, `get releases`, `get inventory`; see [Marking rows with --owned](commands.md#marking-rows-with---owned)), each release row gets `owned`, and the document gets `collection` next to `pagination`:
 
 ```json
 {"pagination":{...},"results":[{"ref":"@r352665","title":"...","have":812,"owned":2},{"ref":"@r847868","title":"...","have":40,"owned":0}],"collection":{"complete":true,"records_read":250,"total_records":250}}
@@ -77,6 +77,20 @@ With `--for-sale` (a filtered scan, so `pagination` carries `filtered`, `capped`
 - `market` is `{"for_sale": int, "lowest": number, "currency": string}`: copies on sale and the lowest asking price across every condition and location, in the `--currency` asked for. `lowest` and `currency` are omitted when Discogs gives no price. Condition, sleeve condition, seller location and shipping are not available: the API lists no individual copies.
 - `total_items` is the whole wantlist, not the number for sale; `capped: true` with `stop_reason: "max_requests"` or `"rate_limited"` means more wants remain unchecked, and `next_cursor` continues from the first one.
 - Under `--cached`, a want whose stats are not cached is a row with no `market` and `error: {"code":"cache_miss","message":"Not cached: GET /marketplace/stats/5","hint":"..."}`, and the command exits 1. It was not checked: do not read it as not for sale. `--full` keeps the `error` and adds `market` to the want records the same way.
+
+## Inventory
+
+`get inventory <username> --json` is the paginated envelope (see [get inventory](commands.md#inventory)), one row per listing:
+
+```json
+{"pagination":{"page":1,"total_items":300,"total_pages":60},"results":[{"listing":3254229818,"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral","format":"CD, Album","condition":"NM","sleeve":"VG+","price":12.5,"currency":"USD","ships_from":"Germany","listed":"2024-09-18T07:13:38-07:00","url":"https://www.discogs.com/sell/item/3254229818"}]}
+```
+
+- Rows carry `listing` (the listing's id), `ref` (the release's), `title` (`artist - title`), `format`, `condition` and `sleeve` (short codes: `M`, `NM`, `VG+`, `VG`, `G+`, `G`, `F`, `P`; a sleeve that is no grade is as Discogs sent it, `"Not Graded"`), `price` (a number) with its `currency` (ISO code), `ships_from`, `listed` (RFC 3339, as Discogs sent it, in the seller's offset) and `url` (the listing's page, `https://www.discogs.com/sell/item/<id>`). Empty fields are omitted, so a listing with no release id has no `ref`.
+- With `--owned`, each row gets `owned` (`null` for a listing with no release id) and the document gets `collection`, exactly as in [Owned rows](#owned-rows); the copies are looked up by the listing's release id, never the listing's own id.
+- With a filter (`--condition`, `--sleeve`, `--ships-from`, `--max-price`, `--in-wantlist`) it is a filtered scan: `pagination` carries `filtered`, `capped`, `next_cursor`, and `stop_reason` / `retry_after` when it stopped early, and `total_items` is the seller's whole inventory, an upper bound on the matches (see [Pagination](#pagination)). With `--max-price`, `pagination` also carries `skipped_currency`, the number of listings that passed every other filter but were priced in another currency than `--currency` (in the part this run scanned), `0` included; a listing with no price is dropped and not counted.
+- With `--in-wantlist`, the document has a top-level `wantlist` object: `{"complete":true,"wants_read":150,"total_wants":150}` after a full read of your wantlist. When that read stopped (`--max-requests` or a 429) it is `{"complete":false,"wants_read":100,"total_wants":150,"stop_reason":"max_requests"}` (`"rate_limited"` plus `retry_after` for a 429), no listing is scanned, and the document is `"results":[]` with `pagination` `{"page":1,"total_items":null,"total_pages":null,"filtered":true,"capped":true,"next_cursor":"1:0","stop_reason":"max_requests"}` (`next_cursor` is the cursor asked for, so continuing reads the wants already cached).
+- `--full` prints the listings as the SDK normalizes them (`Listing`: `id`, `condition`, `sleeve_condition`, `price`, `original_price`, `shipping_price`, `ships_from`, `posted`, `release`, `seller`, ...); `shipping_price` is `null` because Discogs sends an empty one on listings today.
 
 ## Lists
 

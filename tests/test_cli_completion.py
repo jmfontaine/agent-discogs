@@ -21,6 +21,7 @@ _NOUNS = [
     "tracklist",
     "versions",
     "list",
+    "inventory",
     "collection",
     "lists",
     "wantlist",
@@ -28,6 +29,7 @@ _NOUNS = [
 ]
 _RELEASES_SORT = ["year", "title", "format"]
 _VERSIONS_SORT = ["released", "title", "format", "label", "catno", "country"]
+_INVENTORY_SORT = ["listed", "price", "item", "artist", "label", "catno"]
 
 
 def complete(line: str) -> list[str]:
@@ -110,6 +112,11 @@ class TestCompletion:
                 ],
             ),
             ("agent-discogs get wantlist --currency e", ["EUR"]),
+            (
+                "agent-discogs get inventory seller --condition ",
+                ["M", "NM", "VG+", "VG", "G+", "G", "F", "P"],
+            ),
+            ("agent-discogs get inventory seller --sleeve vg", ["VG+", "VG"]),
         ],
     )
     def test_fixed_option_and_argument_values(
@@ -130,6 +137,7 @@ class TestCompletion:
                     *("format", "rating", "added", "year"),
                 ],
             ),
+            ("agent-discogs get inventory seller --sort ", _INVENTORY_SORT),
             # `--sort=` as one word (zsh, fish): the noun is parsed already.
             ("agent-discogs get versions --sort=", _VERSIONS_SORT),
             ("agent-discogs get release --sort=", []),
@@ -139,6 +147,7 @@ class TestCompletion:
                 [
                     *("year", "title", "format", "released", "label", "catno"),
                     *("country", "artist", "rating", "added"),
+                    *("listed", "price", "item"),
                 ],
             ),
             # A noun that takes no --sort gets nothing.
