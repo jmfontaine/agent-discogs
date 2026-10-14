@@ -21,6 +21,7 @@ _NOUNS = [
     "tracklist",
     "versions",
     "list",
+    "collection",
     "lists",
     "wantlist",
     "ids",
@@ -122,13 +123,23 @@ class TestCompletion:
             ("agent-discogs get versions --sort ", _VERSIONS_SORT),
             ("agent-discogs get releases @a3857 --sort ", _RELEASES_SORT),
             ("agent-discogs get versions --sort c", ["catno", "country"]),
+            (
+                "agent-discogs get collection --sort ",
+                [
+                    *("label", "artist", "title", "catno"),
+                    *("format", "rating", "added", "year"),
+                ],
+            ),
             # `--sort=` as one word (zsh, fish): the noun is parsed already.
             ("agent-discogs get versions --sort=", _VERSIONS_SORT),
             ("agent-discogs get release --sort=", []),
             # No noun yet: every key some noun takes.
             (
                 "agent-discogs get --sort ",
-                ["year", "title", "format", "released", "label", "catno", "country"],
+                [
+                    *("year", "title", "format", "released", "label", "catno"),
+                    *("country", "artist", "rating", "added"),
+                ],
             ),
             # A noun that takes no --sort gets nothing.
             ("agent-discogs get release --sort ", []),

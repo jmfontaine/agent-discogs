@@ -16,6 +16,7 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from agent_discogs import markup
+from agent_discogs.collection import folder_name
 from agent_discogs.formatting import (
     _community_have,
     _format_string,
@@ -437,5 +438,27 @@ def project_list(found: Any) -> dict[str, Any]:
             # show `url`, which the SDK models.
             "url": _url(found) or _url(found, "url"),
             "items": [_list_item(item) for item in found.items or []],
+        }
+    )
+
+
+def project_record(record: Any, folders: dict[int, str]) -> dict[str, Any]:
+    """A `get collection` row: one copy, its release titled like a search
+    result, with the copy's folder by name (`folders`), `added`, its full
+    RFC 3339 timestamp, and `rating` (Discogs' 0 is unrated)."""
+    release = getattr(record, "basic_information", None)
+    labels = getattr(release, "labels", None) or []
+    first = labels[0] if labels else None
+    return drop_empty(
+        {
+            "ref": make_ref("release", record.id),
+            "title": artist_title(release),
+            "year": known_year(getattr(release, "year", None)),
+            "label": getattr(first, "name", None),
+            "catno": getattr(first, "catalog_number", None),
+            "format": _format_string(getattr(release, "formats", None)),
+            "folder": folder_name(folders, getattr(record, "folder_id", None)),
+            "added": _timestamp(getattr(record, "date_added", None)),
+            "rating": getattr(record, "rating", None) or None,
         }
     )
