@@ -55,6 +55,8 @@ Under `--owned` (`search`, `get versions`, `get releases`; see [Marking rows wit
 - With a filter (`--format`, `--genre`, `--style`, `--year`, `--label`) it is a filtered scan: `pagination` carries `filtered`, `capped`, `next_cursor`, and `stop_reason` / `retry_after` when it stopped early, and `total_items` is the whole collection, an upper bound on the matches (see [Pagination](#pagination)).
 - `--full` prints the records as the SDK normalizes them (`CollectionItem`: `id`, `instance_id`, `folder_id`, `date_added`, `rating`, `notes`, `basic_information`): folders by id, so the folder list is not requested.
 
+`get collection --value --json` is the collection's value in your profile's currency, each amount a number: `{"currency":"EUR","minimum":75.5,"median":100.25,"maximum":250.0}`. `--full` is `{"currency":"EUR","value":{"maximum":"€250.00","median":"€100.25","minimum":"€75.50"}}`: the SDK's `CollectionValue` record, its amounts the strings Discogs sent, unparsed.
+
 ## Wantlist
 
 `get wantlist --json` is the paginated envelope (see [get wantlist](commands.md#wantlist)):

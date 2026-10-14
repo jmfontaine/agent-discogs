@@ -43,6 +43,37 @@ _ALL_FOLDER = 0
 _OWNERSHIP = "agent_discogs.ownership"
 _FOLDER_NAMES = "agent_discogs.folder_names"
 
+# The collection value's amounts, in the order every view gives them.
+_AMOUNTS = ("minimum", "median", "maximum")
+
+
+@dataclass(frozen=True)
+class Valuation:
+    """The user's collection value: Discogs' record (the SDK's lazy
+    `CollectionValue`, fetched at its first read) and the ISO code of the
+    user's currency, which the record's formatted amounts are in."""
+
+    currency: str
+    record: Any
+
+    def amounts(self) -> dict[str, float]:
+        """Each amount as a number, parsed out of the string Discogs sent
+        (`"€1.250,00"`); one it cannot read raises `UnknownFormatError`."""
+        return {
+            name: account.amount(
+                getattr(self.record, name), f"the collection value's {name}"
+            )
+            for name in _AMOUNTS
+        }
+
+
+def valuation(client: Discogs) -> Valuation:
+    """The user's collection value and currency: the username, the profile
+    (`GET /users/{username}`, for its currency code), then the value (`GET
+    .../collection/value`, sent when the record is first read)."""
+    user = account.user(client)
+    return Valuation(account.currency(user), user.collection.value.get())
+
 
 def records(user: Any, *, sort: str | None = None, desc: bool = False) -> Listing:
     """Every record of the user's collection: the "All" folder, in `sort`

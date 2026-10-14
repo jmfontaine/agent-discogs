@@ -714,6 +714,14 @@ def format_collection(
     return _text(lines)
 
 
+def format_collection_value(currency: str, amounts: dict[str, float]) -> str:
+    """`get collection --value`: `Collection value (EUR): min 75.50 · median
+    100.25 · max 250.00`, bare numbers after the ISO code, never a symbol."""
+    words = {"minimum": "min", "median": "median", "maximum": "max"}
+    values = " · ".join(f"{words[name]} {value:.2f}" for name, value in amounts.items())
+    return _text([[Span("Collection value", "label"), f" ({currency}): {values}"]])
+
+
 def _format_filters(filters: dict[str, str] | None) -> str:
     """Render applied filters for a list header: `year=1994 label="R & S"`."""
     if not filters:

@@ -23,6 +23,7 @@ from agent_discogs.collection import (
     ownership_of,
     record_filter,
     records,
+    valuation,
 )
 from agent_discogs.config import RELEASE_TYPES, UNOFFICIAL
 from agent_discogs.errors import classify, error_document, fail, format_error
@@ -30,6 +31,7 @@ from agent_discogs.formatting import (
     format_artist,
     format_artist_releases,
     format_collection,
+    format_collection_value,
     format_credits,
     format_identifiers,
     format_label,
@@ -579,6 +581,18 @@ def _amount(value: float) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
+def _get_collection_value(client: Discogs, mode: Mode) -> Any:
+    """`get collection --value`: the collection's value in the user's
+    currency. `--full` prints the record as Discogs sent it, unparsed."""
+    found = valuation(client)
+    if mode.full:
+        return {"currency": found.currency, "value": full_dump(found.record)}
+    amounts = found.amounts()
+    if mode.json:
+        return {"currency": found.currency, **amounts}
+    return format_collection_value(found.currency, amounts)
+
+
 def _get_collection(
     client: Discogs,
     *,
@@ -762,6 +776,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "page",
             "sort",
             "style_",
+            "value",
             "year",
         },
     ),
@@ -888,13 +903,23 @@ def _wantlist_error(
 
 
 def _collection_error(
-    refs: tuple[str, ...], *, filters: dict[str, str], max_requests: int | None
+    refs: tuple[str, ...],
+    *,
+    explicit: frozenset[str],
+    filters: dict[str, str],
+    max_requests: int | None,
 ) -> str | None:
-    """What `get collection` cannot take: a ref, an empty filter (it would
-    match nothing), or --max-requests without a filter, which leaves no scan
-    to cap."""
+    """What `get collection` cannot take: a ref, any other flag with
+    --value, an empty filter (it would match nothing), or --max-requests
+    without a filter, which leaves no scan to cap."""
     if refs:
         return "get collection takes no ref: it lists your own collection."
+    others = sorted(_option_flag(name) for name in explicit - {"value"})
+    if "value" in explicit and others:
+        return (
+            f"--value takes no other get collection flag ({', '.join(others)} "
+            "given): it prints your collection's value, not a listing."
+        )
     empty = [f"--{key}" for key, value in filters.items() if not value.strip()]
     if empty:
         verb = "needs a value" if len(empty) == 1 else "need values"
@@ -955,7 +980,10 @@ def _flag_error(
             return wantlist_error
     if noun == "collection":
         collection_error = _collection_error(
-            refs, filters=collection_filters, max_requests=max_requests
+            refs,
+            explicit=explicit,
+            filters=collection_filters,
+            max_requests=max_requests,
         )
         if collection_error:
             return collection_error
@@ -1174,6 +1202,7 @@ def _dispatch(
     for_sale: bool,
     max_price: float | None,
     currency: str | None,
+    value: bool,
     verbose: bool,
     compact: bool,
     mode: Mode,
@@ -1250,7 +1279,9 @@ def _dispatch(
 
     if noun in REFLESS_NOUNS:
         try:
-            if noun == "collection":
+            if noun == "collection" and value:
+                output, failed = _get_collection_value(client, mode), False
+            elif noun == "collection":
                 output, failed = (
                     _get_collection(
                         client,
@@ -1455,6 +1486,13 @@ def _json_options(command: Any) -> Any:
     help="release: also print notes, credits, and identifiers",
 )
 @click.option(
+    "--value",
+    is_flag=True,
+    default=False,
+    help="collection: print its value (min, median, max) in your currency "
+    "instead of the listing",
+)
+@click.option(
     "--year",
     help="versions: filter by release year; releases @l, collection: keep that "
     "year (client-side scan, continues via --after)",
@@ -1482,6 +1520,7 @@ def get(
     role: str | None,
     sort: str | None,
     style_: str | None,
+    value: bool,
     verbose: bool,
     year: str | None,
 ) -> None:
@@ -1519,6 +1558,7 @@ def get(
         for_sale=for_sale,
         max_price=max_price,
         currency=currency,
+        value=value,
         verbose=verbose,
         compact=compact,
         mode=_mode(json_output, full),
@@ -1547,6 +1587,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         for_sale=False,
         max_price=None,
         currency=None,
+        value=False,
         verbose=False,
         compact=False,
         mode=_mode(json_output, full),

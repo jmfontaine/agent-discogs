@@ -23,7 +23,11 @@ from discogs_sdk import (
 )
 
 from agent_discogs import sanitize, style
-from agent_discogs.account import UserRequiredError
+from agent_discogs.account import (
+    CURRENCY_FIELD,
+    UnknownFormatError,
+    UserRequiredError,
+)
 from agent_discogs.client import auth_mode
 from agent_discogs.json_output import dumps
 
@@ -340,6 +344,26 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
             f"Discogs sent a response that cannot be read: {detail}",
             "Not caused by your arguments. Retry in a moment, or with --fresh "
             "if the same error repeats.",
+        )
+
+    if isinstance(exc, UnknownFormatError):
+        # A value that parsed as JSON but is written in a way the CLI does not
+        # know (the collection value's formatted amounts): the same answer
+        # comes back on a retry, so the hint asks for a report instead.
+        # `--json --full` shows the amounts unparsed, not the currency code.
+        shown = (
+            ""
+            if exc.field == CURRENCY_FIELD
+            else " (get collection --value --json --full prints the amounts as "
+            "Discogs sent them)"
+        )
+        return ErrorInfo(
+            "bad_response",
+            f"Discogs sent a response that cannot be read: {exc}.",
+            "Not caused by your arguments, and retrying will not help: "
+            "agent-discogs does not know this format. Please report it at "
+            f"https://github.com/jmfontaine/agent-discogs/issues, naming the "
+            f"field{shown}.",
         )
 
     if isinstance(exc, UserRequiredError):
