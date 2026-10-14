@@ -1,0 +1,9 @@
+# KLUDGE: actionlint (v1.7.12, the latest release) predates the ubuntu-26.04
+# GitHub-hosted runner and rejects the label as unknown. Declaring it here as an
+# extra label makes actionlint accept it without its runner-compatibility checks.
+# Upstream support is open as https://github.com/rhysd/actionlint/issues/682
+# Remove this file once the actionlint pinned in .pre-commit-config.yaml knows
+# ubuntu-26.04.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
