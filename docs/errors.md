@@ -54,16 +54,18 @@ A 401 names the credentials that were sent, as `status` reports them: `DISCOGS_T
 
 With no credentials set, the message reads `Authentication failed: no credentials are set.` and the hint says to export `DISCOGS_TOKEN`.
 
-## --owned, get owned, get collection, get lists and get wantlist need a user
+## --owned, --in-wantlist, get owned, get collection, get lists and get wantlist need a user
 
-`--owned`, `get owned`, `get collection`, `get lists` and `get wantlist` read the authenticated user's own data (the collection, the lists, the wantlist), so they need credentials that name a user: a token or OAuth. When `agent-discogs status` shows `consumer` or `none`, they fail with `auth_required` before any request is sent (the budget footer is absent):
+`--owned`, `--in-wantlist` (on `get inventory`), `get owned`, `get collection`, `get lists` and `get wantlist` read the authenticated user's own data (the collection, the wantlist, the lists), so they need credentials that name a user: a token or OAuth. When `agent-discogs status` shows `consumer` or `none`, they fail with `auth_required` before any request is sent (the budget footer is absent):
 
-- `--owned reads your own Discogs account, but no credentials are set.` (no credentials), or `--owned reads your own Discogs account, but a consumer key/secret identifies an app, not a user.` (`get owned reads ...`, `get collection reads ...`, `get lists reads ...` and `get wantlist reads ...` for the nouns);
+- `--owned reads your own Discogs account, but no credentials are set.` (no credentials), or `--owned reads your own Discogs account, but a consumer key/secret identifies an app, not a user.` (`--in-wantlist reads ...`, `get owned reads ...`, `get collection reads ...`, `get lists reads ...` and `get wantlist reads ...` for the others);
 - the hint: `Set a token: export DISCOGS_TOKEN=<token> (discogs.com/settings/developers), or use OAuth (DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, DISCOGS_ACCESS_TOKEN, DISCOGS_ACCESS_TOKEN_SECRET). agent-discogs status shows the credentials in use.`
 
 Under `--json` this is the usual envelope, without `status`, since no HTTP response exists. A 401 on a request that was sent is the [Authentication failed](#authentication-failed-401) case above; a 403 on the collection keeps the generic `forbidden` error.
 
 `get list` needs no user: a public list reads without credentials. Someone else's private list fails with the error Discogs' status maps to (`not_found`, `auth_required` or `forbidden`); a `not_found` list's hint reads `get lists shows your own list ids; another user's private list cannot be read.` instead of suggesting a search, which finds no lists.
+
+`get inventory` needs no user: Discogs shows anyone a seller's For Sale listings, so it reads without credentials. Only `--in-wantlist` and `--owned` need one.
 
 ## get lists and get list argument errors
 
@@ -80,6 +82,12 @@ Before any request, `get collection` rejects with `invalid_argument` (no budget 
 Before any request, `get wantlist` rejects with `invalid_argument` (no budget footer): a ref (`get wantlist takes no ref: it lists your own wantlist.`); `--max-price`, `--currency` or `--max-requests` without `--for-sale`; an unknown `--currency` code (`--currency must be one of USD, GBP, EUR, CAD, AUD, JPY, CHF, MXN, BRL, NZD, SEK, ZAR ('xyz' given).`); `--max-requests` below 3 with `--for-sale` (`--max-requests must be 3 or more with --for-sale (2 given): the username, a wants page and one want's stats, which a cold cache or --fresh sends on every run.`); `--max-price` without `--currency`; a negative `--max-price`; `--page` with `--for-sale` (use the `Continue scan:` command); `--after` without `--for-sale`.
 
 Under `--for-sale`, a 429 on a stats request ends the scan with the rows kept instead of an error, and a `--cached` miss on one want's stats is reported in that want's row (text `· ✗ Not cached: GET /marketplace/stats/5`, JSON `error.code == "cache_miss"`) with exit 1; the rest of the page still prints. See [get wantlist](commands.md#wantlist).
+
+## get inventory argument errors
+
+Before any request, `get inventory` rejects with `invalid_argument` (no budget footer): anything but exactly one username (`get inventory takes exactly one username (2 given).`; none at all is a usage error, exit 2) or a blank one; a `--condition` or `--sleeve` that is not a Discogs grade (`--condition must be a Discogs grade: M, NM, VG+, VG, G+, G, F or P, or its full name such as 'Very Good Plus (VG+)' (any case; 'mint-' given).`); a blank `--ships-from`; an unknown `--currency` code; `--max-price` without `--currency` and `--currency` without `--max-price` (`get inventory` only; on `get wantlist` the currency stands alone); a negative or non-finite `--max-price` (a value that is not a number at all, such as `abc`, is click's usage error: exit 2, text on stderr); an unknown `--sort` key (keys: listed, price, item, artist, label, catno) or `--desc` without `--sort`; `--page` with a filter (use the `Continue scan:` / `Next page:` command); `--after` without a filter; `--max-requests` without a filter or `--owned` (`get inventory` alone pages server-side and sends one request per page); a flag of another noun (`--for-sale`, `--role`, ...). A username starting with `-` goes after `--` (`get inventory -- -name`). See [get inventory](commands.md#inventory).
+
+A 429 after the first page of a filter scan keeps the rows matched so far, and `--in-wantlist` stopped short by `--max-requests` or a 429 scans nothing and prints an empty capped page, exit 0 (see [get inventory](commands.md#inventory)); a `--cached` miss on the username, a wants page or an inventory page fails with `cache_miss`.
 
 ## Rate limited (429)
 

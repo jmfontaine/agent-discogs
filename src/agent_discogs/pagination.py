@@ -124,6 +124,22 @@ def _cursor(page: int, api_page: int, offset: int) -> str:
     return f"{page}:{(api_page - 1) * MAX_LIMIT + offset}"
 
 
+def unscanned(cursor: str | None, stop: ScanStop) -> PageResult:
+    """The page of a filtered scan that never started, because a read its
+    filter needs first stopped short (`stop`): empty, with no totals, and
+    continuing from `cursor`, where it was asked to start."""
+    page, api_page, offset = parse_cursor(cursor)
+    return PageResult(
+        items=[],
+        page=page,
+        total_items=None,
+        total_pages=None,
+        filtered=True,
+        stop=stop,
+        next_cursor=_cursor(page, api_page, offset),
+    )
+
+
 def next_page_cmd(
     argv: list[str],
     result: PageResult,
@@ -203,6 +219,11 @@ def _advance(
     if api_page < total_pages:
         return _cursor(page + 1, api_page + 1, 0)
     return None
+
+
+def keep_all(_item: Any) -> bool:
+    """The `keep` of a scan that reads a whole listing (`limit=None`)."""
+    return True
 
 
 def rate_limited_stop(exc: RateLimitError) -> ScanStop:

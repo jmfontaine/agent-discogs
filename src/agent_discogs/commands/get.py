@@ -34,6 +34,7 @@ from agent_discogs.formatting import (
     format_collection_value,
     format_credits,
     format_identifiers,
+    format_inventory,
     format_label,
     format_label_releases,
     format_list,
@@ -47,6 +48,7 @@ from agent_discogs.formatting import (
     format_wantlist,
     iter_tracks,
 )
+from agent_discogs.inventory import GRADES, Filter, grade, read_wantlist, release_id
 from agent_discogs.json_output import Mode, dump, full_dump
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
@@ -58,6 +60,7 @@ from agent_discogs.pagination import (
     paging_error,
     parse_cursor,
     sort_params,
+    unscanned,
 )
 from agent_discogs.projections import (
     drop_empty,
@@ -69,6 +72,7 @@ from agent_discogs.projections import (
     project_label_release,
     project_list,
     project_list_summary,
+    project_listing,
     project_master,
     project_master_version,
     project_price,
@@ -100,10 +104,19 @@ NOUN_ALIASES = {"ids": "identifiers"}
 # Nouns whose ref is a bare Discogs id of something with no ref prefix.
 ID_NOUNS = ("list",)
 
+# Nouns that take a Discogs username in place of a ref.
+USERNAME_NOUNS = ("inventory",)
+
 # Nouns about the user behind the credentials, which take no ref.
 REFLESS_NOUNS = ("collection", "lists", "wantlist")
 
-GET_NOUNS = [*NOUN_EXPECTED_TYPE, *ID_NOUNS, *REFLESS_NOUNS, *NOUN_ALIASES]
+GET_NOUNS = [
+    *NOUN_EXPECTED_TYPE,
+    *ID_NOUNS,
+    *USERNAME_NOUNS,
+    *REFLESS_NOUNS,
+    *NOUN_ALIASES,
+]
 
 # The currencies Discogs prices the Marketplace in (`curr_abbr`).
 CURRENCIES: tuple[CurrencyCode, ...] = get_args(CurrencyCode)
@@ -120,6 +133,14 @@ def _complete_currency(
     """Tab offers the currency codes, uppercase, matching what was typed in
     any case."""
     return [c for c in CURRENCIES if c.startswith(incomplete.upper())]
+
+
+def _complete_grade(
+    _ctx: click.Context, _param: click.Parameter, incomplete: str
+) -> list[str]:
+    """Tab offers the grades' short codes, best first, matching what was
+    typed in any case."""
+    return [c for c in GRADES.values() if c.startswith(incomplete.upper())]
 
 
 def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
@@ -728,6 +749,107 @@ def _get_wantlist(
     return text, bool(misses)
 
 
+def _get_inventory(
+    client: Discogs,
+    username: str,
+    *,
+    page: int | None,
+    limit: int,
+    after: str | None,
+    sort: str | None,
+    desc: bool,
+    condition: str | None,
+    sleeve: str | None,
+    ships_from: str | None,
+    max_price: float | None,
+    currency: CurrencyCode | None,
+    in_wantlist: bool,
+    owned: bool,
+    max_requests: int | None,
+    mode: Mode,
+) -> Any:
+    """A seller's listings, server-side pages; with a filter, a client-side
+    scan. `--in-wantlist` reads the whole wantlist first, and scans nothing
+    when that read stops short. `condition` and `sleeve` are grade names
+    (`GRADES` keys); `max_price` comes with its `currency`."""
+    wants = read_wantlist(client, max_requests=max_requests) if in_wantlist else None
+    # _inventory_error lets through both or neither.
+    cap = None if max_price is None or currency is None else (max_price, currency)
+    check = Filter(
+        condition=condition,
+        sleeve=sleeve,
+        ships_from=ships_from,
+        max_price=cap,
+        wanted=None if wants is None else wants.ids,
+    )
+    listing = functools.partial(
+        client.users.get(username).inventory.list, **sort_params(sort, desc)
+    )
+    if wants is not None and wants.stop is not None:
+        result = unscanned(after, wants.stop)
+    elif check.active:
+        result = fetch_filtered_page(
+            listing,
+            limit=limit,
+            keep=check,
+            cursor=after,
+            max_requests=max_requests,
+        )
+    else:
+        result = fetch_page(listing, page=page or 1, per_page=limit)
+
+    ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
+    if mode.json:
+        document = mode.page(result, project_listing)
+        if max_price is not None:
+            document["pagination"]["skipped_currency"] = check.skipped_currency
+        if wants is not None:
+            document["wantlist"] = wants.document()
+        if ownership is not None:
+            mark_rows(document, result.items, ownership, release_id=release_id)
+        return document
+
+    amount = None if max_price is None else _amount(max_price)
+    condition_code = None if condition is None else GRADES[condition]
+    sleeve_code = None if sleeve is None else GRADES[sleeve]
+    # A username after `--`, so one starting with `-` is never an option.
+    dashed = username.startswith("-")
+    footer_cmd = next_page_cmd(
+        ["get", "inventory"] if dashed else ["get", "inventory", username],
+        result,
+        limit=limit,
+        positionals=(username,) if dashed else (),
+        condition=condition_code,
+        sleeve=sleeve_code,
+        ships_from=ships_from,
+        max_price=amount,
+        currency=currency,
+        in_wantlist=in_wantlist,
+        sort=sort,
+        desc=desc,
+        owned=owned,
+        max_requests=max_requests,
+    )
+    filters = {"ships-from": ships_from, "max-price": amount, "currency": currency}
+    return format_inventory(
+        result.items,
+        username,
+        result.page,
+        result.total_items,
+        footer_cmd,
+        condition=condition_code,
+        sleeve=sleeve_code,
+        filters={k: v for k, v in filters.items() if v},
+        in_wantlist=in_wantlist,
+        filtered=result.filtered,
+        stop=result.stop,
+        skipped_currency=check.skipped_currency,
+        wants=wants,
+        wants_resent=_fresh(),
+        ownership=ownership,
+    )
+
+
 SORT_KEYS: dict[str, tuple[str, ...]] = {
     "releases": ("year", "title", "format"),
     "versions": ("released", "title", "format", "label", "catno", "country"),
@@ -741,6 +863,7 @@ SORT_KEYS: dict[str, tuple[str, ...]] = {
         "added",
         "year",
     ),
+    "inventory": ("listed", "price", "item", "artist", "label", "catno"),
 }
 
 
@@ -781,6 +904,23 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
         },
     ),
     "lists": frozenset({"limit", "page"}),
+    "inventory": frozenset(
+        {
+            "after",
+            "condition",
+            "currency",
+            "desc",
+            "in_wantlist",
+            "limit",
+            "max_price",
+            "max_requests",
+            "owned",
+            "page",
+            "ships_from",
+            "sleeve",
+            "sort",
+        },
+    ),
     "release": frozenset({"compact", "verbose"}),
     "releases": frozenset(
         {
@@ -853,6 +993,65 @@ def _explicit_options() -> frozenset[str]:
     )
 
 
+def _price_error(max_price: float | None, currency: str | None) -> str | None:
+    """What `--max-price`/`--currency` cannot take: an unknown currency, or
+    a threshold without one, so it is always in a currency the user named,
+    never the account's."""
+    if currency is not None and _currency(currency) is None:
+        return (
+            f"--currency must be one of {', '.join(CURRENCIES)} ({currency!r} given)."
+        )
+    if max_price is not None and currency is None:
+        return (
+            "--max-price needs --currency CODE (e.g. --currency EUR), so the "
+            "threshold and the prices shown are in a currency you named."
+        )
+    if max_price is not None and not (math.isfinite(max_price) and max_price >= 0):
+        return f"--max-price must be a number, 0 or more ({max_price} given)."
+    return None
+
+
+_GRADE_CODES = list(GRADES.values())
+
+
+def _inventory_error(
+    refs: tuple[str, ...],
+    *,
+    condition: str | None,
+    sleeve: str | None,
+    ships_from: str | None,
+    max_price: float | None,
+    currency: str | None,
+) -> str | None:
+    """What `get inventory` cannot take: other than one username, a grade
+    Discogs does not use, a blank country (which a continuation could not
+    repeat), or a price filter that is not an amount in a named currency."""
+    if len(refs) != 1:
+        return f"get inventory takes exactly one username ({len(refs)} given)."
+    if not refs[0].strip():
+        return f"get inventory needs a seller's Discogs username ({refs[0]!r} given)."
+    for flag, value in (("--condition", condition), ("--sleeve", sleeve)):
+        if value is not None and grade(value) is None:
+            codes = f"{', '.join(_GRADE_CODES[:-1])} or {_GRADE_CODES[-1]}"
+            return (
+                f"{flag} must be a Discogs grade: {codes}, or its full name such "
+                f"as 'Very Good Plus (VG+)' (any case; {value!r} given)."
+            )
+    if ships_from is not None and not ships_from.strip():
+        return (
+            f"--ships-from needs a country, as Discogs names it ({ships_from!r} given)."
+        )
+    price_error = _price_error(max_price, currency)
+    if price_error:
+        return price_error
+    if currency is not None and max_price is None:
+        return (
+            "--currency needs --max-price with get inventory: together they keep "
+            "the listings priced in that currency up to that amount."
+        )
+    return None
+
+
 def _wantlist_error(
     refs: tuple[str, ...],
     *,
@@ -882,17 +1081,9 @@ def _wantlist_error(
             "checks each want's Marketplace stats; get wantlist alone pages "
             "server-side."
         )
-    if currency is not None and _currency(currency) is None:
-        return (
-            f"--currency must be one of {', '.join(CURRENCIES)} ({currency!r} given)."
-        )
-    if max_price is not None and currency is None:
-        return (
-            "--max-price needs --currency CODE (e.g. --currency EUR), so the "
-            "threshold and the prices shown are in a currency you named."
-        )
-    if max_price is not None and not (math.isfinite(max_price) and max_price >= 0):
-        return f"--max-price must be a number, 0 or more ({max_price} given)."
+    price_error = _price_error(max_price, currency)
+    if price_error:
+        return price_error
     if max_requests is not None and max_requests < 3:  # noqa: PLR2004
         return (
             f"--max-requests must be 3 or more with --for-sale ({max_requests} "
@@ -953,6 +1144,10 @@ def _flag_error(
     max_price: float | None,
     currency: str | None,
     collection_filters: dict[str, str],
+    condition: str | None,
+    sleeve: str | None,
+    ships_from: str | None,
+    in_wantlist: bool,
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
@@ -960,14 +1155,25 @@ def _flag_error(
     masked by an auth/network failure. Client-side filtered listings (which
     page by cursor, not by number) are `releases --role` on an artist,
     `releases --year` on a label, `versions --release-type official` (or
-    `unofficial` with `--format`), `collection` with a filter and `wantlist
-    --for-sale`.
+    `unofficial` with `--format`), `collection` with a filter, `wantlist
+    --for-sale` and `inventory` with any of its filters.
     """
     if noun == "lists" and refs:
         return (
             "get lists takes no ref: it lists your own lists. "
             "Open one with get list ID."
         )
+    if noun == "inventory":
+        inventory_error = _inventory_error(
+            refs,
+            condition=condition,
+            sleeve=sleeve,
+            ships_from=ships_from,
+            max_price=max_price,
+            currency=currency,
+        )
+        if inventory_error:
+            return inventory_error
     if noun == "wantlist":
         wantlist_error = _wantlist_error(
             refs,
@@ -989,20 +1195,26 @@ def _flag_error(
             return collection_error
     label_refs = noun == "releases" and any(r.startswith("@l") for r in refs)
     artist_refs = noun == "releases" and not all(r.startswith("@l") for r in refs)
+    inventory_filters = (condition, sleeve, ships_from, max_price)
     filtered = (
         (noun == "releases" and (bool(role) or (label_refs and bool(year))))
         or (noun == "versions" and _versions_scan(release_type, format))
         or (noun == "wantlist" and for_sale)
         or (noun == "collection" and bool(collection_filters))
+        or (
+            noun == "inventory"
+            and (in_wantlist or any(f is not None for f in inventory_filters))
+        )
     )
     if after is not None and not filtered:
         return (
             "--after only continues a client-side filtered listing "
             "(get releases --role, get releases @l... --year, get versions "
             "--release-type official or unofficial with --format, get "
-            "collection with --format, --genre, --style, --year or --label, or get "
-            "wantlist --for-sale). This command pages server-side or is not "
-            "paginated; use --page where applicable."
+            "collection with --format, --genre, --style, --year or --label, get "
+            "wantlist --for-sale, or get inventory with --condition, --sleeve, "
+            "--ships-from, --max-price or --in-wantlist). This command pages "
+            "server-side or is not paginated; use --page where applicable."
         )
     if after is not None and len(refs) > 1:
         return (
@@ -1027,6 +1239,13 @@ def _flag_error(
             "read. This listing pages server-side and sends one request per "
             "page."
         )
+    if max_requests is not None and noun == "inventory" and not (filtered or owned):
+        return (
+            "--max-requests caps the get inventory filter scan (--condition, "
+            "--sleeve, --ships-from, --max-price or --in-wantlist) or the --owned "
+            "collection read. get inventory alone pages server-side and sends one "
+            "request per page."
+        )
     if max_requests is not None and len(refs) > 1:
         return (
             "--max-requests caps one scan, so it takes exactly one ref "
@@ -1036,9 +1255,9 @@ def _flag_error(
         return (
             "--page is not available while results are filtered client-side "
             "(--role, --year on a label catalogue, --release-type official or "
-            "unofficial with --format on versions, a get collection filter, or "
-            "--for-sale). Use the Next page / Continue scan command from the "
-            "previous output."
+            "unofficial with --format on versions, a get collection filter, "
+            "--for-sale, or a get inventory filter). Use the Next page / "
+            "Continue scan command from the previous output."
         )
     if after is not None:
         try:
@@ -1203,6 +1422,10 @@ def _dispatch(
     max_price: float | None,
     currency: str | None,
     value: bool,
+    condition: str | None,
+    sleeve: str | None,
+    ships_from: str | None,
+    in_wantlist: bool,
     verbose: bool,
     compact: bool,
     mode: Mode,
@@ -1215,8 +1438,8 @@ def _dispatch(
     block and the rest still run; JSON becomes a list with `{"ref", "error"}`
     items for failures. Exit 1 if any ref failed. With one ref the shape is
     unchanged, including the single-error path (`fail()`: stderr text or a
-    JSON envelope). `collection`, `lists` and `wantlist` take no ref and print
-    one document.
+    JSON envelope). `collection`, `lists` and `wantlist` take no ref and
+    `inventory` one username; each prints one document.
     """
     # The `get collection` filters, in the order the header and the
     # continuation repeat them.
@@ -1250,6 +1473,10 @@ def _dispatch(
         max_price=max_price,
         currency=currency,
         collection_filters=collection_filters,
+        condition=condition,
+        sleeve=sleeve,
+        ships_from=ships_from,
+        in_wantlist=in_wantlist,
     )
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
@@ -1263,7 +1490,11 @@ def _dispatch(
         "lists": "get lists",
         "owned": "get owned",
         "wantlist": "get wantlist",
-    }.get(noun, "--owned" if owned else None)
+    }.get(noun)
+    if feature is None and in_wantlist:
+        feature = "--in-wantlist"
+    elif feature is None and owned:
+        feature = "--owned"
     if feature:
         try:
             require_user(feature)
@@ -1319,6 +1550,34 @@ def _dispatch(
             print(output)
         if failed:
             sys.exit(1)
+        return
+
+    if noun == "inventory":
+        try:
+            output = _get_inventory(
+                client,
+                refs[0],
+                page=page,
+                limit=limit,
+                after=after,
+                sort=sort,
+                desc=desc,
+                condition=grade(condition) if condition else None,
+                sleeve=grade(sleeve) if sleeve else None,
+                ships_from=ships_from,
+                max_price=max_price,
+                currency=_currency(currency) if currency else None,
+                in_wantlist=in_wantlist,
+                owned=owned,
+                max_requests=max_requests,
+                mode=mode,
+            )
+        except Exception as e:  # noqa: BLE001
+            fail(e, f"Inventory {refs[0]}", json_output=mode.json)
+        if mode.json:
+            dump(output)
+        else:
+            print(output)
         return
 
     single = len(refs) == 1
@@ -1406,13 +1665,21 @@ def _json_options(command: Any) -> Any:
     default=False,
     help="release: replace the tracklist with a one-line Tracks: summary",
 )
+@click.option(
+    "--condition",
+    metavar="GRADE",
+    shell_complete=_complete_grade,
+    help="inventory: keep listings whose media grade is GRADE or better "
+    f"({'|'.join(GRADES.values())} or the Discogs name, any case)",
+)
 @click.option("--country", help="Filter versions by country")
 @click.option(
     "--currency",
     metavar="CODE",
     shell_complete=_complete_currency,
-    help=f"wantlist --for-sale: Marketplace prices in {'|'.join(CURRENCIES)} "
-    "(any case; sent as curr_abbr)",
+    help=f"{'|'.join(CURRENCIES)}, any case. wantlist --for-sale: the currency "
+    "of the Marketplace prices (sent as curr_abbr); inventory: with --max-price, "
+    "keep listings priced in it (matched client-side, never sent)",
 )
 @click.option(
     "--desc", is_flag=True, default=False, help="With --sort: descending order"
@@ -1430,6 +1697,13 @@ def _json_options(command: Any) -> Any:
     help="wantlist: keep the wants with copies for sale (one stats request each)",
 )
 @click.option("--genre", help="collection: keep records with this genre")
+@click.option(
+    "--in-wantlist",
+    is_flag=True,
+    default=False,
+    help="inventory: keep listings of releases on your wantlist, read whole "
+    "first (needs DISCOGS_TOKEN or OAuth)",
+)
 @_json_options
 @click.option(
     "--label",
@@ -1441,22 +1715,22 @@ def _json_options(command: Any) -> Any:
 @click.option(
     "--max-price",
     type=float,
-    help="wantlist --for-sale: keep wants whose lowest price is at most this "
-    "(needs --currency)",
+    help="wantlist --for-sale: keep wants whose lowest price is at most this; "
+    "inventory: keep listings priced at most this in --currency (needs --currency)",
 )
 @click.option(
     "--max-requests",
     type=int,
     help="releases --role / @l --year, versions --release-type official, --owned, "
-    "a collection filter, or wantlist --for-sale: cap the command's HTTP sends "
-    "(default: no cap)",
+    "a collection filter, wantlist --for-sale, or an inventory filter: cap the "
+    "command's HTTP sends (default: no cap)",
 )
 @click.option(
     "--owned",
     is_flag=True,
     default=False,
-    help="releases / versions: mark each release row with the copies in your own "
-    "collection (needs DISCOGS_TOKEN or OAuth)",
+    help="releases / versions / inventory: mark each release row with the copies "
+    "in your own collection (needs DISCOGS_TOKEN or OAuth)",
 )
 @click.option("--page", type=int, help="Page number, from 1 (server-side pages only)")
 @click.option(
@@ -1469,12 +1743,25 @@ def _json_options(command: Any) -> Any:
 )
 @click.option("--role", help="Filter releases by credit role (e.g., Main, Remix)")
 @click.option(
+    "--ships-from",
+    metavar="COUNTRY",
+    help="inventory: keep listings shipping from COUNTRY (exact, any case)",
+)
+@click.option(
+    "--sleeve",
+    metavar="GRADE",
+    shell_complete=_complete_grade,
+    help="inventory: keep listings whose sleeve grade is GRADE or better, as "
+    "--condition (Generic, Not Graded and No Cover never match)",
+)
+@click.option(
     "--sort",
     shell_complete=_complete_sort,
     help=(
         "Server-side order. releases @a: year|title|format; "
         "versions: released|title|format|label|catno|country; "
-        "collection: label|artist|title|catno|format|rating|added|year"
+        "collection: label|artist|title|catno|format|rating|added|year; "
+        "inventory: listed|price|item|artist|label|catno"
     ),
 )
 @click.option("--style", "style_", help="collection: keep records with this style")
@@ -1504,12 +1791,14 @@ def get(
     full: bool,
     after: str | None,
     compact: bool,
+    condition: str | None,
     country: str | None,
     currency: str | None,
     desc: bool,
     format_: str | None,
     for_sale: bool,
     genre: str | None,
+    in_wantlist: bool,
     label: str | None,
     limit: int,
     max_price: float | None,
@@ -1518,6 +1807,8 @@ def get(
     page: int | None,
     release_type: str,
     role: str | None,
+    ships_from: str | None,
+    sleeve: str | None,
     sort: str | None,
     style_: str | None,
     value: bool,
@@ -1527,9 +1818,10 @@ def get(
     """Get entity details for one or more refs.
 
     NOUN is the entity type: artist, credits, identifiers (alias: ids), label,
-    list, master, owned, price, release, releases, tracklist, versions; or
-    collection, lists and wantlist, your own collection, lists and wantlist,
-    which take no REF.
+    list, master, owned, price, release, releases, tracklist, versions;
+    inventory, a seller's listings, which takes one Discogs username as REF;
+    or collection, lists and wantlist, your own collection, lists and
+    wantlist, which take no REF.
     REF is a typed ref (@r123, @a456) or raw Discogs ID; a list is a raw ID
     only. Several refs run in sequence (at most 10).
     """
@@ -1559,6 +1851,10 @@ def get(
         max_price=max_price,
         currency=currency,
         value=value,
+        condition=condition,
+        sleeve=sleeve,
+        ships_from=ships_from,
+        in_wantlist=in_wantlist,
         verbose=verbose,
         compact=compact,
         mode=_mode(json_output, full),
@@ -1588,6 +1884,10 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         max_price=None,
         currency=None,
         value=False,
+        condition=None,
+        sleeve=None,
+        ships_from=None,
+        in_wantlist=False,
         verbose=False,
         compact=False,
         mode=_mode(json_output, full),

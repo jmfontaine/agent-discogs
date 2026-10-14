@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from agent_discogs import markup, sanitize, style
 from agent_discogs.collection import is_release_row
 from agent_discogs.config import CACHE_TTL_LABEL
+from agent_discogs.inventory import GRADES, release_id, short_grade
 from agent_discogs.markup import Part, plain
 from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
 from agent_discogs.style import Span
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from discogs_sdk import AuthMode
 
     from agent_discogs.collection import Copies, Ownership
+    from agent_discogs.inventory import Wants
     from agent_discogs.pagination import ScanStop
     from agent_discogs.wantlist import Market
 
@@ -99,16 +101,21 @@ def _page_counts(
     filtered: bool,
     stop: ScanStop | None = None,
     header_resent: bool = False,
+    note: str | None = None,
 ) -> str:
     """`(page 2, 5 of ≤23 results; scan stopped at --max-requests 3)`.
 
     `≤` marks a client-side filtered list whose total is the unfiltered API
     count; a scan note means the scan stopped early and the page may be
-    short. With no total, the scan read no listing page before
-    `--max-requests` ran out, so no page, count or bound is known yet.
-    `header_resent` (`--fresh`): the header lookup that spent the budget
-    will be sent again by the continuation, so it needs a higher cap.
+    short; `note` adds what the view counted besides. With no total, the
+    scan read no listing page before `--max-requests` ran out, or a read the
+    scan needed first was rate limited, so no page, count or bound is known
+    yet. `header_resent` (`--fresh`): the header lookup that spent the
+    budget will be sent again by the continuation, so it needs a higher cap.
     """
+    if total is None and stop is not None and stop.reason == "rate_limited":
+        wait = "" if stop.retry_after is None else f", retry in {stop.retry_after}s"
+        return f"(rate limited before the scan started{wait})"
     if total is None:
         cap = "" if stop is None else f" {stop.max_requests}"
         again = (
@@ -119,8 +126,9 @@ def _page_counts(
         )
         return f"(--max-requests{cap} ran out before the scan started{again})"
     bound = "≤" if filtered else ""
-    note = "" if stop is None else f"; {_scan_note(stop)}"
-    return f"(page {page}, {shown} of {bound}{total:,} {noun}{note})"
+    stop_note = None if stop is None else _scan_note(stop)
+    notes = "".join(f"; {n}" for n in (stop_note, note) if n)
+    return f"(page {page}, {shown} of {bound}{total:,} {noun}{notes})"
 
 
 def _footer(next_page_cmd: str | None, *, capped: bool) -> list[Line]:
@@ -475,7 +483,11 @@ def _owned(ownership: Ownership | None, row: Any) -> Span | None:
     under `--owned`; nothing otherwise."""
     if ownership is None or not is_release_row(row):
         return None
-    copies = ownership.owned(row)
+    return _owned_mark(ownership.owned(row.id))
+
+
+def _owned_mark(copies: int | None) -> Span:
+    """The `--owned` mark for a release with `copies` (None: undecided)."""
     if copies is None:
         return Span("· owned ?", "dim")
     return Span(f"· {_copies(copies)}" if copies else "· not owned", "dim")
@@ -720,6 +732,138 @@ def format_collection_value(currency: str, amounts: dict[str, float]) -> str:
     words = {"minimum": "min", "median": "median", "maximum": "max"}
     values = " · ".join(f"{words[name]} {value:.2f}" for name, value in amounts.items())
     return _text([[Span("Collection value", "label"), f" ({currency}): {values}"]])
+
+
+def listing_title(release: Any) -> str | None:
+    """`Artist - Title` of a listing's release, or whichever of the two
+    Discogs sent."""
+    names = [getattr(release, "artist", None), getattr(release, "title", None)]
+    return " - ".join(name for name in names if name) or None
+
+
+def listing_grades(listing: Any) -> str | None:
+    """`NM/VG+`: the media grade, then the sleeve's (`?` for a media grade
+    Discogs did not send), each as its short code; a sleeve that is no grade
+    (`Generic`) as sent."""
+    media = short_grade(listing.condition)
+    sleeve = short_grade(listing.sleeve_condition)
+    if sleeve is None:
+        return media
+    return f"{media or '?'}/{sleeve}"
+
+
+def _listing_row(listing: Any, ownership: Ownership | None) -> list[Part]:
+    """A listing: its release (`listing N` when Discogs sent no release id),
+    grades, price, origin and listing day, then the `--owned` mark."""
+    release = listing.release
+    rid = release_id(listing)
+    posted = listing.posted
+    words = [
+        listing_grades(listing),
+        _price(listing.price),
+        listing.ships_from and f"ships from {listing.ships_from}",
+        posted and f"listed {posted.date().isoformat()}",
+    ]
+    tail: list[list[Part]] = [[f"· {word}"] for word in words if word]
+    if ownership is not None:
+        tail.append([_owned_mark(ownership.owned(rid))])
+    return _release_row(
+        ref=f"listing {listing.id}" if rid is None else _ref("release", rid),
+        title=listing_title(release),
+        fmt=getattr(release, "format", None),
+        tail=_joined(tail, " "),
+    )
+
+
+def _wants_note(wants: Wants | None, *, resent: bool) -> list[Line]:
+    """Why an `--in-wantlist` page is empty: the wantlist read stopped short,
+    so no listing could be judged (and the page has no row). `resent`
+    (`--fresh`): the continuation reads the whole wantlist again, so only a
+    higher cap moves it on."""
+    if wants is None or wants.stop is None:
+        return []
+    stop = wants.stop
+    again = ""
+    if stop.reason == "rate_limited":
+        wait = "" if stop.retry_after is None else f", retry in {stop.retry_after}s"
+        why = f"was rate limited{wait}"
+    else:
+        why = f"stopped at --max-requests {stop.max_requests}"
+        if resent:
+            again = (
+                " --fresh reads it again on every run, so continue with a higher "
+                "--max-requests."
+            )
+    total = "" if wants.total is None else f" of {wants.total:,}"
+    return [
+        [
+            _label("Wantlist"),
+            (
+                f" the read {why} ({wants.read:,}{total} wants read), so no "
+                "listing was scanned: a listing is kept only against the whole "
+                f"wantlist.{again}"
+            ),
+        ],
+    ]
+
+
+def format_inventory(
+    listings: list[Any],
+    username: str,
+    page: int,
+    total_results: int | None,
+    next_page_cmd: str | None,
+    *,
+    condition: str | None,
+    sleeve: str | None,
+    filters: dict[str, str],
+    in_wantlist: bool,
+    filtered: bool,
+    stop: ScanStop | None,
+    skipped_currency: int,
+    wants: Wants | None,
+    wants_resent: bool,
+    ownership: Ownership | None,
+) -> str:
+    """`get inventory`: one row per listing of `username`, under a header
+    naming the filters, the minimum grades (short codes) as
+    `condition≥NM sleeve≥VG+`, with how many listings priced in another
+    currency were skipped."""
+    skipped = None
+    if skipped_currency:
+        where = "another currency" if skipped_currency == 1 else "other currencies"
+        noun = "listing" if skipped_currency == 1 else "listings"
+        skipped = f"{skipped_currency:,} {noun} in {where} skipped"
+    counts = _page_counts(
+        page,
+        len(listings),
+        total_results,
+        "listings",
+        filtered=filtered,
+        stop=stop,
+        note=skipped,
+    )
+    grades = [
+        f"{name}≥{code}"
+        for name, code in (("condition", condition), ("sleeve", sleeve))
+        if code
+    ]
+    subject = " ".join(
+        p
+        for p in (
+            username,
+            "in wantlist" if in_wantlist else "",
+            *grades,
+            _format_filters(filters),
+        )
+        if p
+    )
+    lines: list[Line] = [[_label("Inventory"), f" {subject} ", Span(counts, "dim")], ""]
+    lines += _wants_note(wants, resent=wants_resent)
+    lines += [_listing_row(listing, ownership) for listing in listings]
+    lines.extend(_ownership_note(ownership))
+    lines.extend(_footer(next_page_cmd, capped=stop is not None))
+    return _text(lines)
 
 
 def _format_filters(filters: dict[str, str] | None) -> str:
@@ -1072,21 +1216,10 @@ def format_price_guide(
         "",
     ]
 
-    condition_order = [
-        "Mint (M)",
-        "Near Mint (NM or M-)",
-        "Very Good Plus (VG+)",
-        "Very Good (VG)",
-        "Good Plus (G+)",
-        "Good (G)",
-        "Fair (F)",
-        "Poor (P)",
-    ]
-
     conditions: Any = getattr(price_suggestions, "conditions", None)
 
     if conditions:
-        for cond in condition_order:
+        for cond in GRADES:
             if cond in conditions:
                 amount = _price(conditions[cond])
                 if amount is not None:

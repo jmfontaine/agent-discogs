@@ -23,6 +23,8 @@ That includes client-side scans: under `--cached` a scan reads cached pages unti
 
 `get wantlist --for-sale` reads your wantlist through the same cache: under `--cached`, the username or a wants page the cache does not hold fails the whole command with `cache_miss` and nothing is sent. A want whose Marketplace stats are not cached does not fail the command: it becomes a row carrying its own `cache_miss` (`· ✗ Not cached: GET /marketplace/stats/5` in text, `error.code == "cache_miss"` under `--json`), counts toward `--limit`, and the command exits 1, like a missed ref of a multi-ref `get`. The want is never reported as not for sale; rerun without `--cached` to check it.
 
+`get inventory` with a filter reads the seller's inventory through the same cache, and `--in-wantlist` reads your wantlist through it first: under `--cached`, the username, a wants page or an inventory page the cache does not hold fails the whole command with `cache_miss` and nothing is sent, as for any other scan. `get inventory` alone sends no username request, so under `--cached` it fails only when its own page is not cached.
+
 `--fresh` stores nothing, so under it a text `get releases` scan, or a text `get versions --release-type official` (or `unofficial` with `--format`) scan, spends one request on the header every run: with `--max-requests 1` it returns the empty capped page, and its header says to continue with a higher `--max-requests`, since the same cap would spend itself on the header again.
 
 `--fresh` fetches every request from the API and does **not** store the response, so a later run without `--fresh` can still be served the older cached entry until its 1-hour TTL expires.
@@ -31,7 +33,7 @@ A collection read by `--owned` is cached for an hour like everything else, so a 
 
 Marketplace stats read by `get wantlist --for-sale` are cached for an hour too, so a copy listed or sold within the last hour may not show up. Pass `--fresh` when current Marketplace numbers matter; it re-reads the stats of every want checked, one request each.
 
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` (and `--max-requests`, `--owned`, for `get collection` `--limit`, its filters, `--sort` and `--desc`, and for `get lists` and `get wantlist` `--limit`, plus `--for-sale`, `--max-price`, `--currency` for the wantlist), so the next page is read under the same cache policy, cap and filter as the first.
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` (and `--max-requests`, `--owned`, for `get collection` and `get inventory` `--limit`, their filters, `--sort` and `--desc`, plus `--in-wantlist` for the inventory, and for `get lists` and `get wantlist` `--limit`, plus `--for-sale`, `--max-price`, `--currency` for the wantlist), so the next page is read under the same cache policy, cap and filter as the first.
 
 A list read by `get list` is cached for an hour like everything else, so an item added to the list or a comment changed within the last hour may not show; `--fresh` re-reads it.
 
@@ -71,13 +73,16 @@ What commands cost (network requests; listing rows are per ref):
 | `search artist\|label`, `search --release-type all`, `search --release-type unofficial` (filtered by Discogs, without `--format`) | 1 |
 | Other searches (`--release-type official`, the default, or `unofficial` with `--format`): client-side scans | one per 100 rows scanned |
 | `search release ... --added-since` (experimental) | 1 per release the search matches in the window (before `--release-type` filtering), plus 1 per 100 search results and 1 for the release that ends the scan |
-| `--owned` on `search`, `get versions`, `get releases` (added to the listing's own cost) | 1 for the username, plus 1 per 100 records of your collection, then free for an hour; nothing when the page has no release row (a master, artist or label row is never marked) or when the listing's own scan stopped on a 429 |
+| `--owned` on `search`, `get versions`, `get releases`, `get inventory` (added to the listing's own cost) | 1 for the username, plus 1 per 100 records of your collection, then free for an hour; nothing when the page has no release row (a master, artist or label row is never marked), when the listing's own scan stopped on a 429, or, on `get inventory`, when `--in-wantlist` stopped short (no rows) |
 | `get owned @r...` | 1 for the username, plus 1 per ref, plus 1 for the folder list when any ref is owned (`--json --full`: no folder list) |
 | `get collection` | 1 for the username (shared with `--owned`), plus 1 for the folder list (`--json --full`: none, it names folders by id), plus 1 per page of up to 100 records (`--limit`) |
 | `get collection` with `--format`, `--genre`, `--style`, `--year` or `--label` (a client-side scan) | 1 for the username, plus 1 for the folder list (`--json --full`: none), plus 1 per 100 records scanned; without `--sort`, the pages are the ones the `--owned` read caches |
 | `get collection --value` | 3: the username (shared with `--owned`), your profile (its currency) and the collection value |
 | `get wantlist` | 1 for the username (shared with `--owned`), plus 1 per page of up to 100 wants (`--limit`) |
 | `get wantlist --for-sale` (on top of the above) | 1 per want checked (its Marketplace stats), with wants read 100 a request: a sparse match costs about one request per want on the list, so 500 wants is about 500 requests, roughly nine minutes of the 60 a minute budget. Pass `--max-requests` |
+| `get inventory <username>` | 1 per page of up to 100 listings (`--limit`); no username request, no credentials needed |
+| `get inventory` with `--condition`, `--sleeve`, `--ships-from` or `--max-price` (a client-side scan) | 1 per 100 listings scanned: a seller with 50,000 listings is 500 requests, over eight minutes of the 60 a minute budget (20 minutes at 25). Pass `--max-requests` |
+| `get inventory --in-wantlist` (on top of the above) | 1 for the username (shared with `--owned`), plus 1 per 100 wants, all before the first listing is read; when `--max-requests` or a 429 stops that read, no listing is scanned |
 | `get lists` | 1 for the username (shared with `--owned` and `get wantlist`), plus 1 per page of up to 100 lists (`--limit`) |
 | `get list <id>...` | 1 per list, whatever its length (every item comes in one response) |
 | Anything repeated within 1 hour | 0 (cached) |
@@ -98,6 +103,8 @@ A filtered `get collection` reads the username and the folder list before its sc
 
 `get wantlist --for-sale` has no default cap, like every scan, and spends a request per want, so an uncapped run over a long wantlist with few for-sale wants can take many minutes and end on a 429 once the per-minute budget is gone. Pass `--max-requests` (60 is one minute of budget; the minimum is 3). The cap counts every send, the username first, and is checked before each want, so a scan can stop in the middle of a wants page. A wants page is asked for only while at least 2 sends remain after the sends so far (the page and one want's stats), so when the cap runs out at a page boundary the scan stops with the boundary cursor without reading the next page. Even under `--fresh` the minimum cap checks one want per run. It ends in `Continue scan: agent-discogs get wantlist --for-sale --max-requests N --after P:R`, and the cursor names the first want not yet checked, so the continuation starts there and never checks one twice (within the hour, the wants already checked are cached and free anyway). See [get wantlist](commands.md#wantlist).
 
+`get inventory` takes the cap only with a filter or `--owned` (`invalid_argument` otherwise: alone it pages server-side, one request per page) and it must be 1 or more. The cap counts every send of the command: the username, the wants pages read by `--in-wantlist`, the inventory pages and the collection pages of `--owned`. With a filter, pass it: a seller with 50,000 listings costs 500 requests to scan (60 is one minute of budget). `--in-wantlist` reads your whole wantlist before any inventory page, since a listing is kept only against the complete wantlist, so a cap that runs out in that read scans nothing: the command prints an empty capped page (exit 0, `Continue scan:` with the cursor asked for, JSON `wantlist.complete: false`) and the continuation, with a higher cap, reads the wants already fetched from the cache for free.
+
 Agents whose tool calls have a time limit should pass `--max-requests`.
 
 ## No retries
@@ -107,5 +114,7 @@ The CLI reports; it never retries, sleeps, or throttles on your behalf. Each req
 One exception: a 429 partway through a client-side scan returns the rows read so far, exit 0, with a `Continue scan:` command and `stop_reason: "rate_limited"` (plus `retry_after` when Discogs sent one) under `--json`. A 429 on a scan's first page is the usual error.
 
 On `get wantlist --for-sale` the 429 may come on any stats request, first page included: the rows matched so far are kept (exit 0, `stop_reason: "rate_limited"`), and the `Continue scan:` command resumes at the want the 429 answered. Only a 429 on the username or the first wants page is the usual `rate_limited` error. A want whose stats were not read is never reported as not for sale.
+
+`get inventory` follows the scan rule: a 429 after the first inventory page keeps the rows matched so far, and one on the first page is the usual `rate_limited` error. A 429 during the `--in-wantlist` wantlist read, on the username included, stops it before any listing is scanned: the empty capped page above, with `stop_reason: "rate_limited"` and `retry_after` when Discogs sent one.
 
 A 429 during the `--owned` collection read never fails the command, on any page: the rows it did not reach read `owned ?`, and `collection.stop_reason` is `"rate_limited"`. A listing whose own scan stopped on a 429 skips the collection read entirely.

@@ -55,7 +55,7 @@ With the default `--release-type official` filter, the client-side scan keeps th
 
 ### Client-side scans
 
-Client-side scans (`--release-type official`, or `unofficial` with `--format`; `get releases --role`; `get releases @l... --year`; `get versions --release-type official`, or `unofficial` with `--format`; `get collection` with a filter) read Discogs' largest pages, 100 rows each, until `--limit` rows match or the list ends. There is no cap by default, so a sparse filter over a long list can take many requests.
+Client-side scans (`--release-type official`, or `unofficial` with `--format`; `get releases --role`; `get releases @l... --year`; `get versions --release-type official`, or `unofficial` with `--format`; `get collection` with a filter; `get inventory` with a filter) read Discogs' largest pages, 100 rows each, until `--limit` rows match or the list ends. There is no cap by default, so a sparse filter over a long list can take many requests.
 
 To bound one, pass `--max-requests N` (see [Capping requests with --max-requests](caching-and-budget.md#capping-requests-with---max-requests)).
 
@@ -79,7 +79,7 @@ It is complete only while Discogs keeps that order; when a looked-up date breaks
 
 ### Marking rows with --owned
 
-`--owned` marks every release row with the copies in your own Discogs collection, on `search`, `get versions` and `get releases` (artist and label). A row ends in `· owned` (one copy), `· owned ×2` (two or more), `· not owned`, or `· owned ?` when the read did not reach it (below). In `--json`, each row gets `owned`, the count, and the document gets a `collection` object (see [JSON output](json-output.md#owned-rows)).
+`--owned` marks every release row with the copies in your own Discogs collection, on `search`, `get versions`, `get releases` (artist and label) and `get inventory`. A row ends in `· owned` (one copy), `· owned ×2` (two or more), `· not owned`, or `· owned ?` when the read did not reach it (below). In `--json`, each row gets `owned`, the count, and the document gets a `collection` object (see [JSON output](json-output.md#owned-rows)).
 
 It is not the `have 1,234` on a row, which is Discogs' community count: how many Discogs users own that release. `owned` is the authenticated user's own copies.
 
@@ -89,10 +89,10 @@ agent-discogs get versions @m3719 --country US --owned
 agent-discogs get releases @a3857 --role Main --owned --max-requests 6
 ```
 
-- **Release rows only.** A collection holds releases and Discogs does not document a master id on its records, so master, artist and label rows (an untyped search, or an artist's discography, lists some) get no mark. `search artist|label|master ... --owned` and `--owned` with `--added-since` fail with `invalid_argument` before any request, as does `--owned` on any `get` noun but `releases` and `versions`. A page with no release row reads nothing.
-- **It needs a user.** A token or OAuth credentials name one; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own collection: there is no `--user` flag.
+- **Release rows only.** A collection holds releases and Discogs does not document a master id on its records, so master, artist and label rows (an untyped search, or an artist's discography, lists some) get no mark. `search artist|label|master ... --owned` and `--owned` with `--added-since` fail with `invalid_argument` before any request, as does `--owned` on any `get` noun but `releases`, `versions` and `inventory`. A page with no release row reads nothing. On `get inventory` a row is looked up by its listing's release id (never the listing's own id), and a listing with no release id reads `owned ?` (JSON `owned: null`).
+- **It needs a user.** A token or OAuth credentials name one; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned---in-wantlist-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own collection: there is no `--user` flag.
 - **Cost.** After the listing page, one request for the username, then your whole collection (the "All" folder) at 100 records per request, read once per command even with several refs (`get versions @m... @m... --owned`). Every response is cached for an hour, so a rerun costs nothing. See [What commands cost](caching-and-budget.md#what-commands-cost).
-- **`--max-requests N`** counts every send of the command (the text header lookup, the listing page, the username and the collection pages; cache hits are free), but it only stops a scan and the collection read. The header and a server-side listing page are always sent, header first; the username and the collection pages are then asked only while the cap allows. So `get versions @m3719 --owned --max-requests 1` still sends the header and the listing (2 sends) and reads no collection, and a cold server-side `search release ... --release-type all --owned --max-requests 3` is the listing, the username and one collection page. It is accepted on `search` (otherwise rejected on a server-side search), on `get versions`, and on `get releases`, with one ref only.
+- **`--max-requests N`** counts every send of the command (the text header lookup, the listing page, the username and the collection pages; cache hits are free), but it only stops a scan and the collection read. The header and a server-side listing page are always sent, header first; the username and the collection pages are then asked only while the cap allows. So `get versions @m3719 --owned --max-requests 1` still sends the header and the listing (2 sends) and reads no collection, and a cold server-side `search release ... --release-type all --owned --max-requests 3` is the listing, the username and one collection page. It is accepted on `search` (otherwise rejected on a server-side search), on `get versions`, on `get releases` and on `get inventory` (otherwise rejected unless a filter or `--owned` is given), with one ref only.
 - **A read that stops early** (the cap, or a 429) never claims a release is not owned: a row found in the part read shows the count found so far (it may be short), and any other row reads `· owned ?` (JSON `owned: null`). A note before the footer says why: `Owned: the collection read stopped at --max-requests 2 (100 of 250 records read): "owned ?" rows are not in the part read, and a count may be short.` or `... the collection read was rate limited, retry in 30s (100 of 250 records read): ...`. Rerun with a higher `--max-requests`, or after the wait. A 429 on a later collection page keeps the records read. A 429 on the username or the first collection page, or a listing scan that already stopped on one (`pagination.stop_reason: "rate_limited"`; the collection is then not read at all, with no request), leaves every release row `owned ?`; the command still succeeds, and JSON `collection` is `{"complete":false,"records_read":0,"total_records":null,"stop_reason":"rate_limited","retry_after":N}` (the listing's `retry_after` in the second case).
 - **Paging.** The printed `Next page:` / `Continue scan:` command repeats `--owned`, so the next page is marked too; within the hour the collection comes from the cache.
 - **Freshness.** A record added to your collection within the last hour may still show as not owned; `--fresh` re-reads the collection. Under `--cached`, a collection page the cache does not hold fails the command with `cache_miss`.
@@ -117,11 +117,14 @@ agent-discogs get collection --style Techno --format 12\" --max-requests 20
 agent-discogs get collection --value
 agent-discogs get wantlist
 agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
+agent-discogs get inventory redscroll --sort price
+agent-discogs get inventory redscroll --condition NM --ships-from Germany --max-requests 20
+agent-discogs get inventory redscroll --in-wantlist --condition VG+ --max-requests 60
 agent-discogs get lists
 agent-discogs get list 123
 ```
 
-Nouns: `artist`, `collection` (takes no ref), `credits`, `identifiers` (alias `ids`), `label`, `list` (takes a list id), `lists` (takes no ref), `master`, `owned`, `price`, `release`, `releases`, `tracklist`, `versions`, `wantlist` (takes no ref). Use `--json` for JSON output.
+Nouns: `artist`, `collection` (takes no ref), `credits`, `identifiers` (alias `ids`), `inventory` (takes a seller's username), `label`, `list` (takes a list id), `lists` (takes no ref), `master`, `owned`, `price`, `release`, `releases`, `tracklist`, `versions`, `wantlist` (takes no ref). Use `--json` for JSON output.
 
 ### release
 
@@ -193,7 +196,7 @@ Each row is the ref, `artist - title`, year, label and catalog number, format, t
 - **Filters.** `--format`, `--genre`, `--style`, `--year` and `--label` keep the records with that value: a format name or description (`Vinyl`, `12"`, `LP`), a genre, a style, a label name (any of the record's labels, though the row shows the first), the year. A value matches one value of the record exactly, ignoring case: `--style Tech` matches nothing, `--style techno` matches `Techno`. Several filters must all match; an empty value fails with `invalid_argument`. Collection records carry no country, so there is no `--country`.
 - **A filter makes it a client-side scan.** Discogs cannot filter a collection, so the CLI reads 100-record pages of it in the requested order and keeps the matches until `--limit` is filled or the collection ends, like the other [client-side scans](#client-side-scans): the header shows `≤N` totals, `--page` is rejected, the `Continue scan:` / `Next page:` command continues with `--after`, `--max-requests N` caps the sends, and a 429 after the first page keeps the rows read so far (a 429 on the first page is the usual `rate_limited` error). Without `--sort`, these are the same requests the `--owned` read sends, so a scan after an `--owned` listing within the hour reads its pages from the cache.
 - **Cost.** One request for the username (shared with `--owned`, `get owned`, `get lists` and `get wantlist`), one for your folder names, then one per page (or per 100 records scanned). The username and the folder list are read before the listing, the way `get releases` reads its header first, so `--max-requests` counts them: `--max-requests 2` on a cold cache spends itself on them and returns an empty capped page, and a cap the username alone spends skips the folder list too. `--json --full` names folders by id (`folder_id`) and skips the folder list. Every response is cached for an hour, so a rerun costs nothing.
-- **It takes no ref and needs a user.** `get collection @r847868` fails with `invalid_argument`, as do `--max-requests` and `--after` without a filter. A token or OAuth credentials name a user; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own collection: there is no `--user` flag, no folder selection, and the CLI neither adds, moves, rates nor removes records.
+- **It takes no ref and needs a user.** `get collection @r847868` fails with `invalid_argument`, as do `--max-requests` and `--after` without a filter. A token or OAuth credentials name a user; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned---in-wantlist-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own collection: there is no `--user` flag, no folder selection, and the CLI neither adds, moves, rates nor removes records.
 - **`--cached`.** The username, the folder list or a page the cache does not hold fails the command with `cache_miss`.
 - **`--json`:** `{"pagination":{...},"results":[{"ref","title","year","label","catno","format","folder","added","rating"}]}`, `added` an RFC 3339 timestamp and `rating` omitted when unrated. `--json --full` prints the records as the SDK normalizes them (`CollectionItem`: `id`, `instance_id`, `folder_id`, `date_added`, `rating`, `notes`, `basic_information`). See [JSON output](json-output.md#collection).
 
@@ -226,7 +229,7 @@ Next page: agent-discogs get wantlist --page 2
 
 Each row is the ref, `artist - title`, year, label and catalog number, format, and `· notes: ...` when you wrote notes on the want. Use `--limit` (1-100, default: 5) and `--page` (from 1); the printed `Next page:` command repeats `--limit`.
 
-- **It takes no ref and needs a user.** `get wantlist @r847868` fails with `invalid_argument`. A token or OAuth credentials name a user; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own wantlist: there is no `--user` flag, and the CLI neither adds nor removes wants.
+- **It takes no ref and needs a user.** `get wantlist @r847868` fails with `invalid_argument`. A token or OAuth credentials name a user; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned---in-wantlist-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own wantlist: there is no `--user` flag, and the CLI neither adds nor removes wants.
 - **Cost.** One request for the username (shared with `--owned`, `get owned`, `get collection` and `get lists`, cached for an hour), then one per page; a rerun within the hour costs nothing.
 - **`--json`:** `{"pagination":{...},"results":[{"ref","title","year","label","catno","format","notes","rating"}]}`, with `notes` and `rating` omitted when empty (`rating` `0` is unrated). `--json --full` prints the wants as the SDK normalizes them (`id`, `basic_information`, `notes`, `rating`, `resource_url`). See [JSON output](json-output.md#wantlist).
 
@@ -260,6 +263,56 @@ The row ends in `· for sale: 3 from EUR 12.50`, or `· for sale: 3` when Discog
 
 **What it cannot filter.** Condition, sleeve condition, seller location and shipping cost are not available: the Discogs API has no endpoint that lists the copies for sale of a release, only its Marketplace stats, which are the number of copies and one lowest price across all conditions and locations. To compare copies, open the release's Marketplace page on the Discogs website.
 
+### inventory
+
+`get inventory <username>` browses one seller's Marketplace listings (`GET /users/{username}/inventory`), five a page by default. It takes a Discogs username where the other nouns take a ref:
+
+```bash
+agent-discogs get inventory redscroll
+agent-discogs get inventory redscroll --sort price --limit 20
+agent-discogs get inventory redscroll --condition NM --max-price 30 --currency USD --max-requests 20
+agent-discogs get inventory redscroll --in-wantlist --condition VG+ --max-requests 60
+```
+
+```
+Inventory: redscroll condition≥NM (page 1, 5 of ≤300 listings)
+
+@r847868 "Nine Inch Nails - The Downward Spiral" · CD, Album · NM/VG+ · USD 12.50 · ships from Germany · listed 2024-09-18
+...
+
+Next page: agent-discogs get inventory redscroll --condition NM --after 2:6
+```
+
+Each row is the release ref, `"Artist - Title"`, `· format`, the grades as `· MEDIA/SLEEVE` short codes (`NM/VG+`), the price with its ISO code (`· USD 12.50`), `· ships from Germany` and `· listed 2024-09-18` (the day as Discogs sends it, which is US Pacific time, not the seller's). A sleeve that is no grade (Generic, Not Graded, No Cover) prints as sent (`M/Not Graded`); with no sleeve sent only the media code shows, and a sleeve with no media grade reads `?/VG+`. Anything Discogs did not send is left out. A listing with no release id starts `listing 3254229818` where the ref would be. Without a filter the header reads `Inventory: redscroll (page 1, 5 of 300 listings)` and the footer is `Next page: ... --page 2`.
+
+- **It takes exactly one username.** Two usernames fail with `invalid_argument` (`get inventory takes exactly one username (2 given).`), none is a usage error (exit 2), and a blank one is `invalid_argument`. A username starting with `-` goes after `--` (`get inventory -- -name`); the printed `Next page:` command puts it there itself.
+- **No credentials needed.** Discogs shows anyone a seller's For Sale listings (an owner sees every status; the CLI sends no status filter), so `get inventory` alone works without credentials and sends no identity request. Only `--in-wantlist` and `--owned` need a user (see [Errors](errors.md#--owned---in-wantlist-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)).
+- **Paging and sorting.** `--limit` (1-100, default: 5) and `--page` (from 1) page server-side; `--sort listed|price|item|artist|label|catno` and `--desc` are sent to Discogs (`sort`, `sort_order`), so they order the whole inventory, not just a page; Tab completes the keys. An unknown key, or `--desc` without `--sort`, fails with `invalid_argument` before any request.
+- **`--owned`** marks each row with your copies of the listing's release (see [Marking rows with --owned](#marking-rows-with---owned)): its cost is the collection read, after the inventory page.
+- **Cost.** One request per page; with a filter, one per 100 listings scanned. `--in-wantlist` adds one for the username and one per 100 wants, and `--owned` adds the collection read. A seller with 50,000 listings costs 500 requests to scan, over eight minutes of the 60 a minute budget (20 minutes at the 25 a minute of an unauthenticated caller), so **pass `--max-requests` with any filter** (60 is one minute of budget). Every response is cached for an hour.
+- **`--max-requests N`** (1 or more) is accepted only with a filter or `--owned` (`get inventory` alone pages server-side and sends one request per page; otherwise `invalid_argument`). It counts every send of the command: the username, the wants pages, the inventory pages and the collection pages; cache hits are free.
+- **`--cached`.** The username, a wants page or an inventory page the cache does not hold fails the command with `cache_miss`, as for any other scan.
+- **`--json`:** `{"pagination":{...},"results":[{"listing","ref","title","format","condition","sleeve","price","currency","ships_from","listed","url"}]}`; `listing` is the listing id, `ref` the release's, `price` a number with its `currency` code, `listed` an RFC 3339 timestamp, `url` the listing's page, and empty fields are omitted. `--json --full` prints the SDK's `Listing` records. See [JSON output](json-output.md#inventory).
+
+#### Filters
+
+`--condition`, `--sleeve`, `--ships-from`, `--max-price` and `--in-wantlist` keep the listings that match every filter given. Discogs cannot filter a seller's inventory, so any of them makes it a client-side scan, like the other [client-side scans](#client-side-scans): the CLI reads 100-listing pages in the requested order and keeps the matches until `--limit` is filled or the inventory ends. The header shows `≤N` totals and the filters (`Inventory: redscroll in wantlist condition≥NM sleeve≥G ships-from=France max-price=45.5 currency=EUR`, each grade shown as the minimum it is), `--page` is rejected, the `Continue scan:` / `Next page:` command continues with `--after` and repeats the filters, `--sort`, `--desc` and `--in-wantlist`, `--max-requests N` caps the sends, and a 429 after the first page keeps the rows matched so far (`stop_reason: "rate_limited"`, `retry_after`; a 429 on the first page is the usual `rate_limited` error).
+
+- **`--condition GRADE`** is the minimum media grade, on the Discogs scale from Mint to Poor: `M` > `NM` > `VG+` > `VG` > `G+` > `G` > `F` > `P`. Give the short code or the full name (`Very Good Plus (VG+)`), in any case; Tab completes the codes. Any other value fails with `invalid_argument` before any request (`--condition must be a Discogs grade: M, NM, VG+, VG, G+, G, F or P, or its full name such as 'Very Good Plus (VG+)' (any case; 'mint-' given).`).
+- **`--sleeve GRADE`** is the minimum sleeve grade, same scale and spelling. A Generic, Not Graded or No Cover sleeve fails any `--sleeve`.
+- **`--ships-from COUNTRY`** matches the listing's ships-from country exactly, in any case: `germany` matches `Germany`, `Germ` does not. A blank value fails with `invalid_argument`.
+- **`--max-price AMOUNT --currency CODE`** keeps the listings priced in `CODE` at `AMOUNT` or less (exactly `AMOUNT` is kept; a listing with no price is dropped). `CODE` is one of `USD`, `GBP`, `EUR`, `CAD`, `AUD`, `JPY`, `CHF`, `MXN`, `BRL`, `NZD`, `SEK`, `ZAR` (any case; Tab completes it), and here it is matched client-side against each listing's price currency and **never sent to Discogs**, unlike `get wantlist --for-sale`, where it is sent as `curr_abbr` and prices the stats. A listing priced in another currency is dropped and counted: the header says `N listings in other currencies skipped` (`1 listing in another currency skipped`) and `--json` has `pagination.skipped_currency` (present whenever `--max-price` is given, 0 included). The count covers the listings that passed every other filter, in the part scanned by this run. Each flag needs the other on `get inventory` (`invalid_argument` otherwise), and an unknown code or a negative or non-finite amount fails too (a value that is not a number, such as `abc`, is click's usage error, exit 2). Discogs reports a seller's `price` in the seller's own currency (USD for one seller, EUR for another, with or without a token), so pick the `--currency` of the seller, and expect skipped counts for a seller who prices in another currency.
+
+#### --in-wantlist
+
+`--in-wantlist` keeps the listings whose release is on your wantlist. Before scanning it reads your whole wantlist once: one request for the username (shared with `--owned`, `get wantlist` and the other user nouns, cached for an hour), then one per 100 wants, through the same scan machinery, so `--max-requests` counts those sends and a 429 stops the read.
+
+- **It needs a user.** A token or OAuth credentials name one; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (the message names `--in-wantlist`).
+- **A listing is kept only against the complete wantlist.** When the read stops short (the cap or a 429, a 429 on the username included) no inventory page is scanned, and the command prints an empty capped page, exit 0. The header reads `Inventory: redscroll in wantlist (--max-requests 2 ran out before the scan started)` or `(rate limited before the scan started, retry in 30s)`, then `Wantlist: the read stopped at --max-requests 2 (100 of 150 wants read), so no listing was scanned: a listing is kept only against the whole wantlist.` (under `--fresh` it adds that `--fresh` reads the wantlist again on every run, so the continuation needs a higher `--max-requests`), and a `Continue scan:` command. Pasting it works: the wants already read are cached and free.
+- **`--json`:** a top-level `wantlist` object, `{"complete":true,"wants_read":150,"total_wants":150}` after a full read, or `{"complete":false,"wants_read":100,"total_wants":150,"stop_reason":"max_requests"}` (plus `retry_after` on a 429) when it stopped, in which case `results` is `[]` and `pagination` is `{page, total_items: null, total_pages: null, filtered: true, capped: true, next_cursor: "1:0", stop_reason}`, the cursor being the one asked for. With `--owned` and a stopped read there is no collection read, since there are no rows.
+
+**What it cannot do.** No command finds every seller of one release: the Discogs API has no such endpoint, so `get inventory` browses a seller you already know, and `price @r...` and `get wantlist --for-sale` give a count and a lowest price per release only. It cannot block, favorite or rate sellers, work with carts, offers or purchases, or edit your own listings. A listing's shipping cost is not shown: Discogs sends an empty shipping price on listings.
+
 ### lists and list
 
 `get lists` lists your own Discogs lists, private ones included, five a page by default, each row ending in the command that opens the list:
@@ -275,7 +328,7 @@ Next page: agent-discogs get lists --page 2
 
 Each row is the list id, its name, `public` or `private`, and `changed` with the UTC day it last changed. Discogs sends no item count with a list here. Use `--limit` (1-100, default: 5) and `--page` (from 1); the printed `Next page:` command repeats `--limit`.
 
-- **It takes no ref and needs a user.** `get lists 123` fails with `invalid_argument`. Under the `consumer` or `none` auth modes the command fails with `auth_required` before any request (see [Errors](errors.md#--owned-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own lists: there is no `--user` flag.
+- **It takes no ref and needs a user.** `get lists 123` fails with `invalid_argument`. Under the `consumer` or `none` auth modes the command fails with `auth_required` before any request (see [Errors](errors.md#--owned---in-wantlist-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own lists: there is no `--user` flag.
 - **Cost.** One request for the username (shared with `--owned`, `get owned`, `get collection` and `get wantlist`, cached for an hour), then one per page.
 - **`--json`:** `{"pagination":{...},"results":[{"id","name","description","public","added","changed","url"}]}`; `public` is kept when `false`, `added` and `changed` are RFC 3339 timestamps, and `description` has its markup converted. `--json --full` prints the lists as the SDK normalizes them. See [JSON output](json-output.md#lists).
 
@@ -340,6 +393,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | `collection` | no ref; `--limit`, `--page`, `--sort label\|artist\|title\|catno\|format\|rating\|added\|year`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--after` and `--max-requests` (with a filter); or `--value` alone |
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
+| `inventory` | one username, not a ref; `--limit`, `--page`, `--sort listed\|price\|item\|artist\|label\|catno`, `--desc`, `--owned`, `--condition`, `--sleeve`, `--ships-from`, `--in-wantlist`, `--max-price` and `--currency` (each needs the other), `--after` (with a filter) and `--max-requests` (with a filter or `--owned`) |
 | `artist`, `credits`, `identifiers`, `label`, `list`, `master`, `owned`, `price`, `tracklist` | none |
 
 ## tracks / price
@@ -357,7 +411,7 @@ The `Market: 9 for sale from 9.36` line of `get release` and `get master` is a b
 
 ## Several refs
 
-`get`, `tracks`, and `price` accept up to 10 refs and run them in sequence, so comparing pressings is one command: `agent-discogs get release @r352665 @r847868 -c`. Text blocks are separated by a blank line; a ref that fails reports inline and the rest still run (exit code 1 if any failed). With `--json` and several refs the output is a list, with `{"ref": ..., "error": {...}}` items for failures. `get list` takes list ids the same way; `get collection`, `get lists` and `get wantlist` take no ref.
+`get`, `tracks`, and `price` accept up to 10 refs and run them in sequence, so comparing pressings is one command: `agent-discogs get release @r352665 @r847868 -c`. Text blocks are separated by a blank line; a ref that fails reports inline and the rest still run (exit code 1 if any failed). With `--json` and several refs the output is a list, with `{"ref": ..., "error": {...}}` items for failures. `get list` takes list ids the same way; `get collection`, `get lists` and `get wantlist` take no ref, and `get inventory` takes exactly one username.
 
 ## status
 
@@ -407,9 +461,9 @@ Tab completes every closed set of values:
 
 - commands, each under one name: the aliases (`find`, `query`, `fetch`, `show`) are not offered, but typed in full they still complete what follows;
 - option names (`--<Tab>`);
-- `get` nouns, `ids` included, and the `--currency` codes of `get wantlist`;
+- `get` nouns, `ids` included, the `--currency` codes of `get wantlist` and `get inventory`, and the grades of `--condition` and `--sleeve` (`M NM VG+ VG G+ G F P`);
 - the `search` type word (`release`, `master`, `artist`, `label`), only as the first positional after `search` (options or `--` may come before it); the query after it gets no suggestions;
 - `search --release-type`, `search --sort`, the global `--color`, `cache clear`, the `skills` subcommands and skill names, and the `completion` shells;
-- `get --sort`: the keys of the noun typed before it (`get versions --sort <Tab>` offers `released title format label catno country`, `get collection --sort <Tab>` offers `label artist title catno format rating added year`), or every key of `releases`, `versions` and `collection` before a noun, and none after a noun that takes no `--sort`. A key the noun does not take is still rejected when the command runs.
+- `get --sort`: the keys of the noun typed before it (`get versions --sort <Tab>` offers `released title format label catno country`, `get collection --sort <Tab>` offers `label artist title catno format rating added year`, `get inventory --sort <Tab>` offers `listed price item artist label catno`), or every key of `releases`, `versions`, `collection` and `inventory` before a noun, and none after a noun that takes no `--sort`. A key the noun does not take is still rejected when the command runs.
 
 Refs, queries, Discogs names and free-text filters (`--artist`, `--format`, `--role`, ...) are not completed: refs are stateless, so there is no list to offer.
