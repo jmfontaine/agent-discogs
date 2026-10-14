@@ -158,6 +158,11 @@ _LISTINGS: dict[str, tuple[str, int, list[list[int]]]] = {
         2,
         _SERVER_PAGES,
     ),
+    "versions, --release-type official": (
+        "get versions @m1 --release-type official --format LP --limit 2",
+        2,
+        _FILTERED_PAGES,
+    ),
 }
 
 
@@ -535,3 +540,205 @@ class TestUncappedScan:
         assert result.exit_code == 1
         assert "--max-requests does not apply to 'get artist'" in result.stderr
         assert sent == []
+
+
+# 250 versions of a master, 30 of them tagged "Unofficial Release" (ten on
+# each 100-row API page) and 5 "Partially Unofficial", all on the first.
+_UNOFFICIAL = {*range(0, 100, 10), *range(100, 200, 10), *range(200, 250, 5)}
+_PARTIAL = {1, 2, 3, 4, 5}
+_OFFICIAL = [i for i in range(250) if i not in _UNOFFICIAL]
+
+
+def _version_format(i: int) -> str:
+    if i in _UNOFFICIAL:
+        return "CD, Album, Unofficial Release"
+    if i in _PARTIAL:
+        return "CD, Album, Partially Unofficial"
+    return "Vinyl, LP, Album"
+
+
+def _versions(path: str, params: dict[str, str]) -> object:
+    """The master's versions; like Discogs, `format` keeps the rows that list
+    it as a whole description."""
+    if not path.endswith("/versions"):
+        return {"id": 1, "title": "Master Title"}
+    ids = list(range(250))
+    if "format" in params:
+        ids = [i for i in ids if params["format"] in _version_format(i).split(", ")]
+    rows = [
+        {"id": i, "title": "Album", "label": f"Label{i}", "format": _version_format(i)}
+        for i in ids
+    ]
+    page, per = int(params["page"]), int(params["per_page"])
+    pagination = {
+        "page": page,
+        "pages": max(1, -(-len(rows) // per)),
+        "items": len(rows),
+        "per_page": per,
+    }
+    return {"pagination": pagination, "versions": rows[(page - 1) * per : page * per]}
+
+
+_VERSIONS = "/masters/1/versions"
+_VERSION_ROW = re.compile(r"^@r(\d+) ", re.MULTILINE)
+
+
+class TestVersionsReleaseType:
+    """`get versions --release-type`: `unofficial` is filtered by Discogs,
+    `official` (and `unofficial` with `--format`) is a client-side scan on the
+    whole "Unofficial Release" description, `all` is today's listing."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.api = _FakeAPI(monkeypatch, _versions)
+
+    def _run(self, *args: str) -> tuple[Result, list[tuple[str, dict[str, str]]]]:
+        start = len(self.api.sends)
+        result = CliRunner().invoke(cli, ["get", "versions", "@m1", *args])
+        return result, self.api.sends[start:]
+
+    @staticmethod
+    def _document(result: Result) -> tuple[list[int], dict[str, Any]]:
+        assert result.exit_code == 0, result.output
+        document = json.loads(result.stdout)
+        ids = [int(row["ref"].removeprefix("@r")) for row in document["results"]]
+        return ids, document["pagination"]
+
+    def test_unofficial_is_filtered_by_discogs(self) -> None:
+        result, sent = self._run("--release-type", "unofficial", "--limit", "100")
+        assert result.exit_code == 0, result.output
+        # One listing request, then the title for the header, as without the
+        # flag.
+        assert sent == [
+            (
+                _VERSIONS,
+                {"format": "Unofficial Release", "page": "1", "per_page": "100"},
+            ),
+            ("/masters/1", {}),
+        ]
+        assert "(page 1, 30 of 30 versions)" in result.stdout.splitlines()[0]
+        assert sorted(map(int, _VERSION_ROW.findall(result.stdout))) == sorted(
+            _UNOFFICIAL
+        )
+
+        # Server-side pages: --page works, and the next page is a --page.
+        result, _ = self._run("--release-type", "unofficial", "--page", "2", "--json")
+        ids, pagination = self._document(result)
+        assert ids == sorted(_UNOFFICIAL)[5:10]
+        assert "filtered" not in pagination
+
+    def test_unofficial_with_format_scans(self) -> None:
+        argv = ["--release-type", "unofficial", "--format", "Album", "--limit", "100"]
+        result, sent = self._run(*argv, "--json")
+        ids, pagination = self._document(result)
+        assert ids == sorted(_UNOFFICIAL)
+        assert not _PARTIAL & set(ids)
+        assert [(path, p["page"], p["format"]) for path, p in sent] == [
+            (_VERSIONS, str(page), "Album") for page in (1, 2, 3)
+        ]
+        assert pagination["filtered"] is True
+        assert pagination["total_items"] == 250
+
+    def test_official_keeps_partially_unofficial(self) -> None:
+        argv = ["--release-type", "official", "--limit", "100", "--json"]
+        result, sent = self._run(*argv)
+        ids, pagination = self._document(result)
+        assert ids == _OFFICIAL[:100]
+        assert set(ids) >= _PARTIAL
+        assert sent == [
+            (_VERSIONS, {"page": str(page), "per_page": "100"}) for page in (1, 2)
+        ]
+        assert pagination["capped"] is False
+        assert pagination["next_cursor"] == "2:112"
+
+    def test_capped_scan_reports_its_stop(self) -> None:
+        argv = ["--release-type", "official", "--limit", "100"]
+        result, sent = self._run(*argv, "--max-requests", "1", "--json")
+        ids, pagination = self._document(result)
+        assert ids == _OFFICIAL[:90]
+        assert [p["page"] for _, p in sent] == ["1"]
+        assert pagination["capped"] is True
+        assert pagination["stop_reason"] == "max_requests"
+        assert pagination["next_cursor"] == "2:100"
+
+    def test_capped_scan_continues_without_repeating_a_row(self) -> None:
+        argv = ["--release-type", "official", "--limit", "100"]
+        # The title, then the first page; the title is cached after.
+        first, sent = self._run(*argv, "--max-requests", "2")
+        assert first.exit_code == 0, first.output
+        assert [(path, p.get("page")) for path, p in sent] == [
+            ("/masters/1", None),
+            (_VERSIONS, "1"),
+        ]
+        assert "scan stopped at --max-requests 2" in first.stdout.splitlines()[0]
+        assert "≤250 versions" in first.stdout.splitlines()[0]
+        continuation = _continuation(first)
+        assert "\nContinue scan: " in first.stdout
+        assert continuation[:3] == ["get", "versions", "@m1"]
+        assert continuation[continuation.index("--release-type") + 1] == "official"
+        assert continuation[continuation.index("--max-requests") + 1] == "2"
+        assert continuation[continuation.index("--after") + 1] == "2:100"
+
+        start = len(self.api.sends)
+        second = CliRunner().invoke(cli, continuation)
+        assert second.exit_code == 0, second.output
+        assert [p["page"] for _, p in self.api.sends[start:]] == ["2", "3"]
+        shown = [
+            [int(i) for i in _VERSION_ROW.findall(r.stdout)] for r in (first, second)
+        ]
+        assert shown == [_OFFICIAL[:90], _OFFICIAL[90:190]]
+        assert "\nNext page: " in second.stdout
+
+    def test_text_cap_spent_on_the_title(self) -> None:
+        result, sent = self._run("--release-type", "official", "--max-requests", "1")
+        assert result.exit_code == 0, result.output
+        assert sent == [("/masters/1", {})]
+        header = result.stdout.splitlines()[0]
+        assert header == (
+            'Versions of @m1 "Master Title" '
+            "(--max-requests 1 ran out before the scan started)"
+        )
+        continuation = _continuation(result)
+        assert continuation[continuation.index("--after") + 1] == "1:0"
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["--release-type", "official", "--page", "2"],
+            ["--release-type", "unofficial", "--format", "CD", "--page", "2"],
+            ["--release-type", "unofficial", "--after", "2:0"],
+            ["--release-type", "all", "--after", "2:0"],
+            ["--after", "2:0"],
+            ["--release-type", "unofficial", "--max-requests", "3"],
+            ["--max-requests", "3"],
+        ],
+    )
+    def test_rejected_before_any_request(self, args: list[str]) -> None:
+        result, sent = self._run(*args, "--json")
+        assert result.exit_code == 1
+        assert json.loads(result.stdout)["error"]["code"] == "invalid_argument"
+        assert sent == []
+
+    def test_release_type_belongs_to_versions(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["get", "releases", "@a1", "--release-type", "official"]
+        )
+        assert result.exit_code == 1
+        assert "--release-type does not apply to 'get releases'" in result.stderr
+        assert self.api.sends == []
+
+    @pytest.mark.parametrize("args", [["--json"], []], ids=["json", "text"])
+    def test_all_is_the_default(
+        self, monkeypatch: pytest.MonkeyPatch, args: list[str]
+    ) -> None:
+        default, default_sent = self._run(*args)
+        assert default.exit_code == 0, default.output
+        self.api = _FakeAPI(monkeypatch, _versions)  # a cold cache again
+        explicit, explicit_sent = self._run("--release-type", "all", *args)
+        assert explicit.stdout == default.stdout
+        assert explicit_sent == default_sent
+        assert (_VERSIONS, {"page": "1", "per_page": "5"}) in default_sent
+        if not args:
+            assert "\nNext page: agent-discogs get versions @m1 --page 2" in (
+                default.stdout
+            )

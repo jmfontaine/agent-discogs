@@ -55,7 +55,7 @@ With the default `--release-type official` filter, the client-side scan keeps th
 
 ### Client-side scans
 
-Client-side scans (`--release-type official`, or `unofficial` with `--format`; `get releases --role`; `get releases @l... --year`) read Discogs' largest pages, 100 rows each, until `--limit` rows match or the list ends. There is no cap by default, so a sparse filter over a long list can take many requests.
+Client-side scans (`--release-type official`, or `unofficial` with `--format`; `get releases --role`; `get releases @l... --year`; `get versions --release-type official`, or `unofficial` with `--format`) read Discogs' largest pages, 100 rows each, until `--limit` rows match or the list ends. There is no cap by default, so a sparse filter over a long list can take many requests.
 
 To bound one, pass `--max-requests N` (see [Capping requests with --max-requests](caching-and-budget.md#capping-requests-with---max-requests)).
 
@@ -220,11 +220,24 @@ The row ends in `· for sale: 3 from EUR 12.50`, or `· for sale: 3` when Discog
 
 ### releases and versions
 
-Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) and `--page` (from 1); `releases --role` filters client-side and continues via the printed `--after` cursor instead.
+Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) and `--page` (from 1); `releases --role` and `versions --release-type official` filter client-side and continue via the printed `--after` cursor instead.
 
 `releases` takes an artist ref (discography, with `--role` and `--sort year|title|format`) or a label ref (catalogue; the API offers no filters or sorting there, so `--year` on a label is a client-side scan that continues via the printed `--after` cursor).
 
-`versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`.
+`versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`. All of them are sent to Discogs.
+
+#### --release-type
+
+`get versions @m... --release-type official|unofficial|all` filters on the format description "Unofficial Release", which Discogs gives bootlegs, counterfeits and pirate copies alike, the same rule `search --release-type` uses. A version row's format lists its descriptions (`LP, Album, Unofficial Release`), and the match is on the whole description, so a "Partially Unofficial" version counts as official.
+
+- **`all` is the default**, unlike `search`, whose default is `official`: without the flag, `get versions` lists every version, unofficial pressings included, with server-side pages. The bootleg and counterfeit checks need to see them.
+- **`unofficial`** is filtered by Discogs itself (`format=Unofficial Release`), so it shows an exact total and pages with `--page`. With `--format` it is a client-side scan instead, as on `search`, because the Unofficial Release filter is a `format` filter too.
+- **`official`** drops the unofficial versions in a client-side scan, like `get releases --role`: it reads 100-row pages until `--limit` versions are kept or the list ends, shows the total as an upper bound (`≤N`), continues with the printed `--after` cursor (`--page` fails with `invalid_argument`), takes `--max-requests N`, and keeps the rows read so far when Discogs answers 429 after the first page (see [Client-side scans](#client-side-scans)). As text, the header's master title is read before the scan, so `--max-requests` counts it.
+
+```bash
+agent-discogs get versions @m3719 --release-type official --limit 5 --json
+agent-discogs get versions @m3719 --release-type unofficial --country UK
+```
 
 `releases` and `versions` also take `--owned`, which marks each release row with your own copies: see [Marking rows with --owned](#marking-rows-with---owned).
 
@@ -241,7 +254,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | `release` | `-v, --verbose`, `-c, --compact` |
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
-| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--owned` and `--max-requests` (with `--owned`) |
+| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
 | `artist`, `credits`, `identifiers`, `label`, `master`, `owned`, `price`, `tracklist` | none |
 

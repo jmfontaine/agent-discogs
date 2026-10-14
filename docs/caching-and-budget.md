@@ -63,9 +63,9 @@ What commands cost (network requests; listing rows are per ref):
 |---|---|
 | `get artist\|label\|master\|release\|credits\|identifiers\|tracklist`, `tracks` | 1 per ref |
 | `get price`, `price` | 3 per ref (`--json --full`: 2, the release itself is not read) |
-| `get releases @a...`, `get releases @l...`, `get versions @m...` | `--json`: 1; text: 2 (the header's artist, label or master name) |
+| `get releases @a...`, `get releases @l...`, `get versions @m...` (also with `--release-type all`, the default, or `unofficial` without `--format`, filtered by Discogs) | `--json`: 1; text: 2 (the header's artist, label or master name) |
 | `get versions @r...` | 2, text or `--json` (the release, for its master, then the list) |
-| Client-side scans: `get releases @a... --role`, `get releases @l... --year` | `--json`: one per 100 rows scanned; text: one more, for the header name |
+| Client-side scans: `get releases @a... --role`, `get releases @l... --year`, `get versions @m... --release-type official` (or `unofficial` with `--format`) | `--json`: one per 100 rows scanned; text: one more, for the header name (`get versions @r...`: one more in either mode, the release, which also gives the header its title) |
 | `search artist\|label`, `search --release-type all`, `search --release-type unofficial` (filtered by Discogs, without `--format`) | 1 |
 | Other searches (`--release-type official`, the default, or `unofficial` with `--format`): client-side scans | one per 100 rows scanned |
 | `search release ... --added-since` (experimental) | 1 per release the search matches in the window (before `--release-type` filtering), plus 1 per 100 search results and 1 for the release that ends the scan |

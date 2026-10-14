@@ -837,11 +837,20 @@ def format_master_versions(
     total_results: int | None,
     next_page_cmd: str | None,
     *,
+    filtered: bool = False,
+    stop: ScanStop | None = None,
+    header_resent: bool = False,
     ownership: Ownership | None = None,
 ) -> str:
-    """Format master release versions."""
+    """Format master release versions (`--release-type` scans are `filtered`)."""
     counts = _page_counts(
-        page, len(versions), total_results, "versions", filtered=False
+        page,
+        len(versions),
+        total_results,
+        "versions",
+        filtered=filtered,
+        stop=stop,
+        header_resent=header_resent,
     )
     lines: list[Line] = [
         [
@@ -868,7 +877,7 @@ def format_master_versions(
     )
 
     lines.extend(_ownership_note(ownership))
-    lines.extend(_footer(next_page_cmd, capped=False))
+    lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
 

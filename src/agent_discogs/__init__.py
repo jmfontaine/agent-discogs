@@ -126,24 +126,32 @@ Options:
   --after CURSOR   Continue a client-side filtered list; copy from Next page /
                    Continue scan (search with --release-type official, or
                    unofficial with --format; get releases --role, get releases
-                   @l --year, get wantlist --for-sale)
+                   @l --year, get versions --release-type official, or
+                   unofficial with --format; get wantlist --for-sale)
   --max-requests N Cap the command's HTTP sends (header lookups included; cache
                    hits are free) for a client-side scan, --added-since, the
                    --owned collection read or get wantlist --for-sale: search
-                   with --release-type official, or unofficial with --format;
-                   get releases --role / @l --year; get releases and get
-                   versions with --owned; get wantlist --for-sale; one ref
-                   only. Default: no cap, the scan runs until the page fills
-                   or the list ends (--for-sale: about 1 request per want, 500
-                   wants = ~9 minutes of the 60/min budget, so always pass it;
-                   3 or more there: the username, a wants page and one want's
-                   stats; a page is read only while 2 sends remain). Pass it
-                   if your tool calls have a time limit. Text get releases
-                   under --fresh resends its header every run: 2 or more
-                   there. Under --owned the cap counts every send but
-                   stops only scans and the collection read: the text header
-                   and a server-side listing page are always sent, then the
+                   or get versions with --release-type official, or unofficial
+                   with --format; get releases --role / @l --year; get
+                   releases and get versions with --owned; get wantlist
+                   --for-sale; one ref only. Default: no cap, the scan runs
+                   until the page fills or the list ends (--for-sale: about 1
+                   request per want, 500 wants = ~9 minutes of the 60/min
+                   budget, so always pass it; 3 or more there: the username, a
+                   wants page and one want's stats; a page is read only while
+                   2 sends remain). Pass it if your tool calls have a time
+                   limit. Text get releases and get versions scans under
+                   --fresh resend their header every run: 2 or more there.
+                   Under --owned the cap counts every send but stops only
+                   scans and the collection read: the text header and a
+                   server-side listing page are always sent, then the
                    username and collection pages while the cap allows
+  --release-type T get versions: all (the default, unlike search's official)
+                   lists every version; unofficial keeps those whose format
+                   lists "Unofficial Release", filtered by Discogs (exact
+                   total, --page); official drops them, a client-side scan
+                   (≤N total, --after, --max-requests). "Partially Unofficial"
+                   counts as official. With --format, unofficial is a scan too
   --added-since D  search release only (experimental): releases added to Discogs
                    on or after D (YYYY-MM-DD, from midnight UTC), newest first,
                    each with its added day in UTC (--json: added; complete:
@@ -216,7 +224,9 @@ Get flags by noun (any other get flag fails with invalid_argument):
   releases @l      --limit, --page, --year, --owned, --after and --max-requests
                    (with --year or --owned)
   versions         --limit, --page, --country, --format, --label, --year,
-                   --sort, --desc, --owned and --max-requests (with --owned)
+                   --sort, --desc, --release-type, --owned, --after (with a
+                   --release-type scan) and --max-requests (with a scan or
+                   --owned)
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
                    --currency (both with --for-sale), --after and
                    --max-requests (with --for-sale, 3 or more)
@@ -308,6 +318,7 @@ Examples:
   agent-discogs search artist "Nine Inch Nails"
   agent-discogs get release @r847868
   agent-discogs get versions @m3719 --country US --format Vinyl
+  agent-discogs get versions @m3719 --release-type official --json
   agent-discogs tracks @r847868
   agent-discogs price @r847868
   agent-discogs get releases @a3857 --role Main --limit 5
