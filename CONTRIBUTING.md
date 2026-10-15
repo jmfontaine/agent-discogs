@@ -74,7 +74,8 @@ just type-check         # Run type checker (ty)
 just verify-types       # Audit public API type annotation coverage (pyright)
 ```
 
-Run `just --list` to see all available commands.
+Run `just --list` to see all available commands. Maintainers release with `just release-prepare`, `just release` and
+`just release-next`, which [AGENTS.md](AGENTS.md#releasing) describes.
 
 ## Testing
 
