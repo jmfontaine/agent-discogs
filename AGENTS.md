@@ -24,7 +24,9 @@ just dead-code                         # deadcode src tests (via uvx, Python 3.1
 just deps-unused                       # deptry src
 just deps-update                       # Update deps to latest versions
 just verify-types                      # Audit public API type annotation coverage
-just release                           # Tag, push, and monitor the publish workflow
+just release-prepare [X.Y.Z]           # Open the pull request that sets the release version
+just release                           # Tag, push, and monitor the publish workflow (the user only; see Releasing)
+just release-next [minor|patch|major]  # Open the pull request that starts the next development version
 just pre-commit                        # Run pre-commit hooks on all files
 just pre-commit-install                # Install pre-commit hooks (main checkout only)
 just pre-commit-update                 # Update pre-commit hooks to latest versions
@@ -149,7 +151,7 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 - `py.typed` marker present (PEP 561)
 - Imports live at module scope; ruff's `PLC0415` enforces it. Only `TYPE_CHECKING` blocks may import inside a function or block.
 - Run `git` commands directly, never with `git -C`
-- Never commit on `main`. Work starts on a branch named `<type>/issue-<N>-<slug>` for an issue, otherwise `<type>/<slug>`, where `<type>` is the Conventional Commits type of the change (`feat`, `fix`, `docs`, `test`, `ci`, ...). Either way it lands through a pull request.
+- Never commit on `main`. Work starts on a branch named `<type>/issue-<N>-<slug>` for an issue, otherwise `<type>/<slug>`, where `<type>` is the Conventional Commits type of the change (`feat`, `fix`, `docs`, `test`, `ci`, ...). The one exception is a version change, which goes on `release/v<version>`, created by the [release recipes](#releasing). Either way it lands through a pull request.
 - Pull requests land by squash merge (the only method the repository allows): `gh pr merge <n> --squash`, or, for a stack, `gh stack merge --yes --squash` run with no number from a worktree that has the stack checked out (a bare number is read as a stack number before a pull request number). GitHub signs the squash commit itself, but `main`'s signed-commit ruleset also checks every commit on the pull request branch, so each one must be signed and verified: an unsigned commit blocks the merge until it is rebased, signed, and force-pushed. The pull request title becomes the commit subject, and git-cliff builds the changelog from it, so write the title as a Conventional Commit (`fix: ...`, `feat(cache): ...`).
 - When adding or changing user-facing behavior (commands, flags, output shape, errors), update all of: `_HELP_TEXT` in `src/agent_discogs/__init__.py`, the matching `docs/` page (`commands.md`, `json-output.md`, `caching-and-budget.md`, `errors.md`, `debugging.md`), and `src/agent_discogs/skills/core/` (`SKILL.md` for workflow/overview, `references/*.md` for detail). Update `README.md` only when the overview changes (installation, authentication, the per-command examples, the refs table, or the list of `docs/` pages); it is the PyPI page, so its links to `docs/` are absolute `https://github.com/jmfontaine/agent-discogs/blob/main/...` URLs, while links between `docs/` pages are relative. Agents load the bundled skill from the installed binary, so stale content there is a live bug.
 - `context7.json` configures the [Context7](https://context7.com) index of this repository: it indexes `README.md` and `docs/` from `main`, and its `rules` point agents at `agent-discogs skills get core` for the installed version. Keep its `description` and `rules` true when the install commands, `DISCOGS_TOKEN` authentication, the `skills get core` command, the ref prefixes, the commands that take `--json` or the features the description lists change, and add any new root-level Markdown file that is not user documentation to `excludeFiles` (Context7 always reads root-level Markdown, and `excludeFiles` takes filenames, not paths). Validate it with `uvx check-jsonschema --schemafile https://context7.com/schema/context7.json context7.json`.
@@ -165,17 +167,34 @@ work, run `just qa` and `just test`, report, and stop.
 
 Publishing is fully automated via CI. The `publish.yml` workflow triggers on `v*` tag push.
 
-1. Update `version` in `pyproject.toml`
-2. Commit the version bump and get it onto `origin/main` through a pull request
-3. Run `just release` on `main` — creates a signed tag, pushes `main` and the
-   tag in one atomic push, and watches the publish run. It refuses to run
-   unless HEAD is `main`, the working tree is clean, `main` equals
-   `origin/main` after a fetch, and the tag exists neither locally nor on
-   `origin`. If the push fails, it asks `origin` whether the tag arrived
-   anyway and deletes the local tag only when `origin` has no such tag; if
-   the tag is on `origin`, or `origin` can't be reached, it keeps the tag and
-   exits 1 with what to check. If the run does not appear within 2 minutes
-   it exits 1; the tag is already pushed by then, so check the Actions page.
+Between releases `main` holds a PEP 440 development version, `X.Y.Z.devN`,
+which sorts below `X.Y.Z`, so installers never prefer a build from `main`.
+Every version change goes through a pull request opened by a recipe. Each
+recipe refuses to run unless HEAD is `main`, the working tree is clean, and
+`main` equals `origin/main` after a fetch. The two that open a pull request
+switch back to `main` when it is open; if a step fails, they print how to
+remove the branch they created before retrying.
+
+1. `just release-prepare` needs an `X.Y.Z.devN` version. It creates
+   `release/vX.Y.Z`, sets `X.Y.Z` (`uv version --bump stable`, in
+   `pyproject.toml` and `uv.lock`), commits
+   `chore(release): bump version to X.Y.Z` and opens the pull request. An
+   argument names another `X.Y.Z` (a patch release while `main` is on the next
+   minor). It refuses a version whose tag is already on `origin`. Merging the
+   pull request approves the release.
+2. Pull `main`, then run `just release` — refuses any version but a plain
+   `X.Y.Z` and a tag that exists locally or on `origin`, then creates a signed
+   tag, pushes `main` and the tag in one atomic push, and watches the publish
+   run. If the push fails, it asks `origin` whether the tag arrived anyway and
+   deletes the local tag only when `origin` has no such tag; if the tag is on
+   `origin`, or `origin` can't be reached, it keeps the tag and exits 1 with
+   what to check. If the run does not appear within 2 minutes it exits 1; the
+   tag is already pushed by then, so check the Actions page.
+3. `just release-next` needs an `X.Y.Z` version whose `vX.Y.Z` tag is on
+   `origin`. It creates `release/vX.(Y+1).0.dev0`, sets that version, commits
+   `chore(release): start X.(Y+1).0 development` and opens the pull request.
+   `just release-next patch` opens `X.Y.(Z+1).dev0` instead, and
+   `just release-next major` `(X+1).0.0.dev0`. Merge it to reopen development.
 
 `publish.yml` calls the reusable `checks.yml`, which builds the distributions
 once, checks them with `scripts/check_distributions.py` (archive contents:
@@ -191,4 +210,5 @@ environment must exist on the repo.
 
 A release cannot be replaced once uploaded. If a broken version reaches PyPI,
 yank it there (project page or the upload API — there is no `pip yank`), then
-bump the patch version and release again.
+release the next patch version with `just release-prepare X.Y.(Z+1)` (run
+`just release-next` first if `main` still holds `X.Y.Z`).
