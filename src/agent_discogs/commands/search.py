@@ -231,7 +231,11 @@ def _search_added_since(
     help="Continuation cursor copied from a previous Next page / Continue scan line",
 )
 @click.option("--artist", help="Filter by artist")
-@click.option("--barcode", help="Filter by barcode")
+@click.option(
+    "--barcode",
+    help="Match identifier text: a barcode (digits, no spaces) or a matrix/runout "
+    "etching",
+)
 @click.option("--catno", help="Filter by catalog number")
 @click.option("--country", help="Filter by country")
 @click.option(

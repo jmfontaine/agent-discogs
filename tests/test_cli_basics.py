@@ -49,6 +49,8 @@ class TestCLIBasics:
         # Search types and get nouns
         assert "Search Types:" in result.stdout
         assert "Get Nouns:" in result.stdout
+        # --barcode matches identifier text, runout etchings included
+        assert "TOWNHOUSE" in result.stdout
         # Ref system explanation
         assert "@a3857 (artist)" in result.stdout
         assert "@r847868 (release)" in result.stdout
@@ -72,6 +74,7 @@ class TestCLIBasics:
         assert "--year" in result.stdout
         assert "--genre" in result.stdout
         assert "--limit" in result.stdout
+        assert "runout" in result.stdout
 
     def test_get_help(self) -> None:
         result = CliRunner().invoke(cli, ["get", "--help"])
