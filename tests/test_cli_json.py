@@ -19,6 +19,7 @@ from discogs_sdk import (
 
 from agent_discogs import cli
 from agent_discogs.pagination import PageResult
+from agent_discogs.projections import project_release
 from tests.conftest import (
     ServePage,
     UseClient,
@@ -616,3 +617,29 @@ class TestJsonShortcuts:
 
         result = CliRunner().invoke(cli, ["price", "--full", "@r123"])
         assert text_error(result) == "✗ --full requires --json.\n"
+
+
+class TestReleaseMasterYear:
+    """`project_release` puts the master's year, or why it is missing, right
+    after `master`, and neither without `--master-year`."""
+
+    _RELEASE = Release.model_validate({"id": 1, "title": "T", "master_id": 5460})
+
+    def test_year_follows_master(self) -> None:
+        data = project_release(self._RELEASE, master_year=1959)
+        keys = list(data)
+        assert keys[keys.index("master") :][:2] == ["master", "master_year"]
+        assert data["master_year"] == 1959
+        assert "master_year_error" not in data
+
+    def test_error_replaces_the_year(self) -> None:
+        error = {"code": "cache_miss", "message": "Not cached: GET /masters/5460"}
+        data = project_release(self._RELEASE, master_year_error=error)
+        assert data["master_year_error"] == error
+        assert "master_year" not in data
+
+    def test_neither_by_default(self) -> None:
+        data = project_release(self._RELEASE)
+        assert data["master"] == "@m5460"
+        assert "master_year" not in data
+        assert "master_year_error" not in data

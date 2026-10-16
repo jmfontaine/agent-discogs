@@ -104,6 +104,7 @@ Get entity details by noun and ref. Aliases: `fetch`, `show`.
 
 ```bash
 agent-discogs get release @r352665
+agent-discogs get release @r352665 --master-year
 agent-discogs get artist @a3857
 agent-discogs get master @m3719
 agent-discogs get label @l647
@@ -140,6 +141,8 @@ Its format lists one entry per physical format, separated by `;`: the quantity w
 `Genres:` and `Styles:` are `;`-separated too (`Genres: Rock; Folk, World, & Country`), on `get release` and `get master` alike, because the genre `Folk, World, & Country` has commas; `--json` carries them as arrays (`"genres":["Rock","Folk, World, & Country"]`).
 
 `-v, --verbose` on `release` appends notes, credits, and identifiers in one call; `-c, --compact` replaces the tracklist with a one-line `Tracks: 14 (65:01)` summary; the total is omitted when any track lacks a duration (use `tracks` when the tracklist is what you want).
+
+`--master-year` ends the `Master:` line with the master's year, the year of the work rather than of this pressing: `get release @r352665 --master-year` prints `Master: @m3719 (1994)` for a 2004 release (`--json`: `master_year` next to `master`; `--json --full`: a top-level `master_year` beside the record's keys). It costs one more request per release that has a master, sent after the release is read: `GET /masters/{id}`, the request `get master` sends, so the two share the cache and releases of one master share one request (except under `--fresh`). A release with no master has no `Master:` line and sends nothing more; a master year Discogs does not know (`0`) prints no year. Two failures of that request leave the release whole, with exit code 0: a `--cached` miss and a deleted master (404) print the reason in place of the year (`Master: @m3719 · ✗ Not cached: GET /masters/3719`), and `--json` carries `master_year_error` (`code` `cache_miss` or `not_found`, and `message`) instead of `master_year`. Any other failure of it (a 429, a 5xx, a connection error, a response that does not parse) fails the ref as usual: its `✗` block, exit 1, the release not printed; the release is cached by then (not under `--fresh`), so a rerun costs only the master request.
 
 Index tracks (a suite or medley split into parts) list their sub-tracks indented beneath them. The compact count includes each part, and the total sums the parts' durations; when a part is untimed, the index track's own duration stands in for the suite.
 
@@ -389,7 +392,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 
 | Noun | Flags besides `--json` / `--full` |
 |---|---|
-| `release` | `-v, --verbose`, `-c, --compact` |
+| `release` | `-v, --verbose`, `-c, --compact`, `--master-year` |
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |

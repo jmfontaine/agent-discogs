@@ -15,8 +15,6 @@ Global flags precede the command (`agent-discogs --cached price @r847868`). Afte
 | `--help` | Show help |
 | `--version` | Show version |
 
-After any command that talks to the API, stderr ends with a budget line such as `api: 3 requests · 43/60 left this minute` (`⚠` when 10 or fewer remain). See the Budget section of SKILL.md (`agent-discogs skills get core`).
-
 The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and repeats `--max-requests` and `--owned` when they were given (and, for `get collection` and `get inventory`, `--limit`, its filters, `--sort` and `--desc`, plus `--in-wantlist` for the inventory; for `get lists` and `get wantlist`, `--limit`, plus `--for-sale`, `--max-price` and `--currency` for the wantlist). An inventory username starting with `-` is put after `--`.
 
 ### Client-side scans
@@ -39,6 +37,7 @@ Text output is UTF-8 when the terminal or pipe is. On a stdout that is not (`PYT
 | Command | Requests |
 |---|---|
 | `get artist\|label\|master\|release\|credits\|identifiers\|tracklist`, `tracks` | 1 per ref |
+| `get release --master-year` | 2 per ref with a master (the master request is cached, shared with `get master`) |
 | `get releases @a...\|@l...`, `get versions @m...` (also `--release-type unofficial` without `--format`, filtered by Discogs) | `--json`: 1 per ref; text: 2 (the header name costs one) |
 | `get versions @r...` | 2 per ref (resolve the master, then list) |
 | Client-side scans: `get releases @a... --role`, `get releases @l... --year`, `get versions @m... --release-type official` (or `unofficial` with `--format`) | `--json`: 1 per 100 rows scanned; text: 1 more (the header name) |
@@ -174,6 +173,7 @@ Discogs writes links into artist and label profiles and release notes as markup,
 | `--owned` | `releases`, `versions` and `inventory` only: mark each release row with the copies in your own collection. Master, artist and label rows (an artist discography lists masters) get no mark. Needs a token or OAuth; the marks, their JSON and their cost: `agent-discogs skills get collection`. |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 | `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; an index track counts as its parts, timed by their sum or, when a part is untimed, by the index track's own duration; otherwise the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
+| `--master-year` | `release` only: end `Master:` with the master's year, `Master: @m3719 (1994)` (JSON `master_year`), +1 request per release with a master. A `--cached` miss or a deleted master prints `· ✗ <why>` instead (JSON `master_year_error`); that ref still succeeds |
 
 ### Additional flags for `releases`
 
@@ -202,7 +202,7 @@ Each flag applies only to the nouns below. Any other flag fails with `invalid_ar
 
 | Noun | Flags besides `--json` / `--full` |
 |------|-----------------------------------|
-| `release` | `-v, --verbose`, `-c, --compact` |
+| `release` | `-v, --verbose`, `-c, --compact`, `--master-year` |
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc`, `--release-type`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |
@@ -220,14 +220,13 @@ Each flag applies only to the nouns below. Any other flag fails with `invalid_ar
 
 ```bash
 agent-discogs get release @r847868
-agent-discogs get release 847868
+agent-discogs get release @r352665 --master-year
 agent-discogs get artist @a3857
 agent-discogs get master @m3719
 agent-discogs get label @l647
 agent-discogs get tracklist @r847868
 agent-discogs get credits @r847868
 agent-discogs get identifiers @r847868
-agent-discogs get ids @r847868
 agent-discogs get releases @a3857
 agent-discogs get releases @a3857 --page 2 --limit 10
 agent-discogs get releases @a3857 --role Remix

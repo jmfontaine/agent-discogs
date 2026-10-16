@@ -1306,14 +1306,21 @@ def track_summary(tracklist: list[Any]) -> str:
 
 
 def format_release(
-    release: Any, *, verbose: bool = False, compact: bool = False
+    release: Any,
+    *,
+    verbose: bool = False,
+    compact: bool = False,
+    master_year: int | str | None = None,
+    master_error: str | None = None,
 ) -> str:
     """Format a full release detail view.
 
     `verbose` appends notes, credits, and identifiers: the facets that matter
     when identifying a pressing or asking who worked on it. `compact` replaces
     the tracklist with a one-line `Tracks:` summary; `tracks @r...` is the
-    dedicated tracklist view.
+    dedicated tracklist view. Under `--master-year`, the `Master:` line ends in
+    the master's year (`master_year`), or in why it was not read
+    (`master_error`, a message).
     """
     artists = _artist_parts(getattr(release, "artists", None))
     year = known_year(getattr(release, "year", None)) or ""
@@ -1375,7 +1382,12 @@ def format_release(
 
     master_id = getattr(release, "master_id", None)
     if master_id:
-        lines.append([_label("Master"), " ", _ref("master", master_id)])
+        master: list[Part] = [_label("Master"), " ", _ref("master", master_id)]
+        if master_error:
+            master += [" ", Span("· ✗", "error"), f" {master_error}"]
+        elif master_year:
+            master.append(f" ({master_year})")
+        lines.append(master)
 
     if verbose:
         lines.extend(

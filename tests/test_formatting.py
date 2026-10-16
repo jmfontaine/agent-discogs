@@ -300,6 +300,16 @@ class TestFormatRelease:
         assert "Genres: Rock" in lines
         assert not [line for line in lines if line.startswith("Styles:")]
 
+    def test_master_year_ends_the_master_line(self) -> None:
+        release = Release.model_validate({"id": 1, "title": "T", "master_id": 5460})
+        lines = format_release(release, master_year=1959).splitlines()
+        assert "Master: @m5460 (1959)" in lines
+        lines = format_release(
+            release, master_year=1959, master_error="Not cached: GET /masters/5460"
+        ).splitlines()
+        assert "Master: @m5460 · ✗ Not cached: GET /masters/5460" in lines
+        assert "Master: @m5460" in format_release(release).splitlines()
+
 
 class TestFormatArtist:
     def test_artist_with_urls(self) -> None:
