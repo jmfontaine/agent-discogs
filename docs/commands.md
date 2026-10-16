@@ -159,6 +159,7 @@ agent-discogs get tracklist @r352665
 agent-discogs get releases @a3857 --limit 20
 agent-discogs get versions @m3719 --country US --format Vinyl
 agent-discogs get price @r352665
+agent-discogs get stats @r847868 @r352665 --currency EUR
 agent-discogs get owned @r352665 @r847868
 agent-discogs get owned @m3719
 agent-discogs get versions @m3719 --country US --owned
@@ -176,7 +177,7 @@ agent-discogs get lists
 agent-discogs get list 123
 ```
 
-Nouns: `artist`, `collection` (takes no ref), `credits`, `identifiers` (alias `ids`), `inventory` (takes a seller's username), `label`, `list` (takes a list id), `lists` (takes no ref), `master`, `owned`, `price`, `release`, `releases`, `tracklist`, `versions`, `wantlist` (takes no ref). Use `--json` for JSON output.
+Nouns: `artist`, `collection` (takes no ref), `credits`, `identifiers` (alias `ids`), `inventory` (takes a seller's username), `label`, `list` (takes a list id), `lists` (takes no ref), `master`, `owned`, `price`, `release`, `releases`, `stats`, `tracklist`, `versions`, `wantlist` (takes no ref). Use `--json` for JSON output.
 
 ### release
 
@@ -217,6 +218,24 @@ An opening tag Discogs never closes ends with the field, and a closing tag with 
 `credits` lists who did what on a release, grouped by role, each person with an artist ref. It includes credits Discogs files on individual tracks and sub-tracks: each person appears once per role with the tracks the credit covers, and no track list means the whole release.
 
 `identifiers` lists barcodes, matrix/runout etchings, and other codes: the data that tells two pressings with the same catalog number apart.
+
+### stats
+
+`get stats @r... [@r...]` prints, for 1 to 10 releases (typed refs or raw ids), the numbers that compare pressings: how many Discogs users have each release and want it, its community rating, how many copies are for sale and the lowest asking price, with the currency named. One line per release, blocks separated by a blank line:
+
+```
+$ agent-discogs get stats @r847868 @r352665
+@r847868 "The Downward Spiral" by Nine Inch Nails 1994 · have 7,618 · want 1,355 · rating 4.43/5 (602 votes) · for sale: 45 from EUR 0.80
+
+@r352665 "The Downward Spiral" by Nine Inch Nails 2004 · have 1,978 · want 734 · rating 4.76/5 (251 votes) · for sale: 9 from EUR 72.00
+```
+
+- **Where the numbers come from.** `have`, `want` and the rating come from the release record (`GET /releases/{id}`, the request `get release` and `get price` send); the count for sale and the lowest price come from the release's Marketplace stats (`GET /marketplace/stats/{id}`, the request `get price` and `get wantlist --for-sale` send), which name the currency the price is in. A part Discogs did not send is left out: no rating when nobody voted, no `have`/`want` without community data.
+- **The market line** is `· for sale: N from CUR 12.50`, the amount with the ISO code Discogs sent, never a symbol, as on `get wantlist --for-sale`. Discogs sends no count and no price (`null`) when nothing is for sale, and also when the release is blocked from sale: both print `· for sale: 0`. A count with no price prints `· for sale: 3`, with no `from`.
+- **`--currency CODE`** (`USD`, `GBP`, `EUR`, `CAD`, `AUD`, `JPY`, `CHF`, `MXN`, `BRL`, `NZD`, `SEK`, `ZAR`, any case; Tab completes it) is sent as `curr_abbr` on the stats request only, so the price is in that currency. Without it Discogs prices in the account's buyer currency, or USD without credentials, and the line names it either way. An unknown code fails with `invalid_argument` before any request. The release record cannot be asked for another currency: Discogs ignores `curr_abbr` there.
+- **Cost: 2 requests per ref** on a cold cache, the release then its stats, both cached for an hour: 20 for 10 refs. The release is read first, so a release that does not exist costs 1 request and no stats request. No username, profile or seller settings are needed, and no credentials beyond what `get release` needs. See [Caching and request budget](caching-and-budget.md#what-commands-cost).
+- **Errors are per ref**, as for every several-ref `get`: a ref that is not a release (`@m3719 is a master, not a release. Use a release ref or ID with 'get stats'.`), a 404, a 429 or a `--cached` miss on either request makes that ref its `✗` block (JSON: a `{"ref","error"}` item), never a line with half the numbers; the other refs still run, and the command exits 1. `get stats` takes `--currency`, `--json` and `--full`; any other flag fails with `invalid_argument` before any request.
+- **`--json`**: `{"ref","title","artists","year","community":{"have","want","rating","votes"},"market":{"for_sale","lowest","currency"}}`, with `"blocked": true` in `market` for a release blocked from sale; `--json --full`: `{"release": <the release record>, "marketplace_stats": <the stats record>}`. See [JSON output](json-output.md#stats).
 
 ### owned
 
@@ -534,6 +553,31 @@ agent-discogs get versions @m3719 --release-type unofficial --country UK
 
 `releases` and `versions` also take `--owned`, which marks each release row with your own copies, and `--wanted`, which marks it with your wantlist: see [Marking rows with --owned](#marking-rows-with---owned) and [Marking rows with --wanted](#marking-rows-with---wanted).
 
+#### --market
+
+`get versions @m... --market` ends each pressing's row with its Marketplace numbers, the count for sale and the lowest asking price, as `get stats` and `get wantlist --for-sale` print them, after the `--owned` and `--wanted` marks:
+
+```
+Versions of @m3719 "The Downward Spiral" (page 1, 2 of 182 versions)
+
+@r847868 1994 US · Nothing Records 92346-2 · CD, Album · have 7,621 · want 1,354 · for sale: 45 from EUR 0.79
+@r352665 2004 US · Interscope Records B0003739-36 · Album, Deluxe Edition, Remastered · have 1,978 · want 735 · for sale: 9 from EUR 71.20
+```
+
+A version row carries no market data, so the CLI asks Discogs for each row's stats (`GET /marketplace/stats/{id}`, cached for an hour) after the listing: **one request per row**, so a page of N rows costs 1 + N with `--json`, 2 + N as text (the master title of the header, read first), and 2 + N with a release ref either way (the release lookup that finds the master). `--limit 20 --market` prices the first 20; a rerun within the hour costs nothing, and a rerun after a partial read sends only the rows not read yet. `--fresh` sends them all again. No user is needed: the stats endpoint answers anonymous callers, at 25 requests a minute.
+
+- **Currency**: each price carries the code Discogs priced it in, the account's buyer currency (USD without credentials) unless `--currency CODE` asks for another; `--currency` goes on every stats request and is accepted on `get versions` only with `--market` (`--currency needs --market with get versions.`). A cache entry is per URL, so rows read in one currency are not reused for another.
+- **Nothing for sale**: Discogs sends `null` counts for a release with nothing for sale and for one blocked from sale; both print `· for sale: 0`. A count with no price prints `· for sale: 3`, with no `from`.
+- **`--max-requests N`** is accepted with `--market` and caps the whole command: the text header and the listing page are always sent, then each row's lookup only while the command has sent fewer than N requests (cache hits are free). The rows not reached are left unchecked, and a note before the footer says so: `Market: the lookups stopped at --max-requests 4 (2 of 5 rows checked): rows without "for sale:" were not checked.` Under a `--release-type` scan the cap is shared: the lookups get what the scan leaves. It takes one ref.
+- **429**: a 429 on a lookup stops the lookups and keeps the rows read, with the note `Market: a lookup was rate limited, retry in 30s (2 of 5 rows checked): ...`, exit 0; a rerun after the wait resumes from the cache. When a `--release-type` scan was itself stopped by a 429 after its first page, no lookup is sent: its rows print unchecked under `Market: the listing was rate limited, ...`. A 429 on the first listing page, or any other failure of a lookup (a 5xx, a 404 for a release Discogs removed), fails the command.
+- **`--cached`**: a row whose stats are not cached ends `· ✗ Not cached: GET /marketplace/stats/847868`, the text adds `Rerun without --cached to check the rows marked ✗.`, and the command exits 1. As text the header must be cached too, or the command fails with `cache_miss` before any row.
+- `Next page:` repeats `--market` and `--currency`.
+
+```bash
+agent-discogs get versions @m3719 --format Vinyl --market --currency EUR --limit 20
+agent-discogs get versions @m3719 --market --limit 100 --max-requests 60 --json
+```
+
 ### artist and label
 
 Every navigable name in `artist` and `label` output carries a ref: members and former members, parent label, sub-labels. Their `URLs:` line lists each linked site by domain, omitting empty entries. `Former:` lists only members Discogs marks inactive; a member with no recorded status stays under `Members:`.
@@ -547,11 +591,12 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | `release` | `-v, --verbose`, `-c, --compact`, `--master-year` |
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--wanted`, `--after` and `--max-requests` (with `--role`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--wanted`, `--after` and `--max-requests` (with `--year`) |
-| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--wanted`, `--after` and `--max-requests` (both with a `--release-type` scan) |
+| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--wanted`, `--market`, `--currency` (with `--market`), `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--market`) |
 | `collection` | no ref; `--limit`, `--page`, `--sort label\|artist\|title\|catno\|format\|rating\|added\|year`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--artist`, `--title`, `--folder`, `--fields`, `--after` and `--max-requests` (with a filter, not `--folder` alone); or `--count-by label\|year\|decade\|format\|genre\|style\|artist` with `--top`, the filters, `--folder` and `--max-requests`; or `--duplicates release\|master` with the filters, `--folder`, `--fields` and `--max-requests`; or `--value` alone |
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
 | `inventory` | one username, not a ref; `--limit`, `--page`, `--sort listed\|price\|item\|artist\|label\|catno`, `--desc`, `--owned`, `--condition`, `--sleeve`, `--ships-from`, `--in-wantlist`, `--max-price` and `--currency` (each needs the other), `--after` (with a filter) and `--max-requests` (with a filter or `--owned`) |
+| `stats` | `--currency` |
 | `artist`, `credits`, `identifiers`, `label`, `list`, `master`, `owned`, `price`, `tracklist` | none |
 
 ## tracks / price
@@ -565,7 +610,7 @@ agent-discogs price @r352665
 
 `price` prints each amount with the ISO currency code Discogs returns, never a symbol: `Mint (M): EUR 20.00`, `Lowest: GBP 9.99`. Under `--json` every price carries its `currency`: `"suggestions":{"Mint (M)":{"value":20.0,"currency":"EUR"}}`, `"market":{"for_sale":9,"lowest":9.99,"currency":"GBP"}`.
 
-The `Market: 9 for sale from 9.36` line of `get release` and `get master` is a bare amount: Discogs prices it in the token account's buyer currency (USD when unauthenticated) without naming it, so there it has no code and no `currency` key. Use `price` when the currency matters.
+The `Market: 9 for sale from 9.36` line of `get release` and `get master` is a bare amount: Discogs prices it in the token account's buyer currency (USD when unauthenticated) without naming it, so there it has no code and no `currency` key. Use [`get stats`](#stats) (the count, the lowest price and the community numbers, no seller settings needed) or `price` when the currency matters.
 
 ## Several refs
 
@@ -625,7 +670,7 @@ Tab completes every closed set of values:
 
 - commands, each under one name: the aliases (`find`, `query`, `fetch`, `show`) are not offered, but typed in full they still complete what follows;
 - option names (`--<Tab>`);
-- `get` nouns, `ids` included, the `--currency` codes of `get wantlist` and `get inventory`, and the grades of `--condition` and `--sleeve` (`M NM VG+ VG G+ G F P`);
+- `get` nouns, `ids` included, the `--currency` codes of `get wantlist`, `get inventory` and `get stats`, and the grades of `--condition` and `--sleeve` (`M NM VG+ VG G+ G F P`);
 - the `search` type word (`release`, `master`, `artist`, `label`), only as the first positional after `search` (options or `--` may come before it); the query after it gets no suggestions;
 - `search --release-type`, `search --sort`, the global `--color`, `cache clear`, the `skills` subcommands and skill names, and the `completion` shells;
 - `get --sort`: the keys of the noun typed before it (`get versions --sort <Tab>` offers `released title format label catno country`, `get collection --sort <Tab>` offers `label artist title catno format rating added year`, `get inventory --sort <Tab>` offers `listed price item artist label catno`), or every key of `releases`, `versions`, `collection` and `inventory` before a noun, and none after a noun that takes no `--sort`. A key the noun does not take is still rejected when the command runs.

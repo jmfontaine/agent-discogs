@@ -8,7 +8,7 @@ Empty fields are omitted, so test for a key rather than for null; for the `pagin
 
 Each release, master, artist, label, search result, list (`get list`) and `get lists` row also carries `url`, its page on the Discogs website, always absolute: `"url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral"`. Use it to hand a person a link; text output leaves it out to save tokens.
 
-Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link.
+Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get stats`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link.
 
 Release and master rows of `search`, and the rows of `get versions` and `get releases` (artist and label), carry Discogs' community counts as integers: `have`, how many Discogs users own the release, and `want`, how many want it (`"have":7544,"want":1113`). They come with the listing page, at no extra request. `0` is kept; a count Discogs did not send is left out, so a row with no community data has neither key. `--full` keeps them where the record holds them: `community.have`/`want` on search results, `stats.community.in_collection`/`in_wantlist` on the others.
 
@@ -107,6 +107,31 @@ Under `--wanted` (`search`, `get versions`, `get releases`; see [Marking rows wi
 - `collection` is the object `--count-by` prints. When the read stopped early, a group may lack copies and some groups may be missing.
 - `--json --full` gives each group as `{"ref", "instances"}`, `instances` being its collection records as the SDK normalizes them (`CollectionItem`), with the other keys unchanged; it reads no folder list (folders are `folder_id`s) unless `--folder` is given, and does not take `--fields`.
 
+## Stats
+
+`get stats @r... --json` prints one object per release (see [stats](commands.md#stats)); with several refs, a list in ref order, with `{"ref","error"}` items for the refs that failed:
+
+```json
+{"ref":"@r847868","title":"The Downward Spiral","artists":[{"ref":"@a3857","name":"Nine Inch Nails"}],"year":1994,"community":{"have":7618,"want":1355,"rating":4.43,"votes":602},"market":{"for_sale":45,"lowest":0.8,"currency":"EUR"}}
+```
+
+- `ref`, `title`, `artists` and `year` name the release as `get release` does, and `community` is `get release`'s object (`have`, `want`, `rating`, the average out of 5, and `votes`), except that `rating` is left out when `votes` is `0`. There is no `url`: use `get release @r... --json` for the link.
+- `market` is the release's Marketplace numbers, the object `get wantlist --for-sale` rows carry too: `{"for_sale": int, "lowest": number, "currency": string}`, the copies for sale and the lowest asking price across every condition and location, `currency` being the ISO code Discogs priced it in (the `--currency` asked for, else the account's). Discogs sends `null` for the count and the price when nothing is for sale, and also when the release is blocked from sale; a `null` count is `"for_sale": 0`. `lowest` and `currency` are omitted when Discogs gives no price, so a count with no price is `{"for_sale": 3}`. A release blocked from sale is `{"for_sale": 0, "blocked": true}`; `blocked` appears only then.
+- `--json --full` prints `{"release": <the release record>, "marketplace_stats": <the stats record>}`, both as the SDK normalizes them (`num_for_sale` and `lowest_price` `null` as Discogs sent them).
+
+## Version market
+
+Under `get versions --market` (see [--market](commands.md#--market)) each row gets `market`, the object [`get stats`](#stats) prints, after `owned` and `wanted` when those flags are given, and the document gets `market_read` next to `pagination`:
+
+```json
+{"pagination":{"page":1,"total_items":182,"total_pages":91},"results":[{"ref":"@r847868","title":"The Downward Spiral","released":"1994","country":"US","label":"Nothing Records","catno":"92346-2","format":"CD, Album","have":7621,"want":1354,"market":{"for_sale":45,"lowest":0.79,"currency":"EUR"}},{"ref":"@r352665","title":"The Downward Spiral","released":"2004","country":"US","label":"Interscope Records","catno":"B0003739-36","format":"Album, Deluxe Edition, Remastered","have":1978,"want":735,"market":null}],"market_read":{"complete":false,"rows_read":1,"rows":2,"stop_reason":"max_requests"}}
+```
+
+- `market` is `{"for_sale": int, "lowest": number, "currency": string}` (`lowest` and `currency` omitted without a price, `"blocked": true` added for a release blocked from sale), or `null` for a row whose lookup was not sent: `--max-requests` or a 429 stopped the lookups first. `null` is unchecked, not "nothing for sale", which is `{"for_sale": 0}`.
+- `market_read` is `{"complete", "rows_read", "rows"}`: whether every row was checked, how many were, and how many the page holds. When the lookups stopped short it adds `stop_reason` (`"max_requests"` or `"rate_limited"`) and, for a 429 that said when to retry, `retry_after` in seconds.
+- Under `--cached`, a row whose stats are not cached has no `market` and an `error` (`{"code":"cache_miss","message":"Not cached: GET /marketplace/stats/847868","hint":"..."}`), and the command exits 1; it counts in `rows_read`.
+- `--full` adds `market` to each version record the same way, and `market_read` to the document.
+
 ## Wantlist
 
 `get wantlist --json` is the paginated envelope (see [get wantlist](commands.md#wantlist)):
@@ -118,7 +143,7 @@ Under `--wanted` (`search`, `get versions`, `get releases`; see [Marking rows wi
 - Rows carry `ref`, `title` (`artist - title`), `year`, `label`, `catno` and `format`, plus `notes` and `rating` when set; `rating` `0` (unrated) is omitted, like any empty field. A want has no `url`.
 - `--full` prints the want records as the SDK normalizes them: `id`, `basic_information`, `notes`, `rating`, `resource_url`.
 
-With `--for-sale` (a filtered scan, so `pagination` carries `filtered`, `capped`, `next_cursor`, and `stop_reason` / `retry_after` when it stopped early; see [Pagination](#pagination)) each kept row adds `market`, the shape `price` uses:
+With `--for-sale` (a filtered scan, so `pagination` carries `filtered`, `capped`, `next_cursor`, and `stop_reason` / `retry_after` when it stopped early; see [Pagination](#pagination)) each kept row adds `market`, the object [`get stats`](#stats) prints:
 
 ```json
 {"pagination":{"page":1,"total_items":10,"total_pages":1,"filtered":true,"capped":false,"next_cursor":null},"results":[{"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral","year":1994,"label":"Nothing Records","catno":"92346-2","format":"CD (Album)","notes":"Sealed only","rating":4,"market":{"for_sale":3,"lowest":12.5,"currency":"EUR"}}]}

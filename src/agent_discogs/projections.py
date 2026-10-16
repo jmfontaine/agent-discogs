@@ -11,7 +11,7 @@ bookkeeping; its projection is ~1.5 KB.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import TypeAdapter
 
@@ -39,6 +39,9 @@ from agent_discogs.formatting import (
 )
 from agent_discogs.inventory import release_id, short_grade
 from agent_discogs.refs import make_ref
+
+if TYPE_CHECKING:
+    from agent_discogs.wantlist import Market
 
 
 def drop_empty(value: Any) -> Any:
@@ -166,7 +169,6 @@ def project_release(
     """The `get release` view. Under `--master-year`, `master_year` (the
     master's year) or `master_year_error` (why it was not read) follow `master`."""
     community = getattr(rel, "community", None)
-    rating = getattr(community, "rating", None)
     master_id = getattr(rel, "master_id", None)
     tracklist = getattr(rel, "tracklist", None) or []
     data = {
@@ -192,12 +194,7 @@ def project_release(
         "master": make_ref("master", master_id) if master_id else None,
         "master_year": master_year,
         "master_year_error": master_year_error,
-        "community": {
-            "have": getattr(community, "have", None),
-            "want": getattr(community, "want", None),
-            "rating": getattr(rating, "average", None),
-            "votes": getattr(rating, "count", None),
-        },
+        "community": _community(community),
         "market": {
             "for_sale": getattr(rel, "num_for_sale", None),
             "lowest": getattr(rel, "lowest_price", None),
@@ -214,6 +211,52 @@ def project_release(
         data["credits"] = project_credits(rel)
         data["identifiers"] = project_identifiers(rel)
     return drop_empty(data)
+
+
+def _community(community: Any) -> dict[str, Any]:
+    """A release's `community` object: `have`, `want`, the rating and its
+    vote count."""
+    rating = getattr(community, "rating", None)
+    return {
+        "have": getattr(community, "have", None),
+        "want": getattr(community, "want", None),
+        "rating": getattr(rating, "average", None),
+        "votes": getattr(rating, "count", None),
+    }
+
+
+def project_market(market: Market, *, blocked: bool = False) -> dict[str, Any]:
+    """The `market` object of a release's Marketplace numbers: `for_sale`
+    (0 included), then `lowest` and its `currency` when Discogs priced it,
+    and `"blocked": true` only for a release blocked from sale."""
+    lowest = market.lowest
+    return drop_empty(
+        {
+            "for_sale": market.for_sale,
+            "lowest": getattr(lowest, "value", None),
+            "currency": getattr(lowest, "currency", None),
+            "blocked": True if blocked else None,
+        }
+    )
+
+
+def project_stats(rel: Any, market: Market, *, blocked: bool) -> dict[str, Any]:
+    """The `get stats` view: the release, named as `get release` names it,
+    its `community` object (no `rating` when nobody voted, as the text shows
+    none) and its `market` object."""
+    community = _community(getattr(rel, "community", None))
+    if not community["votes"]:
+        community["rating"] = None
+    return drop_empty(
+        {
+            "ref": make_ref("release", rel.id),
+            "title": rel.title,
+            "artists": _artist_refs(getattr(rel, "artists", None)),
+            "year": known_year(getattr(rel, "year", None)),
+            "community": community,
+            "market": project_market(market, blocked=blocked),
+        }
+    )
 
 
 def project_credits(rel: Any) -> dict[str, list[dict[str, Any]]]:
