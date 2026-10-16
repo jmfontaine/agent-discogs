@@ -17,7 +17,9 @@ Discogs uses a two-level system: **genre** (broad category) and **style** (sub-g
 
 ### All 15 genres
 
-Blues, Brass & Military, Children's, Classical, Electronic, Folk World & Country, Funk / Soul, Hip-Hop, Jazz, Latin, Non-Music, Pop, Reggae, Rock, Stage & Screen.
+Blues; Brass & Military; Children's; Classical; Electronic; Folk, World, & Country; Funk / Soul; Hip-Hop; Jazz; Latin; Non-Music; Pop; Reggae; Rock; Stage & Screen.
+
+A genre name can hold commas: quote it whole, `--genre "Folk, World, & Country"`. Text views separate genres and styles with `;`; `--json` gives arrays.
 
 ### Key rules
 

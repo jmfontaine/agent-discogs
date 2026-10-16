@@ -1,11 +1,12 @@
 """Tests for `get` with several refs, and for the release details its
-views show: unknown dates, format entries, date added, index tracks and
-track credits."""
+views show: unknown dates, format entries, date added, index tracks, track
+credits and the master's year."""
 
 from __future__ import annotations
 
 import json
 
+import httpx2
 import pytest
 from click.testing import CliRunner
 from discogs_sdk import (
@@ -19,9 +20,11 @@ from agent_discogs import cli
 from agent_discogs.pagination import PageResult
 from tests.conftest import (
     UseClient,
+    _FakeAPI,
     fake,
     fake_client,
     fake_model,
+    json_error,
     text_error,
 )
 
@@ -550,3 +553,237 @@ class TestTrackCredits:
             "Mixed By": [{"ref": "@a3", "name": "Ann", "tracks": "2.a"}],
             "Producer": [{"ref": "@a20661", "name": "Flood"}],
         }
+
+
+class _Masters:
+    """`/releases/{id}` answers with its `master_id` from `releases` (None:
+    no master), `/masters/{id}` with its `year` from `years` (1959 unless
+    given; None: no year). A path in `status` answers with that status."""
+
+    def __init__(
+        self,
+        releases: dict[int, int | None],
+        years: dict[int, object] | None = None,
+        status: dict[str, int] | None = None,
+    ) -> None:
+        self.releases, self.years = releases, years or {}
+        self.status = status or {}
+
+    def __call__(self, path: str, _params: dict[str, str]) -> object:
+        if path in self.status:
+            return httpx2.Response(self.status[path], json={"message": "Nope."})
+        kind, _, number = path.strip("/").partition("/")
+        entity_id = int(number)
+        if kind == "releases":
+            master_id = self.releases[entity_id]
+            release = {"id": entity_id, "title": f"Release {entity_id}"}
+            return release | ({"master_id": master_id} if master_id else {})
+        year = self.years.get(entity_id, 1959)
+        return {"id": entity_id, "title": "Kind Of Blue"} | (
+            {} if year is None else {"year": year}
+        )
+
+
+class TestMasterYear:
+    """`get release --master-year` reads the master after the release, one
+    request shared with `get master`, and shows its year."""
+
+    def _api(self, monkeypatch: pytest.MonkeyPatch, masters: _Masters) -> _FakeAPI:
+        return _FakeAPI(monkeypatch, masters)
+
+    @staticmethod
+    def _paths(api: _FakeAPI) -> list[str]:
+        return [path for path, _params in api.sends]
+
+    def test_without_the_flag_only_the_release_is_read(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = self._api(monkeypatch, _Masters({5928185: 5460}))
+        result = CliRunner().invoke(cli, ["get", "release", "@r5928185"])
+        assert result.exit_code == 0, result.output
+        assert api.sends == [("/releases/5928185", {})]
+        assert "Master: @m5460" in result.stdout.splitlines()
+
+    def test_the_master_year_costs_one_cached_request(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = self._api(monkeypatch, _Masters({5928185: 5460}))
+        argv = ["get", "release", "@r5928185", "--master-year"]
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 0, result.output
+        assert self._paths(api) == ["/releases/5928185", "/masters/5460"]
+        assert "Master: @m5460 (1959)" in result.stdout.splitlines()
+        again = CliRunner().invoke(cli, argv)
+        assert again.stdout == result.stdout
+        assert len(api.sends) == 2  # the second run is all cache hits
+
+    @pytest.mark.parametrize(
+        ("flags", "master_sends"), [([], 1), (["--fresh"], 2)], ids=["cached", "fresh"]
+    )
+    def test_releases_of_one_master_share_its_request(
+        self, monkeypatch: pytest.MonkeyPatch, flags: list[str], master_sends: int
+    ) -> None:
+        api = self._api(monkeypatch, _Masters({5928185: 5460, 1: 5460}))
+        result = CliRunner().invoke(
+            cli, [*flags, "get", "release", "@r5928185", "@r1", "--master-year"]
+        )
+        assert result.exit_code == 0, result.output
+        assert self._paths(api).count("/masters/5460") == master_sends
+        assert result.stdout.splitlines().count("Master: @m5460 (1959)") == 2
+
+    def test_a_release_without_master_sends_nothing_more(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = self._api(monkeypatch, _Masters({7: None}))
+        result = CliRunner().invoke(cli, ["get", "release", "@r7", "--master-year"])
+        assert result.exit_code == 0, result.output
+        assert self._paths(api) == ["/releases/7"]
+        assert "Master:" not in result.stdout
+        data = json.loads(
+            CliRunner()
+            .invoke(cli, ["get", "release", "@r7", "--master-year", "--json"])
+            .stdout
+        )
+        assert "master_year" not in data
+        assert "master_year_error" not in data
+
+    @pytest.mark.parametrize("year", [0, None], ids=["zero", "absent"])
+    def test_an_unknown_master_year_prints_no_year(
+        self, monkeypatch: pytest.MonkeyPatch, year: object
+    ) -> None:
+        self._api(monkeypatch, _Masters({5928185: 5460}, years={5460: year}))
+        result = CliRunner().invoke(
+            cli, ["get", "release", "@r5928185", "--master-year"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "Master: @m5460" in result.stdout.splitlines()
+        assert "✗" not in result.stdout
+        data = json.loads(
+            CliRunner()
+            .invoke(cli, ["get", "release", "@r5928185", "--master-year", "--json"])
+            .stdout
+        )
+        assert data["master"] == "@m5460"
+        assert "master_year" not in data
+        assert "master_year_error" not in data
+
+    def test_a_deleted_master_is_reported_inline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        masters = _Masters({5928185: 5460, 1: 6000}, status={"/masters/5460": 404})
+        self._api(monkeypatch, masters)
+        argv = ["get", "release", "@r5928185", "@r1", "--master-year"]
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 0, result.output
+        lines = result.stdout.splitlines()
+        assert '@r5928185 [release] "Release 5928185" by Unknown Artist' in lines
+        assert "Master: @m5460 · ✗ Master @m5460 not found." in lines
+        assert "Master: @m6000 (1959)" in lines
+        result = CliRunner().invoke(cli, [*argv, "--json"])
+        assert result.exit_code == 0, result.output
+        first, second = json.loads(result.stdout)
+        assert first["title"] == "Release 5928185"
+        assert first["master"] == "@m5460"
+        assert "master_year" not in first
+        assert first["master_year_error"]["code"] == "not_found"
+        assert first["master_year_error"]["message"] == "Master @m5460 not found."
+        assert second["master_year"] == 1959
+
+    def test_a_cached_miss_on_the_master_is_reported_inline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = self._api(monkeypatch, _Masters({5928185: 5460, 1: 6000}))
+        # Cache both releases and one master, not the other.
+        CliRunner().invoke(cli, ["get", "release", "@r5928185"])
+        CliRunner().invoke(cli, ["get", "release", "@r1", "--master-year"])
+        sent = len(api.sends)
+        argv = ["--cached", "get", "release", "@r5928185", "@r1", "--master-year"]
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 0, result.output
+        assert len(api.sends) == sent
+        lines = result.stdout.splitlines()
+        assert '@r5928185 [release] "Release 5928185" by Unknown Artist' in lines
+        assert "Master: @m5460 · ✗ Not cached: GET /masters/5460" in lines
+        assert "Master: @m6000 (1959)" in lines
+        result = CliRunner().invoke(cli, [*argv, "--json"])
+        assert result.exit_code == 0, result.output
+        first, second = json.loads(result.stdout)
+        assert "master_year" not in first
+        assert first["master_year_error"]["code"] == "cache_miss"
+        assert second["master_year"] == 1959
+        assert len(api.sends) == sent
+
+    @pytest.mark.parametrize("status", [429, 500])
+    def test_any_other_master_failure_fails_the_ref(
+        self, monkeypatch: pytest.MonkeyPatch, status: int
+    ) -> None:
+        masters = _Masters({5928185: 5460, 1: 6000}, status={"/masters/5460": status})
+        api = self._api(monkeypatch, masters)
+        argv = ["get", "release", "@r5928185", "@r1", "--master-year"]
+        result = CliRunner().invoke(cli, [*argv, "--json"])
+        assert result.exit_code == 1
+        first, second = json.loads(result.stdout)
+        assert set(first) == {"ref", "error"}
+        assert first["ref"] == "@r5928185"
+        assert second["master_year"] == 1959
+        # One send each: no retry.
+        assert self._paths(api).count("/masters/5460") == 1
+        result = CliRunner().invoke(cli, ["--fresh", *argv])
+        assert result.exit_code == 1
+        assert "Release 5928185" not in result.stdout
+        assert result.stdout.startswith("✗ ")
+        assert "Master: @m6000 (1959)" in result.stdout.splitlines()
+
+    def test_a_missing_release_sends_no_master_request(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        masters = _Masters({5928185: 5460}, status={"/releases/5928185": 404})
+        api = self._api(monkeypatch, masters)
+        result = CliRunner().invoke(
+            cli, ["get", "release", "@r5928185", "--master-year"]
+        )
+        assert "Release @r5928185 not found." in text_error(result)
+        assert self._paths(api) == ["/releases/5928185"]
+
+    def test_json_shapes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._api(monkeypatch, _Masters({5928185: 5460}))
+        base = ["get", "release", "@r5928185", "--json"]
+        data = json.loads(CliRunner().invoke(cli, [*base, "--master-year"]).stdout)
+        keys = list(data)
+        assert keys[keys.index("master") + 1] == "master_year"
+        assert data["master_year"] == 1959
+        full = json.loads(
+            CliRunner().invoke(cli, [*base, "--full", "--master-year"]).stdout
+        )
+        assert full["master_id"] == 5460
+        assert full["master_year"] == 1959
+        assert "master_year" not in json.loads(CliRunner().invoke(cli, base).stdout)
+        plain = json.loads(CliRunner().invoke(cli, [*base, "--full"]).stdout)
+        assert "master_year" not in plain
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["get", "master", "@m3719", "--master-year"],
+            ["get", "versions", "@m3719", "--master-year"],
+            ["get", "release", "@r1", "--master-year", "--max-requests", "2"],
+        ],
+        ids=["master", "versions", "max-requests"],
+    )
+    def test_rejected_where_it_does_not_apply(
+        self, monkeypatch: pytest.MonkeyPatch, argv: list[str]
+    ) -> None:
+        api = self._api(monkeypatch, _Masters({1: 5460}))
+        error = json_error(CliRunner().invoke(cli, [*argv, "--json"]))
+        assert error["code"] == "invalid_argument"
+        assert api.sends == []
+
+    def test_rejection_message_on_get_master(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch, _Masters({}))
+        result = CliRunner().invoke(cli, ["get", "master", "@m3719", "--master-year"])
+        assert (
+            "--master-year does not apply to 'get master'. "
+            "'get master' takes only --json and --full."
+        ) in text_error(result)

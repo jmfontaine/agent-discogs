@@ -68,6 +68,16 @@ class TestCacheFlags:
         assert "--cached and --fresh are mutually exclusive." in result.stderr
         assert self.log == []
 
+    def test_flag_after_the_command_names_its_place(self) -> None:
+        result = CliRunner().invoke(cli, ["cache", "--fresh"])
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert result.stderr.endswith(
+            "\n\nError: No such option '--fresh'. It is a global option: put it"
+            " before the command, as in 'agent-discogs --fresh cache ...'.\n"
+        )
+        assert self.log == []
+
     def test_scope_waits_for_a_client(self) -> None:
         result = CliRunner().invoke(cli, ["--cached", "status"])
         assert result.exit_code == 0
