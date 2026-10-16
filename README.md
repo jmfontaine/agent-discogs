@@ -141,6 +141,7 @@ Smart resolution: `get versions @r352665` auto-resolves the release to its maste
 - [Caching and request budget](https://github.com/jmfontaine/agent-discogs/blob/main/docs/caching-and-budget.md): `--cached` / `--fresh`, cache errors, rate limits, what each command costs, `--max-requests`.
 - [Errors](https://github.com/jmfontaine/agent-discogs/blob/main/docs/errors.md): the error layout, error codes, and the 401, 429 and connection-error hints.
 - [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md): the `--debug` panel, output encoding, how Discogs text is neutralized, and `--color`.
+- [What the Discogs API cannot answer](https://github.com/jmfontaine/agent-discogs/blob/main/docs/api-limits.md): sales history, the worth of one record or a folder, who sells a release, alerts, finding sellers, tempo and key, writes; and what to do instead.
 
 ## License
 

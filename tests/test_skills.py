@@ -79,6 +79,11 @@ class TestSkillsCommand:
     def test_get_core_prints_the_guide_without_references(self) -> None:
         assert "## Core Workflow" in _get("core")
 
+    def test_get_core_says_what_the_api_cannot_answer(self) -> None:
+        # Loaded in every session, so an agent sees the limits before it
+        # spends requests looking for a missing endpoint.
+        assert "## What the Discogs API cannot answer" in _get("core")
+
     def test_get_core_full_appends_its_references(self) -> None:
         brief = _get("core")
         full = _get("core", "--full")
