@@ -766,6 +766,77 @@ class TestDuplicates:
         assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, _FIELDS]
         assert _document(result)["collection"]["records_read"] == 0
 
+    def test_an_artist_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Release 9: records 20 and 21 credit Guest (21 with Artist too),
+        # record 22 Artist alone; release 7's copies (3, 120) credit Artist.
+        guest = [{"id": 5, "name": "Guest", "join": ""}]
+        both = [{"id": 4242, "name": "Artist", "join": "&"}, *guest]
+        odd = {
+            20: _copy(20, 9, 1, artists=guest),
+            21: _copy(21, 9, 1, artists=both),
+            22: _copy(22, 9, 1),
+        }
+        h = _Harness(monkeypatch, _Collection(odd=odd))
+        base = ["get", "collection", "--duplicates", "release", "--artist"]
+        result, _ = h.run(*base, "guest", "--json")
+        assert _groups(result) == [("@r9", 2)]
+        assert _document(result)["records"] == 2
+        assert _document(result)["collection"] == _COMPLETE
+        result, _ = h.run(*base, "artist", "--json")
+        assert _groups(result) == [("@r7", 2), ("@r9", 2)]
+        assert _document(result)["records"] == 249
+        text, _ = h.run(*base, "guest")
+        assert text.stdout.splitlines()[0] == (
+            "Duplicates: me artist=guest by release (1 release owned more than "
+            "once, 2 copies, in 2 of 250 records)"
+        )
+
+    def test_one_folder_with_a_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # To Sell holds release 9 twice as Techno (records 20, 21) and
+        # release 8 twice as House (23, 24); a third Techno copy of release
+        # 9 (record 22) is in Uncategorized.
+        odd = {
+            20: _copy(20, 9, 7, styles=["Techno"]),
+            21: _copy(21, 9, 7, styles=["Techno"]),
+            22: _copy(22, 9, 1, styles=["Techno"]),
+            23: _copy(23, 8, 7),
+            24: _copy(24, 8, 7),
+        }
+        h = _Harness(monkeypatch, _Collection(odd=odd))
+        argv = ["get", "collection", "--folder", "To Sell", "--style", "techno"]
+        result, sent = h.run(*argv, "--duplicates", "release", "--json")
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, _folder(7)]
+        document = _document(result)
+        assert _groups(result) == [("@r9", 2)]
+        assert document["groups"][0]["folders"] == ["To Sell"]
+        assert document["records"] == 2
+        assert document["collection"] == {
+            "complete": True,
+            "records_read": 4,
+            "total_records": 4,
+        }
+        text, _ = h.run(*argv, "--duplicates", "release")
+        assert text.stdout.splitlines()[0] == (
+            'Duplicates: me folder="To Sell" style=techno by release (1 release '
+            "owned more than once, 2 copies, in 2 of 4 records)"
+        )
+
+    def test_one_folder_with_fields(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Record 120, release 7's second copy, moves to Vinyl beside record 3.
+        h = _Harness(monkeypatch, _Collection(odd={120: _copy(120, 7, 5)}))
+        argv = ["get", "collection", "--folder", "vinyl", "--duplicates", "release"]
+        result, sent = h.run(*argv, "--fields", "--json")
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, _FIELDS, _folder(5)]
+        (group,) = _document(result)["groups"]
+        assert (group["ref"], group["copies"]) == ("@r7", 2)
+        assert group["folders"] == ["Vinyl"]
+        assert group["fields"] == {"Media Condition": "VG+", "Notes": "Shelf A3"}
+        assert _document(result)["collection"]["total_records"] == 2
+        text, _ = h.run(*argv, "--fields")
+        assert text.stdout.splitlines()[2] == (
+            f"{_ROW_7} · folder Vinyl · Media Condition: VG+ · Notes: Shelf A3"
+        )
+
     def test_the_cache(self, monkeypatch: pytest.MonkeyPatch) -> None:
         h = _Harness(monkeypatch)
         argv = ["get", "collection", "--duplicates", "release"]
