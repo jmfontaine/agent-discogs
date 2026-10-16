@@ -72,7 +72,7 @@ agent-discogs search [type] <query> [--flags]
 | Flag | Description |
 |------|-------------|
 | `--artist` | Filter by artist name |
-| `--barcode` | Filter by barcode |
+| `--barcode` | Match identifier text (barcode, matrix/runout etching) |
 | `--catno` | Filter by catalog number |
 | `--country` | Filter by country |
 | `--desc` | With `--sort`: descending (newest first) |
@@ -102,6 +102,7 @@ agent-discogs search label "Nothing Records"
 agent-discogs search master "The Downward Spiral"
 agent-discogs search release --catno "INT-92346"
 agent-discogs search release --barcode "606949235024"
+agent-discogs search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all   # runout etching
 agent-discogs search release "Blue Monday" --artist "New Order"
 agent-discogs search release "Pretty Hate Machine" --format "Vinyl" --country US
 agent-discogs search release "The Downward Spiral" --release-type all --page 2 --limit 10

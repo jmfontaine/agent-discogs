@@ -59,19 +59,9 @@ Effective filter combinations for narrowing results:
 | Region-specific | `--country US` or `--country UK` or `--country Japan` |
 | Genre exploration | `--genre "Electronic" --style "Industrial"` (Electronic requires a style) |
 
-## Catalog Number and Barcode Searches
+## Catalog Number, Barcode and Runout Searches
 
-When you have a catalog number or barcode, these are the most precise search methods:
-
-```bash
-# Catalog number — often printed on the spine/label of a record
-agent-discogs search release --catno "INT-92346"
-
-# Barcode — UPC/EAN from the packaging
-agent-discogs search release --barcode "606949235024"
-```
-
-These typically return very few results (often exactly 1), making them ideal for identifying a specific pressing.
+`search release --catno "INT-92346"` and `search release --barcode "606949235024"` are the most precise searches. `--barcode` matches identifier text, runout etchings included: how to type it and confirm a match is in `agent-discogs skills get pressings --full`, section Catalog Number, Barcode and Runout Searches.
 
 ## Handling Ambiguous Results
 

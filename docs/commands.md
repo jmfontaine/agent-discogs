@@ -46,6 +46,14 @@ A query starting with `-` goes after `--` (`agent-discogs search --release-type 
 
 Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for JSON output (see [JSON output](json-output.md)).
 
+`--barcode` is matched against a release's identifier text, not only as a UPC/EAN: it also finds pressings by their matrix/runout etching, the one search that does. Other identifier types (label codes, for instance) have not been checked, so do not rely on them. For example, this finds the UK LP pressings whose runout contains `A3 TOWNHOUSE`:
+
+```bash
+agent-discogs search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all
+```
+
+Type a barcode as digits without spaces (`--barcode 602527826486`): `"6 02527 82648 6"` also matched an unrelated release. The value is matched as text, not as a number, so the barcode without its check digit (`60252782648`) found the same releases. Discogs writes some etchings in more than one way, so try each spelling (`TOWNHOUSE` and `TOWN HOUSE`): one can miss releases the other finds.
+
 ### Sorting
 
 `search release ... --sort date_added` orders results by when they were added to Discogs; add `--desc` for newest first.

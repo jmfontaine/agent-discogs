@@ -47,6 +47,10 @@ Search Flags:  --artist, --barcode, --catno, --country, --format, --genre,
                --label, --owned, --style, --year; --release-type official
                (default; a client-side scan on release, master and untyped
                searches) | unofficial | all
+Search --barcode:
+               matches identifier text, not only a UPC/EAN: it finds pressings
+               by matrix/runout etching; type a barcode without spaces; try
+               'TOWNHOUSE' and 'TOWN HOUSE'
 Search Auth:   Discogs documents search as needing credentials (see
                Environment); unauthenticated searches currently get answers,
                but Discogs may refuse one with auth_required
