@@ -8,13 +8,15 @@ folder once per invocation through the filtered-scan machinery
 (`fetch_filtered_page`, keeping every row), so `--max-requests` and a 429
 stop it the way they stop any scan, and matches list rows against it. `get
 owned` asks about one release at a time. `get collection` lists the same
-folder (`records()`), a page at a time or, with a filter
-(`record_filter()`), through a scan.
+folder, or with `--folder` another one (`records()`), a page at a time or,
+with a filter (`record_filter()`), through a scan; with `--fields` it names
+each copy's notes and custom fields (`custom_fields()`, `field_values()`).
 """
 
 from __future__ import annotations
 
 import functools
+import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +26,7 @@ import click
 from discogs_sdk import RateLimitError
 
 from agent_discogs import account, trace
+from agent_discogs.inventory import short_grade
 from agent_discogs.pagination import (
     MAX_LIMIT,
     Listing,
@@ -42,12 +45,13 @@ if TYPE_CHECKING:
     from discogs_sdk import Discogs
 
 # The folder every collection has, holding every record of the others.
-_ALL_FOLDER = 0
+ALL_FOLDER = 0
 
 # ctx.meta keys: one collection read and one folder list per invocation, even
 # for several refs under --fresh.
 _OWNERSHIP = "agent_discogs.ownership"
 _FOLDER_NAMES = "agent_discogs.folder_names"
+_CUSTOM_FIELDS = "agent_discogs.custom_fields"
 
 # The collection value's amounts, in the order every view gives them.
 _AMOUNTS = ("minimum", "median", "maximum")
@@ -81,23 +85,74 @@ def valuation(client: Discogs) -> Valuation:
     return Valuation(account.currency(user), user.collection.value.get())
 
 
-def records(user: Any, *, sort: str | None = None, desc: bool = False) -> Listing:
-    """Every record of the user's collection: the "All" folder, in `sort`
-    order (Discogs' own without one). `get collection` and the `--owned`
-    read both list it here, so without `--sort` they send the same requests
-    and share their cache entries."""
+def records(
+    user: Any,
+    *,
+    folder: int = ALL_FOLDER,
+    sort: str | None = None,
+    desc: bool = False,
+) -> Listing:
+    """The records of one of the user's folders, by default the "All"
+    folder, every record, in `sort` order (Discogs' own without one). `get
+    collection` and the `--owned` read both list the "All" folder here, so
+    without `--sort` they send the same requests and share their cache
+    entries."""
     return functools.partial(
-        user.collection.folders.get(_ALL_FOLDER).releases.list,
+        user.collection.folders.get(folder).releases.list,
         **sort_params(sort, desc),
     )
 
 
-def _record_values(record: Any) -> dict[str, set[str]]:
-    """What each `get collection` filter matches on a record, casefolded: its
-    format names and descriptions, genres, styles, label names and year."""
+def folder_id(names: dict[int, str], name: str) -> int:
+    """The id of the folder `name` names in `names` (the folder list), any
+    case. No folder, or more than one, by that name raises `ValueError`
+    naming the folders."""
+    wanted = name.casefold()
+    found = [(i, folder) for i, folder in names.items() if folder.casefold() == wanted]
+    if not found:
+        listed = ", ".join(names.values())
+        raise ValueError(
+            f'--folder "{name}" matches no folder. Your folders: {listed}.'
+        )
+    if len(found) > 1:
+        both = ", ".join(f"{folder} (id {i})" for i, folder in found)
+        raise ValueError(f'--folder "{name}" matches more than one folder: {both}.')
+    return found[0][0]
+
+
+def matcher(pattern: str) -> Callable[[str], bool]:
+    """Whether a value matches `pattern`, as every `get collection` filter
+    matches: the whole value, ignoring case (`str.casefold`), with `*` for
+    any run of characters (none included). `\\` makes the next character
+    literal (`\\*`, `\\\\`); a trailing lone `\\` is a backslash. Nothing
+    else is special: `?`, `[` and regular-expression characters are
+    literal."""
+    pieces: list[str] = []
+    literal: list[str] = []
+    chars = iter(pattern)
+    for char in chars:
+        if char == "\\":
+            literal.append(next(chars, "\\"))
+        elif char == "*":
+            pieces.append("".join(literal))
+            literal = []
+        else:
+            literal.append(char)
+    pieces.append("".join(literal))
+    compiled = re.compile(
+        ".*".join(re.escape(piece.casefold()) for piece in pieces), re.DOTALL
+    )
+    return lambda value: compiled.fullmatch(value.casefold()) is not None
+
+
+def _record_values(record: Any) -> dict[str, list[str]]:
+    """What each `get collection` filter matches on a record: its format
+    names and descriptions, genres, styles, label names, year (as decimal
+    text), credited artist names and title."""
     release = getattr(record, "basic_information", None)
     formats = getattr(release, "formats", None) or []
     year = getattr(release, "year", None)
+    title = getattr(release, "title", None)
     values = {
         "format": [
             value for f in formats for value in (f.name, *(f.descriptions or []))
@@ -106,22 +161,24 @@ def _record_values(record: Any) -> dict[str, set[str]]:
         "style": getattr(release, "styles", None) or [],
         "label": [label.name for label in getattr(release, "labels", None) or []],
         "year": [str(year)] if year else [],
+        "artist": [a.name for a in getattr(release, "artists", None) or []],
+        "title": [title] if title else [],
     }
-    return {key: {v.casefold() for v in found if v} for key, found in values.items()}
+    return {key: [v for v in found if v] for key, found in values.items()}
 
 
 def record_filter(filters: dict[str, str]) -> Callable[[Any], bool] | None:
     """The `keep` predicate of a filtered `get collection`, or None without a
-    filter. `filters` maps `format`, `genre`, `style`, `label` or `year` to
-    the value asked for; a record is kept when, for every filter, one of its
-    values equals it, ignoring case."""
-    wanted = {key: value.casefold() for key, value in filters.items()}
+    filter. `filters` maps `format`, `genre`, `style`, `label`, `year`,
+    `artist` or `title` to the pattern asked for; a record is kept when, for
+    every filter, one of its values matches it (`matcher()`)."""
+    wanted = {key: matcher(pattern) for key, pattern in filters.items()}
     if not wanted:
         return None
 
     def keep(record: Any) -> bool:
         values = _record_values(record)
-        return all(value in values[key] for key, value in wanted.items())
+        return all(any(map(match, values[key])) for key, match in wanted.items())
 
     return keep
 
@@ -307,6 +364,71 @@ def folder_name(names: dict[int, str], folder_id: int | None) -> str | None:
     if folder_id is None:
         return None
     return names.get(folder_id, f"folder {folder_id}")
+
+
+@dataclass(frozen=True)
+class CustomField:
+    """One of the user's collection fields: the `name` a row prints it under
+    and whether it is a dropdown, whose grade values print as short codes."""
+
+    name: str
+    dropdown: bool
+
+
+def custom_fields(user: Any) -> dict[int, CustomField]:
+    """The user's notes and custom fields by id, in the order Discogs shows
+    them (`position`, then id; a field with no position last): one request
+    (`GET .../collection/fields`), at most once per invocation. A name
+    another field also prints under becomes `Name (field N)`, so every key
+    of a row is unique."""
+    meta = click.get_current_context().meta
+    if _CUSTOM_FIELDS not in meta:
+        listed = sorted(
+            user.collection.fields.list(),
+            key=lambda f: (f.position is None, f.position or 0, f.id),
+        )
+        keys = {f.id: f.name for f in listed}
+        # Suffixing a shared name can produce another field's own name
+        # (`Box (field 7)`), so repeat until no two keys clash. No two
+        # suffixed keys can clash (each ends in its own id), so every pass
+        # suffixes a plain name, and it ends.
+        while True:
+            counts = Counter(keys.values())
+            clashing = [f for f in listed if counts[keys[f.id]] > 1]
+            if not clashing:
+                break
+            for f in clashing:
+                keys[f.id] = f"{f.name} (field {f.id})"
+        meta[_CUSTOM_FIELDS] = {
+            f.id: CustomField(keys[f.id], f.type == "dropdown") for f in listed
+        }
+    return meta[_CUSTOM_FIELDS]
+
+
+def field_values(record: Any, fields: dict[int, CustomField]) -> dict[str, str]:
+    """A copy's non-empty notes by field name, in the fields' order: a grade
+    in a dropdown as its short code (`VG+`), anything else as sent. A note
+    whose field the list lacks comes last, as `field N` (`field N (field N)`
+    when a field of the list is named `field N`); one with no field id is
+    dropped."""
+    sent: dict[int, str] = {}
+    for note in getattr(record, "notes", None) or []:
+        if note.field_id is not None and note.value:
+            sent.setdefault(note.field_id, note.value)
+    values: dict[str, str] = {}
+    for field_id, field in fields.items():
+        if field_id in sent:
+            value = sent[field_id]
+            values[field.name] = (
+                (short_grade(value) or value) if field.dropdown else value
+            )
+    names = {field.name for field in fields.values()}
+    for field_id in sorted(sent.keys() - fields.keys()):
+        key = f"field {field_id}"
+        while key in names:
+            key = f"{key} (field {field_id})"
+        values[key] = sent[field_id]
+    return values
 
 
 def copies(client: Discogs, release_id: int, *, folders: bool) -> Copies:

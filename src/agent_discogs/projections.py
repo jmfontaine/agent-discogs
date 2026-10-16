@@ -16,9 +16,9 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from agent_discogs import markup
-from agent_discogs.collection import folder_name
+from agent_discogs.collection import CustomField, field_values, folder_name
 from agent_discogs.formatting import (
-    _community_have,
+    _community_counts,
     _format_string,
     _ref_type,
     _urls_short,
@@ -118,7 +118,7 @@ def project_search_result(r: Any) -> dict[str, Any]:
             "label": label[0] if label else None,
             "catno": getattr(r, "catalog_number", None),
             "format": getattr(r, "format", None),
-            "have": _community_have(r),
+            **_community_counts(r),
             "master": make_ref("master", master_id)
             if entity_type == "release" and master_id
             else None,
@@ -328,6 +328,7 @@ def project_label_release(rel: Any) -> dict[str, Any]:
             "year": known_year(getattr(rel, "year", None)),
             "catno": getattr(rel, "catalog_number", None),
             "format": getattr(rel, "format", None),
+            **_community_counts(rel),
         }
     )
 
@@ -364,7 +365,7 @@ def project_master_version(ver: Any) -> dict[str, Any]:
             "label": getattr(ver, "label", None),
             "catno": getattr(ver, "catalog_number", None),
             "format": getattr(ver, "format", None),
-            "have": _community_have(ver),
+            **_community_counts(ver),
         }
     )
 
@@ -381,6 +382,7 @@ def project_artist_release(rel: Any) -> dict[str, Any]:
             "role": getattr(rel, "role", None),
             "label": getattr(rel, "label", None),
             "format": getattr(rel, "format", None),
+            **_community_counts(rel),
         }
     )
 
@@ -453,24 +455,48 @@ def project_list(found: Any) -> dict[str, Any]:
     )
 
 
-def project_record(record: Any, folders: dict[int, str]) -> dict[str, Any]:
+def _credits(artists: list[Any] | None) -> list[dict[str, Any]]:
+    """A record's artists in credit order, each its ref and name as far as
+    known; a credit with neither is dropped. No `join`: the row's title
+    carries the joins."""
+    known = (
+        drop_empty({"ref": a["ref"], "name": a["name"]}) for a in _artist_refs(artists)
+    )
+    return [credit for credit in known if credit]
+
+
+def project_record(
+    record: Any,
+    folders: dict[int, str],
+    fields: dict[int, CustomField] | None = None,
+) -> dict[str, Any]:
     """A `get collection` row: one copy, its release titled like a search
     result, with the copy's folder by name (`folders`), `added`, its full
-    RFC 3339 timestamp, and `rating` (Discogs' 0 is unrated)."""
+    RFC 3339 timestamp, `rating` (Discogs' 0 is unrated) and, with the
+    user's custom `fields` (`--fields`), its notes by field name.
+
+    Unlike the text row, it also carries the release's artists, genres,
+    styles and master (Discogs' master 0 is none), from the same response."""
     release = getattr(record, "basic_information", None)
     labels = getattr(release, "labels", None) or []
     first = labels[0] if labels else None
+    master_id = getattr(release, "master_id", None)
     return drop_empty(
         {
             "ref": make_ref("release", record.id),
             "title": artist_title(release),
+            "artists": _credits(getattr(release, "artists", None)),
             "year": known_year(getattr(release, "year", None)),
             "label": getattr(first, "name", None),
             "catno": getattr(first, "catalog_number", None),
             "format": _format_string(getattr(release, "formats", None)),
+            "genres": getattr(release, "genres", None),
+            "styles": getattr(release, "styles", None),
+            "master": make_ref("master", master_id) if master_id else None,
             "folder": folder_name(folders, getattr(record, "folder_id", None)),
             "added": _timestamp(getattr(record, "date_added", None)),
             "rating": getattr(record, "rating", None) or None,
+            "fields": None if fields is None else field_values(record, fields),
         }
     )
 

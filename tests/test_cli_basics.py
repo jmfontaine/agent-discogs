@@ -138,7 +138,8 @@ class TestCLIBasics:
         ("option", "error"),
         [
             ("--xyzzy", "No such option '--xyzzy'."),
-            ("--ful", "No such option '--ful'. Did you mean '--full'?"),
+            # One close match only: `--ful` would also suggest `--folder`.
+            ("--fulll", "No such option '--fulll'. Did you mean '--full'?"),
         ],
     )
     def test_other_unknown_option_keeps_clicks_message(
