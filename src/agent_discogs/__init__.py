@@ -389,7 +389,8 @@ Budget:
 
 Errors:
   With --json an error is {"error":{"code",...}} on stdout, exit 1; a malformed
-  command line instead exits 2 with text on stderr.
+  command line instead exits 2 with text on stderr. --cached, --fresh, --debug
+  or --color after the command is one: the error says to put it before.
   bad_response means Discogs sent something unreadable (not JSON, or the wrong
   shape). It is not your input: retry in a moment, with --fresh if it repeats.
   When its hint says the format is unknown (a collection value amount or the
@@ -498,6 +499,22 @@ class AliasGroup(click.Group):
             raise
         except click.exceptions.Abort:
             raise
+        except click.NoSuchOption as error:
+            # A global flag typed after the command: say where it goes instead
+            # of click's did-you-mean, which lists unrelated flags.
+            example = _GLOBAL_OPTIONS.get(error.option_name)
+            if example is None or error.ctx is None:
+                raise
+            # The program name may hold spaces (`python -m agent_discogs`).
+            command = error.ctx.command_path.removeprefix(ctx.command_path).lstrip()
+            msg = (
+                f"No such option '{error.option_name}'. It is a global option:"
+                " put it before the command, as in"
+                f" 'agent-discogs {example} {command} ...'."
+            )
+            raise click.NoSuchOption(
+                error.option_name, message=msg, ctx=error.ctx
+            ) from error
         except click.exceptions.UsageError:
             raise
         # The reader closed stdout (`| head -1`). click's EPIPE handling exits 1
@@ -509,6 +526,16 @@ class AliasGroup(click.Group):
         except Exception as e:  # noqa: BLE001
             print(format_error(e, color=style.enabled(sys.stderr)), file=sys.stderr)
             sys.exit(1)
+
+
+# The group's options that click rejects after a subcommand, each spelled as
+# the hint shows it before the command (`NoSuchOption` carries no value).
+_GLOBAL_OPTIONS = {
+    "--debug": "--debug",
+    "--cached": "--cached",
+    "--fresh": "--fresh",
+    "--color": "--color never",
+}
 
 
 @click.group(cls=AliasGroup, invoke_without_command=True)

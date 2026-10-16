@@ -87,6 +87,76 @@ class TestCLIBasics:
         assert result.stdout == ""
         assert result.stderr.endswith("\n\nError: No such command 'nonexistent'.\n")
 
+    @pytest.mark.parametrize(
+        ("typed", "flag"),
+        [
+            (["--cached"], "--cached"),
+            (["--fresh"], "--fresh"),
+            (["--debug"], "--debug"),
+            (["--color", "never"], "--color"),
+            (["--color=never"], "--color"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("args", "command"),
+        [
+            (["get", "collection"], "get"),
+            (["search", "release", "x"], "search"),
+            (["price", "@r847868"], "price"),
+            (["fetch", "release", "@r847868"], "get"),
+            (["find", "x"], "search"),
+        ],
+    )
+    def test_global_flag_after_the_command(
+        self, typed: list[str], flag: str, args: list[str], command: str
+    ) -> None:
+        result = CliRunner().invoke(cli, [*args, *typed])
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert "Did you mean" not in result.stderr
+        example = "--color never" if flag == "--color" else flag
+        assert result.stderr.endswith(
+            f"\n\nError: No such option '{flag}'. It is a global option: put it"
+            f" before the command, as in 'agent-discogs {example} {command} ...'.\n"
+        )
+
+    def test_global_flag_after_the_command_with_json(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["get", "release", "@r847868", "--json", "--fresh"]
+        )
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert result.stderr.endswith(
+            "\n\nError: No such option '--fresh'. It is a global option: put it"
+            " before the command, as in 'agent-discogs --fresh get ...'.\n"
+        )
+
+    @pytest.mark.parametrize(
+        ("option", "error"),
+        [
+            ("--xyzzy", "No such option '--xyzzy'."),
+            ("--ful", "No such option '--ful'. Did you mean '--full'?"),
+        ],
+    )
+    def test_other_unknown_option_keeps_clicks_message(
+        self, option: str, error: str
+    ) -> None:
+        result = CliRunner().invoke(cli, ["get", "release", "@r847868", option])
+        assert result.exit_code == 2
+        assert result.stdout == ""
+        assert result.stderr.endswith(f"\n\nError: {error}\n")
+
+    def test_global_flag_hint_drops_the_whole_program_name(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["get", "collection", "--fresh"], prog_name="python -m agent_discogs"
+        )
+        assert result.exit_code == 2
+        assert result.stderr.endswith("as in 'agent-discogs --fresh get ...'.\n")
+
+    def test_global_flag_before_the_command(self) -> None:
+        result = CliRunner().invoke(cli, ["--fresh", "status"])
+        assert result.exit_code == 0
+
 
 class TestStatusCommand:
     def test_status(self) -> None:
