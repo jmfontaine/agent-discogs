@@ -58,3 +58,198 @@ What these commands cost; the footer, `--cached` and the per-minute budget are i
 | `--wanted` on `search` | on top of the listing: 1 for the username (shared with `--owned`) + 1 per 100 wants, then free for an hour; nothing when the page has no release row |
 
 `get wantlist --for-sale` is the expensive one: 1 request per want, so cap it (`--max-requests 60` is a minute of budget) and continue with the printed `Continue scan:`. A `get inventory` filter over a big seller is nearly as bad (500 requests for 50,000 listings): cap it the same way.
+
+## Tasks
+
+Recipes for Marketplace and wantlist requests, by stable ID. The legend and the other skills' tasks are under Tasks in `agent-discogs skills get core`.
+
+### C4 What is a fair price for a VG+ copy?
+
+Status: works
+
+```bash
+agent-discogs price @r847868
+```
+
+Read the `Very Good Plus (VG+):` line. Needs a token or OAuth and seller settings on that account; without them, `seller_settings_required`, and `get stats @r...` gives only the count for sale and the lowest price.
+
+Cost: 3.
+
+### C5 How many copies are for sale, and from what price?
+
+Status: works
+
+```bash
+agent-discogs get stats @r847868
+```
+
+`for sale: 45 from EUR 0.80` (`--currency CODE` for another currency); no seller settings or user needed.
+
+Cost: 2 per release (up to 10 refs a command).
+
+### C6 Which pressing of an album is cheapest right now?
+
+Status: works, costly
+
+```bash
+agent-discogs get versions @m3719 --format Vinyl --market --currency EUR --limit 20 --max-requests 30
+```
+
+Compare the `for sale:` tails yourself; narrow with `--format` and `--country` first.
+
+Cost: 2 (the master's title and the page; 1 with `--json`) + 1 per row.
+
+Would need: a price sort or prices on version rows (Discogs API limit).
+
+### C7 What has this sold for?
+
+Status: not possible
+
+Why not: the API has no sales history for a release. `price @r...` gives the suggested price per condition, `get stats @r...` the lowest asking price; the sales history is on the release's discogs.com page (`url` in `get release @r... --json`).
+
+Would need: a sales history endpoint (Discogs API limit).
+
+### C8 How many people want this against how many have it, for one release or my collection?
+
+Status: works (one release); works, costly (my collection)
+
+```bash
+agent-discogs get stats @r847868
+agent-discogs get collection --json --limit 100
+agent-discogs get stats @r847868 @r352665
+```
+
+`have N · want N` (also on every search, versions and releases row, at no extra cost). For the collection, list its releases, then pass them to `get stats` 10 at a time.
+
+Cost: 2 per release; the collection list adds 2 (the username and the folder list) + 1 per 100 copies.
+
+Would need: community counts on collection rows (Discogs API limit).
+
+### D1 What is on my wantlist, filtered by format, year or label?
+
+Status: works (unfiltered); works, costly (filtered)
+
+```bash
+agent-discogs get wantlist --limit 100
+agent-discogs get wantlist --json --full --limit 100
+```
+
+`get wantlist` has no filter: read every page (`--page 2`, ... up to `pagination.pages`) with `--json`, whose rows have `year`, `label`, `catno` and `format`, and keep the matches yourself; `--json --full` rows also carry `basic_information.genres` and `styles`.
+
+Cost: 1 (the username) + 1 per 100 wants.
+
+Would need: filters on the wantlist (Discogs API limit).
+
+### D2 Is anything on my wantlist under a price? Alert me, by condition and country
+
+Status: works, costly (a price check now); not possible (alerts, condition, country)
+
+```bash
+agent-discogs get wantlist --for-sale --max-price 25 --currency EUR --max-requests 60
+```
+
+Keeps the wants with copies for sale whose lowest price is at most 25 EUR; paste the printed `Next page:` or `Continue scan:` for more.
+
+Why not alerts, condition, country: the API has no alerts, and for a release only a count for sale and one lowest price over every condition and country. Rerun the check later; for conditions and countries, send the user to the release's Marketplace page.
+
+Cost: 1 (the username) + 1 per 100 wants read + 1 per want checked.
+
+Would need: alerts and a list of a release's copies (Discogs API limit).
+
+### D3 Who sells my wants, and in what condition?
+
+Status: not possible
+
+Why not: no endpoint lists a release's copies or sellers. `get wantlist --for-sale` gives a count and one lowest price per want, and `get inventory <seller> --in-wantlist` checks one seller you name (D4).
+
+Would need: a list of a release's copies (Discogs API limit).
+
+### D4 Which of my wants does one seller have?
+
+Status: works, costly (a seller you name); not possible (finding such sellers)
+
+```bash
+agent-discogs get inventory <seller> --in-wantlist --max-requests 60
+```
+
+Reads your whole wantlist, then the seller's listings, 100 a request; add `--condition VG+` or `--ships-from France` to narrow.
+
+Why not finding sellers: no endpoint lists or searches sellers, so none finds those holding several of your wants.
+
+Cost: 1 (the username) + 1 per 100 wants + 1 per 100 listings scanned.
+
+Would need: a seller search (Discogs API limit).
+
+### D5 Is this barcode on my wantlist?
+
+Status: works
+
+```bash
+agent-discogs search release --barcode "606949235024" --release-type all --wanted
+```
+
+Each row ends `· wanted`, `· not wanted` or `· wanted ?` (undecided).
+
+Cost: 1 (the search) + 1 (the username) + 1 per 100 wants.
+
+### E1 Reprice my inventory from price suggestions
+
+Status: works, costly (reading the suggestions, with seller settings); not possible (changing the prices)
+
+```bash
+agent-discogs get inventory <your username> --json --limit 100
+agent-discogs price @r847868 @r352665
+```
+
+Compare each listing's `price` and `condition` with the suggestion for that condition.
+
+Why not changing the prices: agent-discogs sends no write request, by design; the user changes them on discogs.com.
+
+Cost: 1 per 100 listings + 3 per release priced.
+
+Would need: price suggestions for several releases a request (Discogs API limit); changing prices, nothing: read-only by design.
+
+### E2 Export my inventory with images
+
+Status: works (a thumbnail per listing); works, costly (full-size images)
+
+```bash
+agent-discogs get inventory <your username> --json --full --limit 100
+agent-discogs get release @r847868 --json --full
+```
+
+Each `--full` listing carries `release.thumbnail`; full-size images are the release's `images`, one `get release --json --full` per release.
+
+Cost: 1 per 100 listings; full-size images 1 per release.
+
+Would need: full-size images on listings (Discogs API limit).
+
+### E3 Which orders do I have to ship?
+
+Status: not possible
+
+Why not: not implemented: agent-discogs has no orders command, though the API serves a seller's own orders.
+
+Would need: an orders command; none is planned.
+
+### E5 Are there duplicate listings in my inventory?
+
+Status: works, costly
+
+```bash
+agent-discogs get inventory <your username> --json --limit 100
+```
+
+Read every page (`--page 2`, ...) and group the rows by `ref`: two listings of one release in one `condition` are likely duplicates.
+
+Cost: 1 per 100 listings.
+
+Would need: more than 100 listings a request (Discogs API limit).
+
+### H2 How have prices changed over the years?
+
+Status: not possible
+
+Why not: the API has no price or sales history; `price` and `get stats` give today's numbers only.
+
+Would need: a price history endpoint (Discogs API limit).

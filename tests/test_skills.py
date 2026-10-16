@@ -23,7 +23,8 @@ _SKILLS_DIR = (
 # the skill the task needs.
 _BRIEF_LIMIT = {"core": 24_000}
 _BRIEF_LIMIT_DEFAULT = 20_000
-_FULL_LIMIT = {"core": 85_000}
+# The collection skill holds the most Tasks entries, which --full prints too.
+_FULL_LIMIT = {"core": 85_000, "collection": 50_000}
 _FULL_LIMIT_DEFAULT = 40_000
 
 
