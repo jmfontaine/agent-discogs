@@ -4,7 +4,8 @@ The inventory endpoint sends every listing's grades, price and origin, which
 Discogs cannot filter server-side: `Filter` is the `keep` predicate of a
 client-side scan. `--in-wantlist` needs the user's whole wantlist first
 (`read_wantlist()`), so a listing is never reported as not wanted on a
-partial read.
+partial read; `search --wanted` marks its rows against the same read
+(`wants_of()`), leaving a row the part read lacks undecided.
 """
 
 from __future__ import annotations
@@ -14,8 +15,10 @@ from typing import TYPE_CHECKING, Any
 
 from discogs_sdk import RateLimitError
 
-from agent_discogs import account
+from agent_discogs import account, trace
+from agent_discogs.collection import is_release_row
 from agent_discogs.pagination import (
+    PageResult,
     ScanStop,
     fetch_filtered_page,
     keep_all,
@@ -98,6 +101,18 @@ class Wants:
                 doc["retry_after"] = self.stop.retry_after
         return doc
 
+    def wanted(self, release_id: int) -> bool | None:
+        """Whether `release_id` is on the wantlist (`--wanted`): True when
+        the part read holds it, False only after a complete read, else None
+        (undecided)."""
+        if release_id in self.ids:
+            return True
+        return False if self.stop is None else None
+
+
+def _unread(stop: ScanStop) -> Wants:
+    return Wants(frozenset(), None, stop, 0)
+
 
 def read_wantlist(client: Discogs, *, max_requests: int | None) -> Wants:
     """The user's whole wantlist: the username, then 100 wants per request.
@@ -105,7 +120,7 @@ def read_wantlist(client: Discogs, *, max_requests: int | None) -> Wants:
     `max_requests` caps the sends of the whole command, as for every scan. A
     429 keeps the wants read so far, none if it answers the username or the
     first page; either way the read is incomplete, and nothing may be judged
-    against it.
+    absent from it.
     """
     try:
         user = account.user(client)
@@ -113,13 +128,39 @@ def read_wantlist(client: Discogs, *, max_requests: int | None) -> Wants:
             user.wantlist.list, limit=None, keep=keep_all, max_requests=max_requests
         )
     except RateLimitError as exc:
-        return Wants(frozenset(), None, rate_limited_stop(exc), 0)
+        return _unread(rate_limited_stop(exc))
     return Wants(
         frozenset(want.id for want in result.items),
         result.total_items,
         result.stop,
         len(result.items),
     )
+
+
+def wants_of(
+    client: Discogs,
+    listing: PageResult,
+    *,
+    earlier: tuple[ScanStop | None, ...],
+    max_requests: int | None,
+) -> Wants | None:
+    """The wantlist to mark the `listing` page's release rows with
+    (`search --wanted`), or None, without a request, when the page has no
+    release row.
+
+    `earlier` holds the stops of the reads this command made before (the
+    listing, the `--owned` collection read): after a 429 nothing is asked,
+    and with nothing left of the cap not even the username, which
+    `read_wantlist()` alone would send before checking it.
+    """
+    if not any(is_release_row(item) for item in listing.items):
+        return None
+    for stop in earlier:
+        if stop is not None and stop.reason == "rate_limited":
+            return _unread(stop)
+    if max_requests is not None and trace.sends() >= max_requests:
+        return _unread(ScanStop("max_requests", max_requests=max_requests))
+    return read_wantlist(client, max_requests=max_requests)
 
 
 class Filter:

@@ -2,8 +2,9 @@
 own, how many copies, in which folders.
 
 `--owned` on `get versions` and `get releases` reads each row's own count
-(`user_stat()`): Discogs sends it on those listings. On `search` and `get
-inventory`, whose rows carry no reliable one, it reads the whole "All"
+(`user_stat()`, as `--wanted` reads its want count): Discogs sends it on
+those listings. On `search` and `get inventory`, whose rows carry no
+reliable one, it reads the whole "All"
 folder once per invocation through the filtered-scan machinery
 (`fetch_filtered_page`, keeping every row), so `--max-requests` and a 429
 stop it the way they stop any scan, and matches list rows against it. `get
@@ -226,6 +227,14 @@ def stat_copies(row: Any) -> int | None:
     """The user's copies of a `get versions` or `get releases` row's release,
     as the row's own stats count them; None when it carries no count."""
     return user_stat(row, "in_collection")
+
+
+def stat_wanted(row: Any) -> bool | None:
+    """Whether a `get versions` or `get releases` row's release is on the
+    user's wantlist, as the row's own stats count it (`--wanted`); None when
+    it carries no count."""
+    count = user_stat(row, "in_wantlist")
+    return None if count is None else count > 0
 
 
 def ownership_of(

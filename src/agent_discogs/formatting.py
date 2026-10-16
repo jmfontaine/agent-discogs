@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from agent_discogs import markup, sanitize, style
-from agent_discogs.collection import is_release_row, stat_copies
+from agent_discogs.collection import is_release_row, stat_copies, stat_wanted
 from agent_discogs.config import CACHE_TTL_LABEL
 from agent_discogs.inventory import GRADES, release_id, short_grade
 from agent_discogs.markup import Part, plain
@@ -425,6 +425,7 @@ def _release_row(
     master_ref: Span | None = None,
     notes: str | None = None,
     owned: Span | None = None,
+    wanted: Span | None = None,
     tail: list[Part] | None = None,
 ) -> list[Part]:
     """One list row: everything an agent needs to pick or navigate, nothing else.
@@ -463,6 +464,8 @@ def _release_row(
         words.append([f"· notes: {notes}"])
     if owned:
         words.append([owned])
+    if wanted:
+        words.append([wanted])
     if tail:
         words.append(tail)
     return _joined(words, " ")
@@ -502,16 +505,18 @@ def _owned_mark(copies: int | None) -> Span:
     return Span(f"· {_copies(copies)}" if copies else "· not owned", "dim")
 
 
+def _stopped(stop: ScanStop) -> str:
+    """Why a read of the user's own list stopped short, after `the read`."""
+    if stop.reason == "rate_limited":
+        wait = "" if stop.retry_after is None else f", retry in {stop.retry_after}s"
+        return f"was rate limited{wait}"
+    return f"stopped at --max-requests {stop.max_requests}"
+
+
 def _ownership_note(ownership: Ownership | None) -> list[Line]:
     """Why `owned ?` rows are undecided: the collection read stopped short."""
     if ownership is None or ownership.stop is None:
         return []
-    stop = ownership.stop
-    if stop.reason == "rate_limited":
-        wait = "" if stop.retry_after is None else f", retry in {stop.retry_after}s"
-        why = f"was rate limited{wait}"
-    else:
-        why = f"stopped at --max-requests {stop.max_requests}"
     total = (
         "" if ownership.total_records is None else f" of {ownership.total_records:,}"
     )
@@ -521,8 +526,49 @@ def _ownership_note(ownership: Ownership | None) -> list[Line]:
         [
             _label("Owned"),
             (
-                f' the collection read {why} ({read}): "owned ?" rows are not '
-                "in the part read, and a count may be short."
+                f" the collection read {_stopped(ownership.stop)} ({read}): "
+                '"owned ?" rows are not in the part read, and a count may be short.'
+            ),
+        ],
+    ]
+
+
+def _wants_mark(wants: Wants | None, row: Any) -> Span | None:
+    """The `search --wanted` mark of a release row, from the wantlist read;
+    nothing otherwise."""
+    if wants is None or not is_release_row(row):
+        return None
+    return _wanted_mark(wants.wanted(row.id))
+
+
+def _stat_wanted(wanted: bool, row: Any) -> Span | None:
+    """The `--wanted` mark of a `get versions` or `get releases` release row,
+    from the want count its own stats carry (`wanted ?` without one);
+    nothing otherwise."""
+    if not wanted or not is_release_row(row):
+        return None
+    return _wanted_mark(stat_wanted(row))
+
+
+def _wanted_mark(wanted: bool | None) -> Span:
+    """`· wanted`, `· not wanted`, or `· wanted ?` (undecided)."""
+    if wanted is None:
+        return Span("· wanted ?", "dim")
+    return Span("· wanted" if wanted else "· not wanted", "dim")
+
+
+def _wanted_note(wants: Wants | None) -> list[Line]:
+    """Why `wanted ?` rows are undecided: the wantlist read stopped short."""
+    if wants is None or wants.stop is None:
+        return []
+    total = "" if wants.total is None else f" of {wants.total:,}"
+    return [
+        "",
+        [
+            _label("Wantlist"),
+            (
+                f" the read {_stopped(wants.stop)} ({wants.read:,}{total} wants "
+                'read): "wanted ?" rows are not in the part read.'
             ),
         ],
     ]
@@ -793,22 +839,18 @@ def _wants_note(wants: Wants | None, *, resent: bool) -> list[Line]:
         return []
     stop = wants.stop
     again = ""
-    if stop.reason == "rate_limited":
-        wait = "" if stop.retry_after is None else f", retry in {stop.retry_after}s"
-        why = f"was rate limited{wait}"
-    else:
-        why = f"stopped at --max-requests {stop.max_requests}"
-        if resent:
-            again = (
-                " --fresh reads it again on every run, so continue with a higher "
-                "--max-requests."
-            )
+    if stop.reason != "rate_limited" and resent:
+        again = (
+            " --fresh reads it again on every run, so continue with a higher "
+            "--max-requests."
+        )
     total = "" if wants.total is None else f" of {wants.total:,}"
     return [
         [
             _label("Wantlist"),
             (
-                f" the read {why} ({wants.read:,}{total} wants read), so no "
+                f" the read {_stopped(stop)} ({wants.read:,}{total} wants read), "
+                "so no "
                 "listing was scanned: a listing is kept only against the whole "
                 f"wantlist.{again}"
             ),
@@ -981,6 +1023,7 @@ def format_label_releases(
     stop: ScanStop | None = None,
     header_resent: bool = False,
     owned: bool = False,
+    wanted: bool = False,
 ) -> str:
     """Format a label's catalogue (client-side `--year` scans are `filtered`)."""
     counts = _page_counts(
@@ -1010,6 +1053,7 @@ def format_label_releases(
             catno=getattr(rel, "catalog_number", None),
             fmt=getattr(rel, "format", None),
             owned=_stat_owned(owned, rel),
+            wanted=_stat_wanted(wanted, rel),
         )
         for rel in releases
     )
@@ -1029,6 +1073,7 @@ def format_artist_releases(
     stop: ScanStop | None = None,
     header_resent: bool = False,
     owned: bool = False,
+    wanted: bool = False,
 ) -> str:
     """Format artist releases/discography."""
     counts = _page_counts(
@@ -1060,6 +1105,7 @@ def format_artist_releases(
             fmt=getattr(rel, "format", None),
             role=getattr(rel, "role", None),
             owned=_stat_owned(owned, rel),
+            wanted=_stat_wanted(wanted, rel),
         )
         for rel in releases
     )
@@ -1148,6 +1194,7 @@ def format_master_versions(
     stop: ScanStop | None = None,
     header_resent: bool = False,
     owned: bool = False,
+    wanted: bool = False,
 ) -> str:
     """Format master release versions (`--release-type` scans are `filtered`)."""
     counts = _page_counts(
@@ -1179,6 +1226,7 @@ def format_master_versions(
             fmt=getattr(ver, "format", None),
             have=_community_have(ver),
             owned=_stat_owned(owned, ver),
+            wanted=_stat_wanted(wanted, ver),
         )
         for ver in versions
     )
@@ -1412,6 +1460,7 @@ def format_search_results(
     filtered: bool = False,
     stop: ScanStop | None = None,
     ownership: Ownership | None = None,
+    wants: Wants | None = None,
 ) -> str:
     """Format search results as compact text.
 
@@ -1463,12 +1512,14 @@ def format_search_results(
                     have=_community_have(result),
                     master_ref=master_ref,
                     owned=_owned(ownership, result),
+                    wanted=_wants_mark(wants, result),
                 )
             )
         else:
             lines.append(_release_row(ref=ref, type_=show_type, title=result.title))
 
     lines.extend(_ownership_note(ownership))
+    lines.extend(_wanted_note(wants))
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 

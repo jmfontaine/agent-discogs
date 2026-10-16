@@ -99,6 +99,22 @@ agent-discogs get releases @a3857 --role Main --owned --max-requests 6
 - **Paging.** The printed `Next page:` / `Continue scan:` command repeats `--owned`, so the next page is marked too; within the hour the collection comes from the cache.
 - **Freshness.** A mark is as old as what it was read from, cached for an hour: the listing page on `get versions` and `get releases`, the collection on `search` and `get inventory`. A record added to your collection within the last hour may still show as not owned; `--fresh` re-reads the listing, or the collection. Under `--cached`, `get versions` and `get releases` need nothing for `--owned` beyond the listing's own cached requests (the page, and in text the header) and send nothing; on `search` and `get inventory` a collection page the cache does not hold fails the command with `cache_miss`.
 
+### Marking rows with --wanted
+
+`--wanted` marks every release row with whether it is on your own Discogs wantlist, on `search`, `get versions` and `get releases` (artist and label). A row ends in `· wanted`, `· not wanted`, or `· wanted ?` when it is undecided (below), after the `--owned` mark when both flags are given: `@r847868 1994 US · Nothing Records 92346-2 · CD, Album · have 7,544 · owned · wanted`. In `--json`, each release row gets `wanted`: `true`, `false` or `null`, and on `search` the document gets a `wantlist` object (see [JSON output](json-output.md#wanted-rows)).
+
+```bash
+agent-discogs get versions @m3719 --country US --owned --wanted
+agent-discogs search release --artist "Nine Inch Nails" --year 1994 --release-type all --wanted
+```
+
+- **Release rows only.** A wantlist holds releases, so master, artist and label rows get no mark. `search artist|label|master ... --wanted` and `--wanted` with `--added-since` fail with `invalid_argument` before any request, as does `--wanted` on any `get` noun but `releases` and `versions`; on `get inventory` the error points at `--in-wantlist`, which keeps only the listings whose release you want. A page with no release row reads nothing.
+- **It needs a user**, like `--owned` (see [Errors](errors.md#--owned---in-wantlist-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)): `--wanted reads your own Discogs account, but no credentials are set.`
+- **Where the answer comes from.** On `get versions` and `get releases`, every row carries the authenticated user's own want count (`stats.user.in_wantlist` in `--json --full`): 1 or more is wanted, 0 is not, and a row without it reads `· wanted ?` (JSON `null`). Nothing more is sent: no username, no wantlist page, no `wantlist` object. On `search`, whose rows carry no reliable flag, `--wanted` reads your whole wantlist once, after the listing page: one request for the username (shared with `--owned`), then one per 100 wants. Every response is cached for an hour, so a rerun costs nothing.
+- **`--max-requests N`** is accepted with `--wanted` on `search` and caps the wantlist read the way it caps the `--owned` collection read: it counts every send of the command, and with nothing left of it after the listing (and the collection read), not even the username is asked for. On `get versions` and `get releases`, `--wanted` reads nothing, so `--max-requests` there needs a scan, as with `--owned`.
+- **A wantlist read that stops early** never claims a release is not wanted: a release found in the part read is `wanted`, any other row reads `· wanted ?` (JSON `null`), and a note before the footer says why: `Wantlist: the read stopped at --max-requests 3 (100 of 250 wants read): "wanted ?" rows are not in the part read.` (`was rate limited, retry in 30s` for a 429). A 429 on a later wants page keeps the wants read. A 429 on the username or the first wants page leaves every release row `wanted ?`, and after a listing scan or an `--owned` collection read that already stopped on a 429 the wantlist is not read at all (no request; JSON `wantlist.stop_reason: "rate_limited"`, `wants_read: 0`). The command still succeeds.
+- **Paging and freshness.** The printed `Next page:` / `Continue scan:` command repeats `--wanted`. A mark is as old as what it was read from, cached for an hour: the listing page on `get versions` and `get releases`, the wantlist on `search`; `--fresh` re-reads it. Under `--cached`, `search ... --wanted` fails with `cache_miss` when the username or a wants page is not cached, and nothing is sent; `get versions` and `get releases` need nothing beyond the listing's own cached requests.
+
 ## get
 
 Get entity details by noun and ref. Aliases: `fetch`, `show`.
@@ -376,7 +392,7 @@ agent-discogs get versions @m3719 --release-type official --limit 5 --json
 agent-discogs get versions @m3719 --release-type unofficial --country UK
 ```
 
-`releases` and `versions` also take `--owned`, which marks each release row with your own copies: see [Marking rows with --owned](#marking-rows-with---owned).
+`releases` and `versions` also take `--owned`, which marks each release row with your own copies, and `--wanted`, which marks it with your wantlist: see [Marking rows with --owned](#marking-rows-with---owned) and [Marking rows with --wanted](#marking-rows-with---wanted).
 
 ### artist and label
 
@@ -389,9 +405,9 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | Noun | Flags besides `--json` / `--full` |
 |---|---|
 | `release` | `-v, --verbose`, `-c, --compact` |
-| `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role`) |
-| `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year`) |
-| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--after` and `--max-requests` (both with a `--release-type` scan) |
+| `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--wanted`, `--after` and `--max-requests` (with `--role`) |
+| `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--wanted`, `--after` and `--max-requests` (with `--year`) |
+| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--wanted`, `--after` and `--max-requests` (both with a `--release-type` scan) |
 | `collection` | no ref; `--limit`, `--page`, `--sort label\|artist\|title\|catno\|format\|rating\|added\|year`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--after` and `--max-requests` (with a filter); or `--value` alone |
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |

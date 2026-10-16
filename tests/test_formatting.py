@@ -11,6 +11,7 @@ from discogs_sdk import (
     MasterVersion,
     PriceSuggestions,
     Release,
+    SearchResult,
 )
 
 from agent_discogs.formatting import (
@@ -36,7 +37,9 @@ from agent_discogs.formatting import (
     format_tracklist,
     track_summary,
 )
+from agent_discogs.inventory import Wants
 from agent_discogs.markup import plain
+from agent_discogs.pagination import ScanStop
 from tests.conftest import fake
 
 
@@ -479,6 +482,57 @@ class TestFormatMasterVersions:
         assert "@r9876543 2017 US · Interscope · Vinyl, 2xLP, 180g" in output
         assert "[release]" not in output
         assert "Next page:" in output
+
+
+class TestWantedMarks:
+    """`--wanted` marks each release row `wanted`, `not wanted` or, when
+    nothing decides it, `wanted ?`; a stopped wantlist read says why."""
+
+    def test_versions_rows_follow_their_own_want_count(self) -> None:
+        versions = [
+            MasterVersion.model_validate({"id": i, "title": "A", "stats": stats})
+            for i, stats in (
+                (1, {"user": {"in_collection": 0, "in_wantlist": 1}}),
+                (2, {"user": {"in_collection": 0, "in_wantlist": 0}}),
+                (3, {"community": {"in_collection": 5, "in_wantlist": 2}}),
+            )
+        ]
+        output = format_master_versions(
+            versions,
+            "@m1",
+            "A",
+            page=1,
+            total_results=3,
+            next_page_cmd=None,
+            wanted=True,
+        )
+        rows = [line for line in output.splitlines() if line.startswith("@r")]
+        assert [row.rsplit(" · ", 1)[1] for row in rows] == [
+            "wanted",
+            "not wanted",
+            "wanted ?",
+        ]
+
+    def test_a_stopped_read_leaves_unread_rows_undecided_and_says_why(self) -> None:
+        results = [SearchResult(id=i, type="release", title=f"T{i}") for i in (1, 2)]
+        wants = Wants(
+            frozenset({1}), 250, ScanStop("rate_limited", retry_after=30), 100
+        )
+        output = format_search_results(results, "x", "release", 1, 2, None, wants=wants)
+        lines = output.splitlines()
+        assert lines[2].endswith(" · wanted")
+        assert lines[3].endswith(" · wanted ?")
+        assert lines[-1] == (
+            "Wantlist: the read was rate limited, retry in 30s (100 of 250 wants "
+            'read): "wanted ?" rows are not in the part read.'
+        )
+
+    def test_a_complete_read_decides_every_row_and_adds_no_note(self) -> None:
+        results = [SearchResult(id=2, type="release", title="T2")]
+        wants = Wants(frozenset({1}), 1, None, 1)
+        output = format_search_results(results, "x", "release", 1, 1, None, wants=wants)
+        assert output.splitlines()[-1].endswith(" · not wanted")
+        assert "Wantlist:" not in output
 
 
 class TestFormatStatus:

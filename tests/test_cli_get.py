@@ -701,7 +701,7 @@ class TestGetCommand:
                 (
                     "--country, --format do not apply to 'get releases'. "
                     "'get releases' takes --after, --desc, --limit, --max-requests, "
-                    "--owned, --page, --role, --sort, --year."
+                    "--owned, --page, --role, --sort, --wanted, --year."
                 ),
             ),
             (
