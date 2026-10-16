@@ -10,7 +10,7 @@ from typing import Any, get_args
 
 import click
 from click.core import ParameterSource
-from discogs_sdk import CurrencyCode, Discogs
+from discogs_sdk import CacheMissError, CurrencyCode, Discogs, NotFoundError
 
 from agent_discogs import account, style, trace
 from agent_discogs.account import UserRequiredError, require_user
@@ -48,6 +48,7 @@ from agent_discogs.formatting import (
     format_tracklist,
     format_wantlist,
     iter_tracks,
+    known_year,
 )
 from agent_discogs.inventory import GRADES, Filter, grade, read_wantlist, release_id
 from agent_discogs.json_output import Mode, dump, full_dump
@@ -314,14 +315,50 @@ def _get_price(client: Discogs, entity_id: int, mode: Mode) -> Any:
 
 
 def _get_release(
-    client: Discogs, entity_id: int, *, verbose: bool, compact: bool, mode: Mode
+    client: Discogs,
+    entity_id: int,
+    *,
+    verbose: bool,
+    compact: bool,
+    master_year: bool,
+    mode: Mode,
 ) -> Any:
     release = client.releases.get(entity_id)
+    # The release is read first: one that fails sends no master request.
+    master_id = release.master_id if master_year else None
+    year: int | str | None = None
+    miss: CacheMissError | NotFoundError | None = None
+    if master_id:
+        try:
+            # A lazy proxy: reading a field sends the one request, the one
+            # `get master` sends. A miss or a deleted master leaves the release
+            # whole; any other failure fails the ref.
+            year = known_year(client.masters.get(master_id).year)
+        except (CacheMissError, NotFoundError) as exc:
+            miss = exc
+    context = f"Master {make_ref('master', master_id)}" if master_id else None
+    error = error_document(miss, context) if miss else None
+    if mode.full:
+        extra = {"master_year": year, "master_year_error": error}
+        return {**full_dump(release), **drop_empty(extra)}
     if mode.json:
         return mode.entity(
-            release, lambda r: project_release(r, verbose=verbose, compact=compact)
+            release,
+            lambda r: project_release(
+                r,
+                verbose=verbose,
+                compact=compact,
+                master_year=year,
+                master_year_error=error,
+            ),
         )
-    return format_release(release, verbose=verbose, compact=compact)
+    return format_release(
+        release,
+        verbose=verbose,
+        compact=compact,
+        master_year=year,
+        master_error=classify(miss, context).message if miss else None,
+    )
 
 
 def _get_label_releases(
@@ -913,7 +950,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "sort",
         },
     ),
-    "release": frozenset({"compact", "verbose"}),
+    "release": frozenset({"compact", "master_year", "verbose"}),
     "releases": frozenset(
         {
             "after",
@@ -1323,6 +1360,7 @@ def _run_one(
     owned: bool,
     verbose: bool,
     compact: bool,
+    master_year: bool,
     mode: Mode,
 ) -> Any:
     """One noun for one ref: text, or the JSON document."""
@@ -1346,7 +1384,12 @@ def _run_one(
         return _get_price(client, entity_id, mode)
     if noun == "release":
         return _get_release(
-            client, entity_id, verbose=verbose, compact=compact, mode=mode
+            client,
+            entity_id,
+            verbose=verbose,
+            compact=compact,
+            master_year=master_year,
+            mode=mode,
         )
     if noun == "releases":
         return _get_releases(
@@ -1416,6 +1459,7 @@ def _dispatch(
     in_wantlist: bool,
     verbose: bool,
     compact: bool,
+    master_year: bool,
     mode: Mode,
 ) -> None:
     """Shared dispatch for get, tracks, and price: one or many refs.
@@ -1594,6 +1638,7 @@ def _dispatch(
                     owned=owned,
                     verbose=verbose,
                     compact=compact,
+                    master_year=master_year,
                     mode=mode,
                 )
             )
@@ -1707,6 +1752,13 @@ def _json_options(command: Any) -> Any:
     "inventory: keep listings priced at most this in --currency (needs --currency)",
 )
 @click.option(
+    "--master-year",
+    is_flag=True,
+    default=False,
+    help="release: show its master's year (1 more request per release with a "
+    "master, shared with get master)",
+)
+@click.option(
     "--max-requests",
     type=int,
     help="releases --role / @l --year, versions --release-type official, a "
@@ -1790,6 +1842,7 @@ def get(
     in_wantlist: bool,
     label: str | None,
     limit: int,
+    master_year: bool,
     max_price: float | None,
     max_requests: int | None,
     owned: bool,
@@ -1846,6 +1899,7 @@ def get(
         in_wantlist=in_wantlist,
         verbose=verbose,
         compact=compact,
+        master_year=master_year,
         mode=_mode(json_output, full),
     )
 
@@ -1879,6 +1933,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         in_wantlist=False,
         verbose=False,
         compact=False,
+        master_year=False,
         mode=_mode(json_output, full),
     )
 

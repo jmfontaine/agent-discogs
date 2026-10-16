@@ -1,6 +1,6 @@
 # Discogs Domain Knowledge
 
-How Discogs structures and categorizes music data. Use this to interpret search results, choose filters, and understand what fields mean. Formats, unofficial releases, identifiers and what makes releases unique are in the pressings skill (`agent-discogs skills get pressings --full`), condition grading in the marketplace skill.
+How Discogs structures and categorizes music data. Use this to interpret search results, choose filters, and understand what fields mean. Formats, track positions, unofficial releases, identifiers (rights society hints included) and what makes releases unique are in the pressings skill (`agent-discogs skills get pressings --full`), condition grading in the marketplace skill.
 
 ## Contents
 
@@ -9,7 +9,6 @@ How Discogs structures and categorizes music data. Use this to interpret search 
 - [Artists](#artists)
 - [Titles](#titles)
 - [Labels and Catalog Numbers](#labels-and-catalog-numbers)
-- [Track Positions](#track-positions)
 - [Release Dates](#release-dates)
 
 ## Genre and Style
@@ -18,7 +17,9 @@ Discogs uses a two-level system: **genre** (broad category) and **style** (sub-g
 
 ### All 15 genres
 
-Blues, Brass & Military, Children's, Classical, Electronic, Folk World & Country, Funk / Soul, Hip-Hop, Jazz, Latin, Non-Music, Pop, Reggae, Rock, Stage & Screen.
+Blues; Brass & Military; Children's; Classical; Electronic; Folk, World, & Country; Funk / Soul; Hip-Hop; Jazz; Latin; Non-Music; Pop; Reggae; Rock; Stage & Screen.
+
+A genre name can hold commas: quote it whole, `--genre "Folk, World, & Country"`. Text views separate genres and styles with `;`; `--json` gives arrays.
 
 ### Key rules
 
@@ -37,24 +38,7 @@ Country means the **distribution/sales market**, not the manufacturing location.
 - For imports, country = where it was imported from (the original market).
 - Small labels usually release in the country they are based in.
 
-### Rights society hints
-
-Rights society codes on a release can hint at the country of origin, though they are not definitive:
-
-| Code | Country hint |
-|------|-------------|
-| ASCAP, BMI, SESAC | USA |
-| GEMA, GVL | Germany |
-| PRS, MCPS | UK |
-| SACEM | France |
-| JASRAC | Japan |
-| SOCAN | Canada |
-| BUMA/STEMRA | Netherlands |
-| SIAE | Italy |
-| SGAE | Spain |
-| SUISA | Switzerland |
-
-These are clues, not proof. A BMI credit can appear on a non-US release.
+Rights society codes among a release's identifiers can hint at the country: see Identifiers in the pressings skill.
 
 ## Artists
 
@@ -126,22 +110,6 @@ The most prominent number on the release (spine, back cover, label). Entered exa
 - When no catalog number exists, "none" (lowercase) is used.
 - Amazon ASINs (B000... prefix) are not catalog numbers. They go in identifiers.
 - Label codes (LC-xxxxx) are not catalog numbers. They go in identifiers.
-
-## Track Positions
-
-Position format tells you the physical format:
-
-| Pattern | Format |
-|---------|--------|
-| A1, A2, B1, B2 | Vinyl (sided). A/B = sides. |
-| C1, D1 | Additional vinyl discs in a set. |
-| 1, 2, 3 | CD or digital (no sides). |
-| 1-1, 1-2, 2-1, 2-2 | Multi-disc CD set (disc-track). |
-| 3.1, 3.2, 3.3 | Sub-tracks (e.g., songs within a DJ mix track). |
-| A3a, A3b | Sub-tracks on vinyl. |
-| Video 1, Video 2 | Enhanced CD bonus content. |
-
-Side specification is mandatory for sided formats. Sides follow the physical order on the release.
 
 ## Release Dates
 

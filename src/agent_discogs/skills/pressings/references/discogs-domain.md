@@ -1,6 +1,6 @@
 # Discogs Domain Knowledge: Pressings
 
-How Discogs describes formats, unofficial releases and identifiers, and what makes two releases different. Genres, country, artists, labels and dates are in `agent-discogs skills get core --full`; condition grades in the marketplace skill.
+How Discogs describes formats, track positions, unofficial releases and identifiers, and what makes two releases different. Genres, country, artists, labels and dates are in `agent-discogs skills get core --full`; condition grades in the marketplace skill.
 
 ## Contents
 
@@ -67,6 +67,22 @@ Example: `2xLP, Album, Reissue, (180g, Gatefold)` means 2 vinyl LPs, album-lengt
 
 `get release` prints each entry as `Qty×Format (Description, Description, Free Text)`, entries separated by `;`, and omits a quantity of 1: the example above appears as `2×Vinyl (LP, Album, Reissue, 180g, Gatefold)`.
 
+### Track positions
+
+Position format tells you the physical format:
+
+| Pattern | Format |
+|---------|--------|
+| A1, A2, B1, B2 | Vinyl (sided). A/B = sides. |
+| C1, D1 | Additional vinyl discs in a set. |
+| 1, 2, 3 | CD or digital (no sides). |
+| 1-1, 1-2, 2-1, 2-2 | Multi-disc CD set (disc-track). |
+| 3.1, 3.2, 3.3 | Sub-tracks (e.g., songs within a DJ mix track). |
+| A3a, A3b | Sub-tracks on vinyl. |
+| Video 1, Video 2 | Enhanced CD bonus content. |
+
+Side specification is mandatory for sided formats. Sides follow the physical order on the release.
+
 ## Unofficial Releases: Bootlegs, Counterfeits, Pirates
 
 Discogs tags bootlegs, counterfeits and pirate copies alike with the format description "Unofficial Release", and `search --release-type unofficial` returns all three. No field tells them apart: which kind a release is remains a judgement call, made from the signals below. Discogs records none of it.
@@ -112,6 +128,25 @@ The Barcodes & Other Identifiers section captures various codes found on release
 | SPARS Code | Three-letter code on CDs indicating recording/mixing/mastering chain (AAD, ADD, DDD). |
 
 Matrix and runout numbers are often the best way to distinguish otherwise identical-looking pressings.
+
+### Rights society hints
+
+Rights society codes on a release can hint at the country of origin, though they are not definitive:
+
+| Code | Country hint |
+|------|-------------|
+| ASCAP, BMI, SESAC | USA |
+| GEMA, GVL | Germany |
+| PRS, MCPS | UK |
+| SACEM | France |
+| JASRAC | Japan |
+| SOCAN | Canada |
+| BUMA/STEMRA | Netherlands |
+| SIAE | Italy |
+| SGAE | Spain |
+| SUISA | Switzerland |
+
+These are clues, not proof. A BMI credit can appear on a non-US release.
 
 ## What Makes Releases Unique
 

@@ -6,6 +6,8 @@
 
 The SDK's own log lines (`[sdk] HTTP request ...`, `[sdk] Cache hit ...`) stream to stderr in real time.
 
+`--debug` is a global flag: it goes before the command (`agent-discogs --debug get artist @a3857`); after it, it is [a usage error](errors.md#a-global-flag-after-the-command).
+
 stdout is byte-identical with and without the flag, and so is the exit code: when the cache location cannot be resolved (no home directory and no absolute `XDG_CACHE_HOME`), the cache row reads `unknown (no home directory)` and the panel still prints.
 
 ```
@@ -39,7 +41,7 @@ That markup is converted before the text is neutralized, so a tag cannot smuggle
 
 ## Color
 
-Text output is colored for a person at a terminal and never for an agent reading it through a pipe, where an escape sequence would only cost tokens. The global `--color` flag precedes the command:
+Text output is colored for a person at a terminal and never for an agent reading it through a pipe, where an escape sequence would only cost tokens. The global `--color` flag precedes the command (after it, it is [a usage error](errors.md#a-global-flag-after-the-command)):
 
 ```bash
 agent-discogs --color never get release @r847868
