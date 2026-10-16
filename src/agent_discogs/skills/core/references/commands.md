@@ -265,6 +265,7 @@ Print the agent guide bundled with the installed package, so it always matches t
 
 ```bash
 agent-discogs skills                     # list bundled skills, tagged with the installed version (same as `skills list`)
+agent-discogs skills list --json         # [{"name":...,"description":...,"version":...}], one object per skill, never colored
 agent-discogs skills get core            # this guide's SKILL.md
 agent-discogs skills get core --full     # SKILL.md followed by every references/*.md
 agent-discogs skills get marketplace     # another skill: collection, marketplace or pressings

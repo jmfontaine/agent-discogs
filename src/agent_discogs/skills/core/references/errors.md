@@ -8,7 +8,7 @@ With `--json`, errors are a JSON document on stdout and exit code 1: `{"error":{
 
 ## auth_required
 
-**`auth_required` (401, exit 1):** the message names the credentials that were sent, in the mode `status` reports. The hint says what to check, then `agent-discogs status shows the credentials in use.` Relay it to the user, who fixes the credentials; retrying the same command will not help.
+**`auth_required` (401, exit 1):** the message names the credentials that were sent, in the mode `status` reports. The hint says what to check, then points at `agent-discogs status`, which shows the credentials in use. Relay it to the user, who fixes the credentials; retrying the same command will not help.
 
 | Mode | Message | Hint (before the `status` pointer) |
 |------|---------|------------------------------------|

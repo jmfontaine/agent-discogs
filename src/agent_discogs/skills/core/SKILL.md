@@ -89,11 +89,11 @@ Color is off when stdout is a pipe, and a `--json` command is never colored. If 
 | VA compilation tracks | `get release @r...` — per-track artists shown automatically |
 | New entry or an old one? | `get release @r...` — `Added:` is when it joined Discogs (no extra request; add `-c` to several refs to compare) |
 | Link to the Discogs page for a person | `get release @r... --json` (or `master`/`artist`/`label`, or a `search --json` row) — `url` holds the absolute web address; text output omits it |
-| Machine-readable output | Add `--json` to `search`, `get`, `tracks`, `price`, or `cache clear` |
+| Machine-readable output | Add `--json` to `search`, `get`, `tracks`, `price`, `cache clear`, or `skills list` |
 
 ## Machine-Readable Output
 
-`search`, `get`, `tracks`, and `price` support `--json`, and so does `cache clear` (`{"cleared":true}`, or the error envelope); `status` and `skills` are text-only. The JSON is a compact projection of what the text view shows, with refs as strings you can pass straight back, and each release, master, artist, label, and search result carries `url`, its Discogs web page. Empty fields are omitted: test for the key, not for null. Shapes, `--full` and escaping: [references/json-output.md](references/json-output.md).
+`search`, `get`, `tracks`, and `price` support `--json`, and so do `cache clear` (`{"cleared":true}`, or the error envelope) and `skills list` (`[{"name","description","version"}]`); `status` and the rest of `skills` are text-only. The JSON is a compact projection of what the text view shows, with refs as strings you can pass straight back, and each release, master, artist, label, and search result carries `url`, its Discogs web page. Empty fields are omitted: test for the key, not for null. Shapes, `--full` and escaping: [references/json-output.md](references/json-output.md).
 
 ```bash
 agent-discogs search release "The Downward Spiral" --year 1994 --country US --json

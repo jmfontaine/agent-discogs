@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING
 
 import click
 
+from agent_discogs.json_output import dump
+from agent_discogs.style import off_for_json
+
 if TYPE_CHECKING:
     from importlib.abc import Traversable
 
@@ -73,14 +76,28 @@ def skills(ctx: click.Context) -> None:
 
 
 @skills.command("list")
-def list_skills() -> None:
+@click.option(
+    "--json", "json_output", is_flag=True, callback=off_for_json, help="Output as JSON."
+)
+def list_skills(json_output: bool) -> None:
     """List available skills, tagged with the installed version they describe."""
-    tag = f"(agent-discogs {version('agent-discogs')})"
+    installed = version("agent-discogs")
     dirs = _skill_dirs()
+    descriptions = {
+        name: _description((skill_dir / "SKILL.md").read_text(encoding="utf-8"))
+        for name, skill_dir in dirs.items()
+    }
+    if json_output:
+        dump(
+            [
+                {"name": name, "description": desc, "version": installed}
+                for name, desc in descriptions.items()
+            ]
+        )
+        return
     width = max(map(len, dirs), default=0)
-    for name, skill_dir in dirs.items():
-        desc = _description((skill_dir / "SKILL.md").read_text(encoding="utf-8"))
-        print(f"{name:<{width}} {desc} {tag}")
+    for name, desc in descriptions.items():
+        print(f"{name:<{width}} {desc} (agent-discogs {installed})")
 
 
 @skills.command("get")

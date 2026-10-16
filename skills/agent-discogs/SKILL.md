@@ -38,3 +38,7 @@ agent-discogs skills get pressings     # telling pressings apart: versions, iden
 ```
 
 Add `--full` to a skill only when you need its command reference. `agent-discogs skills` lists everything the installed version ships.
+
+Do not guess commands or flags from memory or from this file; they change between releases.
+
+If a skill named here is not in `agent-discogs skills`, the installed agent-discogs is older than this file: use the skills it lists, run `agent-discogs --help`, invent nothing, and tell the user that upgrading restores the full guide.

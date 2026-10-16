@@ -35,8 +35,9 @@ Commands:
   tracks <ref>...             Shortcut: get tracklist <ref>...
   price <ref>...              Shortcut: get price <ref>...
   cache clear [--json]        Clear HTTP cache; a failed purge exits 1 (cache_error)
-  skills [list|get|path]      Print the bundled agent guides (start: skills get core;
-                              then collection, marketplace or pressings)
+  skills [list|get|path]      Print the bundled agent guides (list takes --json;
+                              start: skills get core, then collection,
+                              marketplace or pressings)
   status                      Show version, auth mode, and cache location
   completion bash|zsh|fish    Print the Tab-completion script for an interactive
                               shell, e.g. eval "$(agent-discogs completion zsh)"
@@ -173,7 +174,8 @@ Options:
                    A --json command is never colored, stderr included; nor
                    are --help and skills
   --json           JSON output: a compact projection of the text view (search,
-                   get, tracks, price); cache clear prints {"cleared":true}.
+                   get, tracks, price); cache clear prints {"cleared":true},
+                   skills list one {name, description, version} per skill.
                    Non-ASCII is literal on a UTF-8 stdout, \\uXXXX escapes
                    otherwise
   --full           With --json: the complete record instead of the projection,

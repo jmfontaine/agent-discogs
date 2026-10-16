@@ -37,6 +37,16 @@ ISOLATED_ENV = (
 # The skills bundled under src/agent_discogs/skills, in the order `skills` lists them.
 SKILLS = ("collection", "core", "marketplace", "pressings")
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+# The docs a user or an agent reads, whose refs test_doc_examples checks and
+# whose `agent-discogs ...` commands test_doc_commands parses.
+DOC_FILES = (
+    REPO_ROOT / "README.md",
+    *sorted((REPO_ROOT / "docs").glob("*.md")),
+    REPO_ROOT / "skills" / "agent-discogs" / "SKILL.md",
+    *sorted((REPO_ROOT / "src" / "agent_discogs" / "skills").rglob("*.md")),
+)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_env(

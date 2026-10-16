@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import json
 import re
 from pathlib import Path
 
@@ -31,6 +32,14 @@ def _get(*argv: str) -> str:
     return result.stdout
 
 
+def _declared_description(name: str) -> str:
+    """The skill's front-matter description, read without the code under test."""
+    text = (_SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
+    match = re.search(r"^description: (\S.*)$", text, re.MULTILINE)
+    assert match
+    return match[1]
+
+
 class TestSkillsCommand:
     def test_list_is_default_and_aligns_every_skill(self) -> None:
         result = CliRunner().invoke(cli, ["skills"])
@@ -40,11 +49,26 @@ class TestSkillsCommand:
         assert [line.split(" ", 1)[0] for line in lines] == list(SKILLS)
         width = max(map(len, SKILLS))
         for name, line in zip(SKILLS, lines, strict=True):
-            text = (_SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
-            match = re.search(r"^description: (\S.*)$", text, re.MULTILINE)
-            assert match
-            assert line == f"{name:<{width}} {match[1]} (agent-discogs {installed})"
+            desc = _declared_description(name)
+            assert line == f"{name:<{width}} {desc} (agent-discogs {installed})"
         assert CliRunner().invoke(cli, ["skills", "list"]).stdout == result.stdout
+
+    def test_list_json_has_one_object_per_skill_and_no_color(self) -> None:
+        result = CliRunner().invoke(
+            cli, ["--color", "always", "skills", "list", "--json"]
+        )
+        assert result.exit_code == 0
+        installed = importlib.metadata.version("agent-discogs")
+        assert json.loads(result.stdout) == [
+            {
+                "name": name,
+                "description": _declared_description(name),
+                "version": installed,
+            }
+            for name in SKILLS
+        ]
+        assert "\x1b" not in result.stdout
+        assert "\x1b" not in result.stderr
 
     @pytest.mark.parametrize("name", SKILLS)
     def test_get_prints_the_named_skill(self, name: str) -> None:
