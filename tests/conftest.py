@@ -504,3 +504,159 @@ def _continuation(result: Result) -> list[str]:
 
 
 _TECHNO_REFS = [f"@r{1000 + n}" for n in _TECHNO]
+
+
+# The account `--owned`, `--wanted` and `get owned` read (`_Account`) and its
+# harness, shared by test_cli_owned.py and test_cli_get_owned.py.
+class _Account:
+    """Discogs as the token's user `me` sees it. Every listing holds releases
+    1-5 (an artist's release 4 is a master; versions 2 and 3 are tagged
+    "Unofficial Release", which a versions `format` filter matches); the
+    "All" folder holds `size` records, all of other releases except release 2
+    once (record 10), release 3 twice (records 20 and 150, the second on page
+    2) and release 6 once, in no folder Discogs named (record 30). Each
+    record names its release's master (`masters`): releases 2 and 3 are
+    pressings of master 77, release 6 has master id 0, and the others none.
+    The wantlist holds `wants` wants, all of other releases except release 1
+    (want 5, page 1) and release 4 (want 120, page 2). Version, label and
+    artist rows carry Discogs' `stats`, the user's `in_collection` being the
+    copies the folder holds and `in_wantlist` 1 for a wanted release, except
+    the row of release `unstated`, whose `stats.user` is null. `throttle`
+    answers with a 429: `"identity"` the username, `"collection:N"`
+    collection page N, `"folders"` the folder list, `"wants:N"` wants page
+    N, and `"search:2"` a second search page (the search then has two). With
+    `label_repeats`, a label catalogue sends releases 2 and 3 twice in a row
+    each."""
+
+    def __init__(
+        self,
+        size: int = 250,
+        *,
+        wants: int = 250,
+        throttle: tuple[str, ...] = (),
+        unstated: int | None = None,
+        label_repeats: bool = False,
+    ) -> None:
+        self.size, self.throttle, self.unstated = size, throttle, unstated
+        self.label_repeats = label_repeats
+        # record: (release id, folder id)
+        self.copies = {10: (2, 1), 20: (3, 5), 30: (6, None), 150: (3, 1)}
+        self.masters = {2: 77, 3: 77, 6: 0}
+        self.wants = [{5: 1, 120: 4}.get(n, 3000 + n) for n in range(wants)]
+
+    def _stats(self, release_id: int) -> dict[str, Any]:
+        held = sum(rid == release_id for rid, _ in self.copies.values())
+        user = {"in_collection": held, "in_wantlist": int(release_id in self.wants)}
+        return {
+            "community": {"in_collection": 9, "in_wantlist": 3},
+            "user": None if release_id == self.unstated else user,
+        }
+
+    def _wants_page(self, page: int, per: int) -> object:
+        if f"wants:{page}" in self.throttle:
+            return _too_many()
+        ids = self.wants[(page - 1) * per : page * per]
+        wants = [{"id": rid, "basic_information": {"id": rid}} for rid in ids]
+        size = len(self.wants)
+        pages = {"page": page, "pages": -(-size // per), "items": size}
+        return {"pagination": {**pages, "per_page": per}, "wants": wants}
+
+    def __call__(self, path: str, params: dict[str, str]) -> object:
+        if path == "/oauth/identity":
+            if "identity" in self.throttle:
+                return _too_many()
+            return {"id": 7, "username": "me"}
+        if path == f"{_USER}/wants":
+            return self._wants_page(int(params["page"]), int(params["per_page"]))
+        if path == _FOLDER_LIST:
+            return _too_many() if "folders" in self.throttle else {"folders": _FOLDERS}
+        if path == _RECORDS:
+            return self._folder_page(int(params["page"]), int(params["per_page"]))
+        if path.startswith(f"{_USER}/collection/releases/"):
+            release_id = int(path.rsplit("/", 1)[-1])
+            items = [
+                {"id": rid, "instance_id": n, "folder_id": folder}
+                for n, (rid, folder) in sorted(self.copies.items())
+                if rid == release_id
+            ]
+            pages = {"page": 1, "pages": 1, "items": len(items), "per_page": 100}
+            return {"pagination": pages, "releases": items}
+        key = path.rsplit("/", 1)[-1]
+        # Version and label catalogue rows carry no type; they are releases.
+        rows: list[dict[str, Any]] = [
+            {"id": i, "title": f"Title {i}"} for i in range(1, 6)
+        ]
+        if key in ("versions", "releases"):
+            for row in rows:
+                row["stats"] = self._stats(row["id"])
+        if key == "versions":
+            for row in rows:
+                unofficial = row["id"] in (2, 3)
+                row["format"] = "CD, Unofficial Release" if unofficial else "CD"
+            # The community's counts, which the row shows before the mark.
+            rows[1]["stats"]["community"] = {"in_collection": 41, "in_wantlist": 284}
+            if "format" in params:
+                rows = [r for r in rows if params["format"] in r["format"].split(", ")]
+            return {"pagination": _one_page(len(rows)), "versions": rows}
+        if key == "releases" and path.startswith("/labels/"):
+            if self.label_repeats:
+                twice = (2, 3)
+                rows = [
+                    r for row in rows for r in [row] * (2 if row["id"] in twice else 1)
+                ]
+            return {"pagination": _one_page(len(rows)), "releases": rows}
+        for row in rows:
+            row["type"] = "release"
+        if key == "releases":  # an artist's: release 4 is a master
+            rows[3]["type"] = "master"
+            return {"pagination": _one_page(5), "releases": rows}
+        if key == "search":
+            if "search:2" not in self.throttle:
+                return {"pagination": _one_page(5), "results": rows}
+            if params["page"] == "2":
+                return _too_many()
+            pages = {"page": 1, "pages": 2, "items": 105, "per_page": 100}
+            return {"pagination": pages, "results": rows}
+        return {"id": 1, "name": "Entity", "title": "Entity"}
+
+    def _folder_page(self, page: int, per: int) -> object:
+        if f"collection:{page}" in self.throttle:
+            return _too_many()
+        items = []
+        for n in range((page - 1) * per, min(page * per, self.size)):
+            rid, folder = self.copies.get(n, (1000 + n, 1))
+            release = {"id": rid, "master_id": self.masters.get(rid)}
+            items.append(
+                {
+                    "id": rid,
+                    "instance_id": n,
+                    "folder_id": folder,
+                    "basic_information": release,
+                }
+            )
+        pages = {"page": page, "pages": -(-self.size // per), "items": self.size}
+        return {"pagination": {**pages, "per_page": per}, "releases": items}
+
+
+def _one_page(items: int) -> dict[str, int]:
+    return {"page": 1, "pages": 1, "items": items, "per_page": 5}
+
+
+class _AccountHarness:
+    """`_FakeAPI` over `account`. With `token`, the environment holds the
+    credentials of a user, as `--owned` and `get owned` need."""
+
+    def __init__(
+        self, monkeypatch: pytest.MonkeyPatch, account: _Account, *, token: bool = True
+    ) -> None:
+        if token:
+            monkeypatch.setenv("DISCOGS_TOKEN", "test-token")
+        self.api = _FakeAPI(monkeypatch, account)
+
+    def run(self, *args: str) -> tuple[Result, list[str]]:
+        start = len(self.api.sends)
+        result = CliRunner().invoke(cli, list(args))
+        return result, [path for path, _ in self.api.sends[start:]]
+
+    def pages(self) -> list[int]:
+        return [int(p["page"]) for path, p in self.api.sends if path == _RECORDS]
