@@ -7,7 +7,8 @@ Each command, its own flags and its text output. The global flags (`--cached`, `
 - `--max-requests`: [Capping requests with --max-requests](caching-and-budget.md#capping-requests-with---max-requests), next to what each command costs;
 - `--debug`: [The --debug panel](debugging.md#the---debug-panel);
 - `--color`: [Color](debugging.md#color);
-- error messages: [Errors](errors.md).
+- error messages: [Errors](errors.md);
+- questions no command can answer, because the Discogs API has no endpoint for them or the CLI only reads: [What the Discogs API cannot answer](api-limits.md).
 
 ## search
 

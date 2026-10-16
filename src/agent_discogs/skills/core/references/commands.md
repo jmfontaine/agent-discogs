@@ -30,6 +30,10 @@ With a tool-call time limit, pass `--max-requests`.
 
 In a filtered list's JSON `pagination`, `page` counts your pages of `--limit` matches, but `total_items` is the unfiltered total (the text header's `≤N`) and `total_pages` counts the 100-row Discogs pages the scan reads, so page 2 can report `"total_pages":28`. Neither says how many pages of matches remain: continue until `next_cursor` is `null` (in text, until no `Next page:` / `Continue scan:` is printed).
 
+## Text encoding
+
+Text output is UTF-8 when the terminal or pipe is. On a stdout that is not (`PYTHONIOENCODING=ascii`, some Windows pipes), characters it cannot hold print as backslash escapes (`宇多田` → `\u5b87\u591a\u7530`) and the command still succeeds. A pasted `Next page:` command then carries the escapes too, so prefer UTF-8 for non-Latin queries.
+
 ## Request costs
 
 | Command | Requests |
@@ -277,11 +281,11 @@ agent-discogs skills path core           # directory of one skill
 
 ## Aliases
 
+Each alias takes the arguments and flags of its command.
+
 | Alias | Equivalent |
 |-------|------------|
-| `agent-discogs find ...` | `agent-discogs search ...` |
-| `agent-discogs query ...` | `agent-discogs search ...` |
-| `agent-discogs fetch ...` | `agent-discogs get ...` |
-| `agent-discogs show ...` | `agent-discogs get ...` |
-| `agent-discogs tracks @r847868 ...` | `agent-discogs get tracklist @r847868 ...` |
-| `agent-discogs price @r847868 ...` | `agent-discogs get price @r847868 ...` |
+| `find`, `query` | `search` |
+| `fetch`, `show` | `get` |
+| `tracks @r847868 ...` | `get tracklist @r847868 ...` |
+| `price @r847868 ...` | `get price @r847868 ...` |
