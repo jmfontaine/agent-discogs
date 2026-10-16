@@ -30,6 +30,8 @@ agent-discogs search release --artist "Nine Inch Nails" --year 1994 --release-ty
 
 Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (1-100, default: 5) for page size.
 
+A release or master row shows its title, year, country, first label and catalog number, formats, Discogs' community counts and, for a release, its master: `@r847868 "Nine Inch Nails - The Downward Spiral" 1994 US · Nothing Records 92346-2 · CD, Album · have 7,544 · want 1,113 → @m3719`. `have` is how many Discogs users own the release and `want` how many want it, both from the search page itself, so they cost no request (`--json`: `have`, `want`). A count Discogs did not send is left out; `0` is shown.
+
 Discogs occasionally returns a result whose type is not one of those four, or has none. Such a row has no ref, because nothing says what its ID refers to: it reads `id 9001 [playlist] "..."` in text (`[no type]` when Discogs sends none) and carries `id` instead of `ref` under `--json`. The rest of the page prints as usual.
 
 To continue, paste the `Next page:` command printed under the results: the default `--release-type official` filter is applied client-side, so continuation is a cursor (`--after`), not a page number, and the total is an upper bound (`≤N`).
@@ -44,7 +46,35 @@ A query starting with `-` goes after `--` (`agent-discogs search --release-type 
 
 ### Filters
 
-Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for JSON output (see [JSON output](json-output.md)).
+Filters: `--anv`, `--artist`, `--barcode`, `--catno`, `--country`, `--credit`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--title`, `--track`, `--year`. Use `--json` for JSON output (see [JSON output](json-output.md)).
+
+Four filters search fields the query alone mixes together. Each works with or without a query and with every other filter, and costs what the same search costs without it:
+
+| Flag | Matches |
+|---|---|
+| `--credit` | a person credited on a release or master (an engineer, producer, mixer, ...) |
+| `--track` | track titles |
+| `--title` | release titles; on `search artist` and `search label`, the artist's or label's own name. Sent to Discogs as `release_title`; the header and the `Next page:` command keep `title` |
+| `--anv` | artist name variations (the name as credited on a release) |
+
+```bash
+agent-discogs search release --artist "Horace Silver" --credit "Rudy Van Gelder" --format Vinyl
+agent-discogs search release --track "So What" --artist "Miles Davis"
+agent-discogs search release --title "Kind of Blue"
+agent-discogs search artist --anv "Trane"
+```
+
+Discogs answers a filter it cannot match on a search type with an empty page, which reads as "nothing found", so the CLI refuses these before any request with `invalid_argument`: `--credit` and `--track` on `search artist` or `search label`, and `--anv` on `search release`, `search master` or `search label`. An untyped search takes all four.
+
+`--credit` is a broad match: `"Van Gelder"` finds about as many releases as `"Rudy Van Gelder"`, quoting the name does not make it an exact-phrase match, and the first rows of `--credit "Rudy Van Gelder"` alone were a Debussy and a Bach album. Narrow it with `--artist`, `--genre`, `--format` or `--year`. Adding a role word (`"Rudy Van Gelder Engineer"`) returns nothing. `get releases @a... --role` cannot replace it: for one engineer, 300 discography rows held only the roles Appearance, Mixed by, Remix and Producer, so `--role Engineer` matched nothing. To see what a person did on a given release, use `get credits @r...`.
+
+`--barcode` is matched against a release's identifier text, not only as a UPC/EAN: it also finds pressings by their matrix/runout etching, the one search that does. Other identifier types (label codes, for instance) have not been checked, so do not rely on them. For example, this finds the UK LP pressings whose runout contains `A3 TOWNHOUSE`:
+
+```bash
+agent-discogs search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all
+```
+
+Type a barcode as digits without spaces (`--barcode 602527826486`): `"6 02527 82648 6"` also matched an unrelated release. The value is matched as text, not as a number, so the barcode without its check digit (`60252782648`) found the same releases. Discogs writes some etchings in more than one way, so try each spelling (`TOWNHOUSE` and `TOWN HOUSE`): one can miss releases the other finds.
 
 ### Sorting
 
@@ -82,7 +112,7 @@ It is complete only while Discogs keeps that order; when a looked-up date breaks
 
 `--owned` marks every release row with the copies in your own Discogs collection, on `search`, `get versions`, `get releases` (artist and label) and `get inventory`. A row ends in `· owned` (one copy), `· owned ×2` (two or more), `· not owned`, or `· owned ?` when the read did not reach it (below). In `--json`, each row gets `owned`, the count, and the document gets a `collection` object (see [JSON output](json-output.md#owned-rows)).
 
-It is not the `have 1,234` on a row, which is Discogs' community count: how many Discogs users own that release. `owned` is the authenticated user's own copies.
+It is not the `have 1,234 · want 56` on a row, which are Discogs' community counts: how many Discogs users own that release and how many want it. `owned` is the authenticated user's own copies.
 
 ```bash
 agent-discogs search release --artist "Nine Inch Nails" --year 1994 --release-type unofficial --limit 100 --owned
@@ -104,6 +134,7 @@ Get entity details by noun and ref. Aliases: `fetch`, `show`.
 
 ```bash
 agent-discogs get release @r352665
+agent-discogs get release @r352665 --master-year
 agent-discogs get artist @a3857
 agent-discogs get master @m3719
 agent-discogs get label @l647
@@ -137,7 +168,11 @@ Unknown date parts are left out, in text and `--json` alike: Discogs' year `0` i
 
 Its format lists one entry per physical format, separated by `;`: the quantity when above one, the name, then descriptions and free text in parentheses (`Format: 2×Vinyl (LP, Album, 180g, Gatefold); CD (Album)`; `--json` carries the same string).
 
+`Genres:` and `Styles:` are `;`-separated too (`Genres: Rock; Folk, World, & Country`), on `get release` and `get master` alike, because the genre `Folk, World, & Country` has commas; `--json` carries them as arrays (`"genres":["Rock","Folk, World, & Country"]`).
+
 `-v, --verbose` on `release` appends notes, credits, and identifiers in one call; `-c, --compact` replaces the tracklist with a one-line `Tracks: 14 (65:01)` summary; the total is omitted when any track lacks a duration (use `tracks` when the tracklist is what you want).
+
+`--master-year` ends the `Master:` line with the master's year, the year of the work rather than of this pressing: `get release @r352665 --master-year` prints `Master: @m3719 (1994)` for a 2004 release (`--json`: `master_year` next to `master`; `--json --full`: a top-level `master_year` beside the record's keys). It costs one more request per release that has a master, sent after the release is read: `GET /masters/{id}`, the request `get master` sends, so the two share the cache and releases of one master share one request (except under `--fresh`). A release with no master has no `Master:` line and sends nothing more; a master year Discogs does not know (`0`) prints no year. Two failures of that request leave the release whole, with exit code 0: a `--cached` miss and a deleted master (404) print the reason in place of the year (`Master: @m3719 · ✗ Not cached: GET /masters/3719`), and `--json` carries `master_year_error` (`code` `cache_miss` or `not_found`, and `message`) instead of `master_year`. Any other failure of it (a 429, a 5xx, a connection error, a response that does not parse) fails the ref as usual: its `✗` block, exit 1, the release not printed; the release is cached by then (not under `--fresh`), so a rerun costs only the master request.
 
 Index tracks (a suite or medley split into parts) list their sub-tracks indented beneath them. The compact count includes each part, and the total sums the parts' durations; when a part is untimed, the index track's own duration stands in for the suite.
 
@@ -364,6 +399,29 @@ Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) a
 
 `versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`. All of them are sent to Discogs.
 
+Each row of `versions` and of both `releases` listings ends in Discogs' community counts, `· have N · want N` (how many Discogs users own the release and how many want it), before the `--owned` mark. They come with the listing page, so they cost no request and need no credentials (`--json`: `have`, `want`). A count Discogs did not send is left out; `0` is shown.
+
+```
+@r847868 1994 US · Nothing Records 92346-2 · CD, Album · have 7,544 · want 1,113
+```
+
+On an artist's discography a master row shows the counts Discogs sends for the master; Discogs does not document how it derives them, and the CLI shows them as sent.
+
+#### Repeated rows in a label catalogue
+
+Discogs sends some rows of a label catalogue twice (or three times) in a row, identical in every field: on Blue Note, about one row in five. `get releases @l...` drops a row equal to the row Discogs sent just before it, so a run of equal rows shows once, and says how many it dropped in the header:
+
+```
+Releases on @l281 "Blue Note" (page 1, 2 of 40,221 results; 1 repeated row dropped)
+```
+
+- **Server-side pages** (`--page`, the default): the rule applies to the one page Discogs returned, so a page can show fewer rows than `--limit`. The total is Discogs' own and still counts the repeats; `Next page:` is `--page N+1`, and dropping a row costs no request.
+- **The `--year` scan** drops a repeat as it reads, comparing each row with the row before it in the listing, whatever its year, so the page still fills with `--limit` distinct matches. The note counts the dropped repeats of matching rows; the cursor names the next row to scan and the cost is the scan's (1 request per 100 rows), as without repeats.
+- A release listed twice with a different catalogue number or format is two rows, and both stay. Artist discographies are not affected: a release on several rows there carries a different `role` on each.
+- Only a repeat within one page is seen: when the two rows of a pair fall on either side of a page break, the next page starts with the last row of the page before (about one page in five at the default `--limit 5`; `--limit 100` nearly always avoids it). A `--year` page that fills on the first of two equal rows likewise leaves the second to start the next page.
+
+Under `--json`, `pagination` adds `duplicates_dropped` when the page dropped any row (see [Pagination](json-output.md#pagination)). `--owned` marks the rows that remain.
+
 #### --release-type
 
 `get versions @m... --release-type official|unofficial|all` filters on the format description "Unofficial Release", which Discogs gives bootlegs, counterfeits and pirate copies alike, the same rule `search --release-type` uses. A version row's format lists its descriptions (`LP, Album, Unofficial Release`), and the match is on the whole description, so a "Partially Unofficial" version counts as official.
@@ -389,7 +447,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 
 | Noun | Flags besides `--json` / `--full` |
 |---|---|
-| `release` | `-v, --verbose`, `-c, --compact` |
+| `release` | `-v, --verbose`, `-c, --compact`, `--master-year` |
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |

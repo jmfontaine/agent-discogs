@@ -4,7 +4,7 @@ The commands every task uses: the global flags, `search`, the database nouns of 
 
 ## Global Flags
 
-Global flags precede the command (`agent-discogs --cached price @r847868`).
+Global flags precede the command (`agent-discogs --cached price @r847868`). After it, `--cached`, `--fresh`, `--debug` or `--color` is a usage error (exit 2, nothing sent) whose message says to put it before.
 
 | Flag | Description |
 |------|-------------|
@@ -15,9 +15,7 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 | `--help` | Show help |
 | `--version` | Show version |
 
-After any command that talks to the API, stderr ends with a budget line such as `api: 3 requests · 43/60 left this minute` (`⚠` when 10 or fewer remain). See the Budget section of SKILL.md (`agent-discogs skills get core`).
-
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, and repeats `--max-requests` and `--owned` when they were given (and, for `get collection` and `get inventory`, `--limit`, its filters, `--sort` and `--desc`, plus `--folder` and `--fields` for the collection and `--in-wantlist` for the inventory; for `get lists` and `get wantlist`, `--limit`, plus `--for-sale`, `--max-price` and `--currency` for the wantlist). An inventory username starting with `-` is put after `--`.
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and every listing flag given (`--limit`, filters, `--sort`, `--desc`, `--max-requests`, `--owned`). An inventory username starting with `-` is put after `--`.
 
 ### Client-side scans
 
@@ -39,6 +37,7 @@ Text output is UTF-8 when the terminal or pipe is. On a stdout that is not (`PYT
 | Command | Requests |
 |---|---|
 | `get artist\|label\|master\|release\|credits\|identifiers\|tracklist`, `tracks` | 1 per ref |
+| `get release --master-year` | 2 per ref with a master (the master request is cached, shared with `get master`) |
 | `get releases @a...\|@l...`, `get versions @m...` (also `--release-type unofficial` without `--format`, filtered by Discogs) | `--json`: 1 per ref; text: 2 (the header name costs one) |
 | `get versions @r...` | 2 per ref (resolve the master, then list) |
 | Client-side scans: `get releases @a... --role`, `get releases @l... --year`, `get versions @m... --release-type official` (or `unofficial` with `--format`) | `--json`: 1 per 100 rows scanned; text: 1 more (the header name) |
@@ -64,7 +63,7 @@ agent-discogs search [type] <query> [--flags]
 | `type` | No | Entity type: `release`, `master`, `artist`, `label`. If omitted, searches all types. |
 | `query` | No | Search query string. Required unless at least one non-blank filter is given (e.g., `--catno`, `--barcode`); otherwise `invalid_argument` before any request. A query starting with `-` goes after `--` (`agent-discogs search --release-type all -- -ambient`); printed `Next page:` commands always put the type and query there. |
 
-**Output:** one row per match: ref, title, year, country, label + catalog number, format, `have N` (Discogs' community count: how many Discogs users own it, not you), and `→ @m...` (the release's master). The header echoes the filters you applied, and the sort when there is one. The `[type]` tag appears only on untyped searches. A result whose type is not artist/label/master/release has no ref: its row reads `id 9001 [playlist] "..."` (`[no type]` when Discogs sends none), with `id` instead of `ref` under `--json`, and the rest of the page is unaffected. Don't guess a prefix for it.
+**Output:** one row per match: ref, title, year, country, label + catalog number, format, `have N · want N` (Discogs' community counts: how many Discogs users own it and want it, not you), and `→ @m...` (the release's master). The header echoes the filters you applied, and the sort when there is one. The `[type]` tag appears only on untyped searches. A result whose type is not artist/label/master/release has no ref: its row reads `id 9001 [playlist] "..."` (`[no type]` when Discogs sends none), with `id` instead of `ref` under `--json`, and the rest of the page is unaffected. Don't guess a prefix for it.
 
 **Flags:**
 
@@ -72,10 +71,12 @@ agent-discogs search [type] <query> [--flags]
 
 | Flag | Description |
 |------|-------------|
+| `--anv` | Match an artist name variation; `search artist` or untyped only |
 | `--artist` | Filter by artist name |
-| `--barcode` | Filter by barcode |
+| `--barcode` | Match identifier text (barcode, matrix/runout etching) |
 | `--catno` | Filter by catalog number |
 | `--country` | Filter by country |
+| `--credit` | Match a person credited on a release or master; not on `search artist\|label`. A broad match: see [search patterns](search-patterns.md#credit-track-and-title-searches) |
 | `--desc` | With `--sort`: descending (newest first) |
 | `--format` | Filter by format (e.g., "Vinyl", "CD") |
 | `--genre` | Filter by genre |
@@ -91,6 +92,8 @@ agent-discogs search [type] <query> [--flags]
 | `--release-type` | `official` (default): client-side scan, `≤N` total, continues with `--after`. `unofficial`: filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` it falls back to the client-side scan. It returns every unofficial release: bootlegs, counterfeits and pirates alike; for bootlegs only, see Unofficial Releases in the pressings skill (`agent-discogs skills get pressings --full`). `all`: no filter. |
 | `--sort` | `date_added` only, and only on `search release ...`: order by when releases were added to Discogs (ascending; add `--desc` for newest first). Undocumented by Discogs and only seen working on release searches, so any other search, or `--desc` without `--sort`, fails with `invalid_argument` before any request. If Discogs drops it, results most likely come back in relevance order with no error. The filtered (default) path keeps the server's order. |
 | `--style` | Filter by style |
+| `--title` | Match release titles, sent as `release_title` (`search artist\|label`: the name) |
+| `--track` | Match track titles; not on `search artist\|label` |
 | `--year` | Filter by release year |
 
 **Examples:**
@@ -103,6 +106,8 @@ agent-discogs search label "Nothing Records"
 agent-discogs search master "The Downward Spiral"
 agent-discogs search release --catno "INT-92346"
 agent-discogs search release --barcode "606949235024"
+agent-discogs search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all   # runout etching
+agent-discogs search release --artist "Horace Silver" --credit "Rudy Van Gelder" --format Vinyl
 agent-discogs search release "Blue Monday" --artist "New Order"
 agent-discogs search release "Pretty Hate Machine" --format "Vinyl" --country US
 agent-discogs search release "The Downward Spiral" --release-type all --page 2 --limit 10
@@ -135,10 +140,10 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 - `identifiers`, alias `ids` (`@r` or numeric ID) — barcodes, matrix/runout etchings, label codes, rights societies. This is what distinguishes pressings that share a catalog number.
 - `label` (`@l` or numeric ID) — label profile, with Discogs' markup converted (linked entities as refs, see below); `Parent:` and `Sub-labels:` with `[@l...]` refs. `URLs:` lists linked sites by domain, omitting empty entries.
 - `master` (`@m` or numeric ID) — master release details.
-- `release` (`@r` or numeric ID) — title, artists `[@a...]`, label `[@l...]` + catalog number, format (one entry per physical format: `2×Vinyl (LP, Album, 180g); CD (Album)`), country, release date, `Added: YYYY-MM-DD` (the day it was added to Discogs, in the timestamp's own offset; JSON `added` is the full RFC 3339 timestamp), community stats, market summary, master ref, full tracklist. Refs are always inline. `--verbose` adds notes, credits, and identifiers. `--compact` collapses the tracklist to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). A suite or medley split into parts counts as its parts, timed by their sum, or by the suite's own duration when a part is untimed. Combine with `-v` to compare pressings without paying for tracklists.
-- `releases` (`@a` or `@l`; a numeric ID is an artist) — paginated. `releases @a...` is the artist discography: ref, `[type]`, title, year, label, format, role; `--sort year|title|format`, `--desc`. `releases @l...` is the label catalogue: ref, title, artist, year, catalog number, format. No server-side filters or sorting there (API limit): `--year` is a client-side scan that continues via `--after`, otherwise page with `--page`.
+- `release` (`@r` or numeric ID) — title, artists `[@a...]`, label `[@l...]` + catalog number, format (one entry per physical format: `2×Vinyl (LP, Album, 180g); CD (Album)`), country, release date, `Added: YYYY-MM-DD` (the day it was added to Discogs, in the timestamp's own offset; JSON `added` is the full RFC 3339 timestamp), genres and styles (`;`-separated), community stats, market summary, master ref, full tracklist. Refs are always inline. `--verbose` adds notes, credits, and identifiers. `--compact` collapses the tracklist to `Tracks: 14 (65:01)` (just `Tracks: 14` when a track lacks a duration). A suite or medley split into parts counts as its parts, timed by their sum, or by the suite's own duration when a part is untimed. Combine with `-v` to compare pressings without paying for tracklists.
+- `releases` (`@a` or `@l`; a numeric ID is an artist) — paginated. `releases @a...` is the artist discography: ref, `[type]`, title, year, label, format, role, `have N · want N` (a master row: the master's, as Discogs sends them); `--sort year|title|format`, `--desc`. `releases @l...` is the label catalogue: ref, title, artist, year, catalog number, format, `have N · want N`. No server-side filters or sorting there (API limit): `--year` is a client-side scan that continues via `--after`, otherwise page with `--page`. Discogs sends some catalogue rows twice in a row: a row equal to the one before it is dropped, and the header notes `N repeated rows dropped` (JSON `pagination.duplicates_dropped`; totals still count them), so a page can be shorter than `--limit` (a `--year` page still fills). A pair split by a page break stays (`--limit 100` nearly always avoids it).
 - `tracklist` (`@r` or numeric ID; shortcut `tracks`) — numbered tracklist with durations and per-track artists (for VA releases). Index tracks (a suite or medley) list their parts indented beneath them; in `--json` an index row has `"type": "index"` and nests its parts under `sub_tracks`.
-- `versions` (`@m` or numeric ID) — paginated master release versions, one row per pressing: ref, year, country, label + catalog number, format, `have N` (Discogs community count). `--sort released` puts the earliest pressing first; `--year` narrows; `--owned` marks the ones you own. `--release-type official|unofficial|all` filters on the "Unofficial Release" format description like `search`, but **defaults to `all`** (every version, unofficial ones included). `unofficial` is filtered by Discogs (exact total, `--page`); `official` is a client-side scan (`≤N`, continues via `--after`, takes `--max-requests`), as is `unofficial` with `--format`. "Partially Unofficial" versions count as official.
+- `versions` (`@m` or numeric ID) — paginated master release versions, one row per pressing: ref, year, country, label + catalog number, format, `have N · want N` (Discogs community counts). `--sort released` puts the earliest pressing first; `--year` narrows; `--owned` marks the ones you own. `--release-type official|unofficial|all` filters on the "Unofficial Release" format description like `search`, but **defaults to `all`** (every version, unofficial ones included). `unofficial` is filtered by Discogs (exact total, `--page`); `official` is a client-side scan (`≤N`, continues via `--after`, takes `--max-requests`), as is `unofficial` with `--format`. "Partially Unofficial" versions count as official.
 
 The other nouns have their own skill: `collection`, `list`, `lists` and `owned` read the user's own collection and lists (`agent-discogs skills get collection`); `inventory`, `price` and `wantlist` cover the Marketplace (`agent-discogs skills get marketplace`).
 
@@ -170,10 +175,11 @@ Discogs writes links into artist and label profiles and release notes as markup,
 | `--limit` | `releases`, `versions`, `collection`, `lists`, `wantlist`, `inventory`: results per page, 1-100 (default: 5); with a `collection` filter, `wantlist --for-sale` or an `inventory` filter, how many matches to collect |
 | `--page` | Page number, from 1 (server-side pages: `versions` without a `--release-type` scan, `collection` without a filter, `lists`, `wantlist`, `inventory` without a filter, `releases` without `--role` / label `--year`); rejected with a `collection` filter, `wantlist --for-sale`, an `inventory` filter and `versions --release-type official` (or `unofficial --format ...`) |
 | `--after` | Continuation cursor copied from the previous `Next page:` / `Continue scan:` line (`releases --role`, `releases @l... --year`, `versions --release-type official` or `unofficial --format ...`, `collection` with a filter, `wantlist --for-sale`, and `inventory` with a filter, one ref only) |
-| `--max-requests` | `releases --role`, `releases @l... --year`, `versions --release-type official` (or `unofficial --format ...`), `releases` / `versions` / `inventory` with `--owned`, `collection` with a filter, `inventory` with a filter, and `wantlist --for-sale` (3 or more there: the username, a wants page and one want's stats); one ref only: cap the command's HTTP sends, the text header lookup, the `--owned` collection read, the `collection` username and folder list, the `--for-sale` username, wants pages and stats lookups, and the `--in-wantlist` username and wants pages included (the header runs first). Default: no cap. With `--owned` the cap only stops scans and the collection read: the header and a server-side listing page are always sent. In text under `--fresh` the header is sent again on every run, so a cap it uses up ends in an empty capped page whose header says to continue with a higher `--max-requests`. See Client-side scans above. |
+| `--max-requests` | `releases --role`, `releases @l... --year`, `versions --release-type official` (or `unofficial --format ...`), `releases` / `versions` / `inventory` with `--owned`, `collection` with a filter, `inventory` with a filter, and `wantlist --for-sale` (3 or more there); one ref only: cap the command's HTTP sends, every lookup included: the text header (sent first), the `--owned` collection read, and the username, folder list, wants pages and stats lookups of the collection and marketplace commands. Default: no cap. With `--owned` the cap only stops scans and the collection read: the header and a server-side listing page are always sent. In text under `--fresh` the header is sent again on every run, so a cap it uses up ends in an empty capped page whose header says to continue with a higher `--max-requests`. See Client-side scans above. |
 | `--owned` | `releases`, `versions` and `inventory` only: mark each release row with the copies in your own collection. Master, artist and label rows (an artist discography lists masters) get no mark. Needs a token or OAuth; the marks, their JSON and their cost: `agent-discogs skills get collection`. |
 | `-v, --verbose` | `release` only: append notes, credits, and identifiers |
 | `-c, --compact` | `release` only: replace the tracklist with `Tracks: N (mm:ss)`; an index track counts as its parts, timed by their sum or, when a part is untimed, by the index track's own duration; otherwise the total appears only when every track has a duration (JSON: `tracks` string instead of `tracklist`) |
+| `--master-year` | `release` only: end `Master:` with the master's year, `Master: @m3719 (1994)` (JSON `master_year`), +1 request per release with a master. A `--cached` miss or a deleted master prints `· ✗ <why>` instead (JSON `master_year_error`); that ref still succeeds |
 
 ### Additional flags for `releases`
 
@@ -202,7 +208,7 @@ Each flag applies only to the nouns below. Any other flag fails with `invalid_ar
 
 | Noun | Flags besides `--json` / `--full` |
 |------|-----------------------------------|
-| `release` | `-v, --verbose`, `-c, --compact` |
+| `release` | `-v, --verbose`, `-c, --compact`, `--master-year` |
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc`, `--release-type`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |
@@ -220,14 +226,13 @@ Each flag applies only to the nouns below. Any other flag fails with `invalid_ar
 
 ```bash
 agent-discogs get release @r847868
-agent-discogs get release 847868
+agent-discogs get release @r352665 --master-year
 agent-discogs get artist @a3857
 agent-discogs get master @m3719
 agent-discogs get label @l647
 agent-discogs get tracklist @r847868
 agent-discogs get credits @r847868
 agent-discogs get identifiers @r847868
-agent-discogs get ids @r847868
 agent-discogs get releases @a3857
 agent-discogs get releases @a3857 --page 2 --limit 10
 agent-discogs get releases @a3857 --role Remix

@@ -18,11 +18,14 @@ from pydantic import BaseModel
 from agent_discogs import trace
 from agent_discogs.json_output import dumps, page_document
 from agent_discogs.pagination import (
+    DropRepeats,
     PageResult,
     ScanStop,
     fetch_filtered_page,
     fetch_page,
+    keep_all,
     parse_cursor,
+    without_repeats,
 )
 
 
@@ -290,6 +293,59 @@ class TestFetchFilteredPage:
         assert notes[-1] == trace.ScanNote(
             api_calls=2, rows=200, kept=0, stop="max_requests"
         )
+
+
+class TestDropRepeats:
+    """Rows are `_FakeModel`s built separately, so a repeat is `==` by value,
+    as two rows Discogs sent alike are."""
+
+    @staticmethod
+    def _rows(*names: str) -> list[_FakeModel]:
+        return [_FakeModel(id=ord(name[0]), name=name) for name in names]
+
+    def test_a_run_keeps_its_first_row(self) -> None:
+        keep = DropRepeats(keep_all)
+        decided = [keep(row) for row in self._rows("a", "a", "a", "b", "a")]
+        assert decided == [True, False, False, True, True]
+        assert keep.dropped == 2
+
+    def test_the_row_before_counts_even_when_not_kept(self) -> None:
+        """A repeat of a row `keep` refuses is not counted, and a row `keep`
+        refused still separates two equal rows."""
+        keep = DropRepeats(lambda row: row.name.startswith("k"))
+        rows = self._rows("skip", "skip", "keep", "keep", "kept", "s", "kept")
+        assert [keep(row) for row in rows] == [
+            *(False, False, True, False, True, False, True)
+        ]
+        assert keep.dropped == 1
+
+    def test_without_repeats_keeps_the_totals(self) -> None:
+        result = PageResult(self._rows("a", "a", "b"), 3, 40, 8)
+        dropped = without_repeats(result)
+        assert [row.name for row in dropped.items] == ["a", "b"]
+        assert dropped.duplicates_dropped == 1
+        assert (dropped.page, dropped.total_items, dropped.total_pages) == (3, 40, 8)
+        pagination = page_document(dropped, dict, full=False)["pagination"]
+        assert pagination["duplicates_dropped"] == 1
+
+    def test_a_scan_compares_across_its_pages(self) -> None:
+        """The scan shows `keep` every row in order, so the last row of one
+        100-row page and the first of the next are compared too."""
+        listing = _PagedListing(150)
+        keep = DropRepeats(lambda row: row.id >= 99)
+        original = listing.__call__
+
+        def same_edge(*, page: int, per_page: int) -> SimpleNamespace:
+            fetched = original(page=page, per_page=per_page)
+            result = fetched.fetch()
+            if page == 2:
+                result.items[0] = _FakeModel(id=99, name="row99")
+            return SimpleNamespace(fetch=lambda: result)
+
+        result = _scan(same_edge, limit=3, keep=keep, cursor=None)
+        assert [row.id for row in result.items] == [99, 101, 102]
+        assert keep.dropped == 1
+        assert result.next_cursor == "2:103"
 
 
 @contextlib.contextmanager

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import shlex
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 import click
@@ -71,6 +71,9 @@ class PageResult:
     the scan stopped before it read any listing page, so nothing is known
     about the listing yet. `stop` says why the scan stopped short; the caller
     then presents the cursor as "continue scanning" rather than "next page".
+    `duplicates_dropped` counts the rows left out for repeating the row
+    Discogs sent just before them (`DropRepeats`); the totals still count
+    them.
     """
 
     items: list[Any]
@@ -80,6 +83,7 @@ class PageResult:
     filtered: bool = False
     stop: ScanStop | None = None
     next_cursor: str | None = None
+    duplicates_dropped: int = 0
 
     @property
     def capped(self) -> bool:
@@ -234,6 +238,41 @@ def rate_limited_stop(exc: RateLimitError) -> ScanStop:
     return ScanStop(
         "rate_limited", retry_after=None if seconds is None else math.ceil(seconds)
     )
+
+
+_NO_ROW = object()
+
+
+class DropRepeats:
+    """A `keep` that also drops a row equal to the row just before it in the
+    listing (`==` on the SDK model: every field the same), so a run of equal
+    rows keeps its first. The row before is the previous one shown, kept or
+    not, and the first row shown is never a repeat. `dropped` counts the
+    repeats `keep` would have kept. Discogs sends some label catalogue rows
+    twice in a row."""
+
+    def __init__(self, keep: Callable[[Any], bool]) -> None:
+        self._keep = keep
+        self._previous: Any = _NO_ROW
+        self.dropped: int = 0
+
+    def __call__(self, item: Any) -> bool:
+        repeat = item == self._previous
+        self._previous = item
+        if not self._keep(item):
+            return False
+        if repeat:
+            self.dropped += 1
+        return not repeat
+
+
+def without_repeats(result: PageResult) -> PageResult:
+    """`result` without the rows equal to the row just before them on the
+    page (`DropRepeats`), counted in `duplicates_dropped`. The totals and the
+    page number stay as Discogs sent them."""
+    keep = DropRepeats(keep_all)
+    items = [item for item in result.items if keep(item)]
+    return replace(result, items=items, duplicates_dropped=keep.dropped)
 
 
 def fetch_filtered_page(

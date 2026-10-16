@@ -43,10 +43,14 @@ Commands:
                               shell, e.g. eval "$(agent-discogs completion zsh)"
 
 Search Types:  artist, label, master, release
-Search Flags:  --artist, --barcode, --catno, --country, --format, --genre,
-               --label, --owned, --style, --year; --release-type official
-               (default; a client-side scan on release, master and untyped
-               searches) | unofficial | all
+Search Flags:  --anv, --artist, --barcode, --catno, --country, --credit,
+               --format, --genre, --label, --owned, --style, --title, --track,
+               --year; --release-type official (default; a client-side scan
+               on release, master and untyped searches) | unofficial | all
+Search --barcode:
+               matches identifier text, not only a UPC/EAN: it finds pressings
+               by matrix/runout etching; type a barcode without spaces; try
+               'TOWNHOUSE' and 'TOWN HOUSE'
 Search Auth:   Discogs documents search as needing credentials (see
                Environment); unauthenticated searches currently get answers,
                but Discogs may refuse one with auth_required
@@ -145,12 +149,16 @@ Get List:      get list <id>...: a list by its id, a plain number (a typed ref
                description, public, url, items (ref, title, comment);
                --json --full: the list records
 
-On a row, 'have N' is Discogs' community count (how many Discogs users own the
-release); 'owned' is your own copies (--owned).
+On a search, versions or releases row, 'have N · want N' are Discogs' community
+counts (how many Discogs users own the release and want it; --json: have,
+want), read from the listing page at no extra request; 'owned' is your own
+copies (--owned).
 
 get release's Format line (and --json formats) lists one entry per physical
 format, ';'-separated: the quantity when above 1, the name, then descriptions
 and free text in parentheses, e.g. 2\u00d7Vinyl (LP, Album, 180g, Gatefold); CD (Album).
+get release and get master's Genres and Styles lines are ';'-separated too,
+since a genre can hold commas: Genres: Rock; Folk, World, & Country.
 
 Refs:
   Search results return typed refs: @a3857 (artist), @r847868 (release),
@@ -311,6 +319,11 @@ Options:
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its
                    own duration; total omitted if any track lacks a duration)
+  --master-year    get release: 'Master: @m3719 (1994)', the master's year
+                   (--json: master_year), 1 more request per release with a
+                   master (the one get master sends, cached); a --cached miss
+                   or a deleted master prints '· ✗ <why>' instead (--json:
+                   master_year_error), exit 0
   --sort KEY       Server-side order. get releases @a: year|title|format;
                    get versions: released|title|format|label|catno|country;
                    get collection: label|artist|title|catno|format|rating|
@@ -335,11 +348,17 @@ Options:
                    --full
   --value          get collection: its value (min, median, max) in your
                    currency instead of the listing; takes no other flag
+  --credit, --track, --title, --anv
+                   search: match a person credited on a release or master, a
+                   track title, the release title (sent as release_title; on
+                   search artist|label, the name), an artist name variation.
+                   --credit and --track are refused on search artist|label,
+                   --anv on search release|master|label (invalid_argument)
   --version        Show version and exit
   --help           Show this message and exit
 
 Get flags by noun (any other get flag fails with invalid_argument):
-  release          -v/--verbose, -c/--compact
+  release          -v/--verbose, -c/--compact, --master-year
   releases @a      --limit, --page, --role, --sort, --desc, --owned, --after
                    and --max-requests (with --role or --owned)
   releases @l      --limit, --page, --year, --owned, --after and --max-requests
@@ -399,6 +418,10 @@ Paging:
   total_items is the unfiltered total (the ≤N in the header) and total_pages
   counts Discogs' 100-row pages, so neither tells how many pages of matches
   remain. Continue until no command is printed (JSON: next_cursor null).
+  A label catalogue (get releases @l...) drops a row equal to the row Discogs
+  sent just before it, so a page without --year can be shorter than --limit:
+  the header says 'N repeated rows dropped' (JSON:
+  pagination.duplicates_dropped).
 
 Budget:
   After any command that talks to the API, stderr ends with a budget line, e.g.
@@ -412,7 +435,8 @@ Budget:
 
 Errors:
   With --json an error is {"error":{"code",...}} on stdout, exit 1; a malformed
-  command line instead exits 2 with text on stderr.
+  command line instead exits 2 with text on stderr. --cached, --fresh, --debug
+  or --color after the command is one: the error says to put it before.
   bad_response means Discogs sent something unreadable (not JSON, or the wrong
   shape). It is not your input: retry in a moment, with --fresh if it repeats.
   When its hint says the format is unknown (a collection value amount or the
@@ -459,6 +483,7 @@ Examples:
   agent-discogs search "The Downward Spiral"
   agent-discogs search artist "Nine Inch Nails"
   agent-discogs get release @r847868
+  agent-discogs get release @r352665 --master-year
   agent-discogs get versions @m3719 --country US --format Vinyl
   agent-discogs get versions @m3719 --release-type official --json
   agent-discogs tracks @r847868
@@ -521,6 +546,22 @@ class AliasGroup(click.Group):
             raise
         except click.exceptions.Abort:
             raise
+        except click.NoSuchOption as error:
+            # A global flag typed after the command: say where it goes instead
+            # of click's did-you-mean, which lists unrelated flags.
+            example = _GLOBAL_OPTIONS.get(error.option_name)
+            if example is None or error.ctx is None:
+                raise
+            # The program name may hold spaces (`python -m agent_discogs`).
+            command = error.ctx.command_path.removeprefix(ctx.command_path).lstrip()
+            msg = (
+                f"No such option '{error.option_name}'. It is a global option:"
+                " put it before the command, as in"
+                f" 'agent-discogs {example} {command} ...'."
+            )
+            raise click.NoSuchOption(
+                error.option_name, message=msg, ctx=error.ctx
+            ) from error
         except click.exceptions.UsageError:
             raise
         # The reader closed stdout (`| head -1`). click's EPIPE handling exits 1
@@ -532,6 +573,16 @@ class AliasGroup(click.Group):
         except Exception as e:  # noqa: BLE001
             print(format_error(e, color=style.enabled(sys.stderr)), file=sys.stderr)
             sys.exit(1)
+
+
+# The group's options that click rejects after a subcommand, each spelled as
+# the hint shows it before the command (`NoSuchOption` carries no value).
+_GLOBAL_OPTIONS = {
+    "--debug": "--debug",
+    "--cached": "--cached",
+    "--fresh": "--fresh",
+    "--color": "--color never",
+}
 
 
 @click.group(cls=AliasGroup, invoke_without_command=True)

@@ -6,14 +6,14 @@ HTTP responses are cached automatically with a 1-hour TTL. The cache is stored a
 
 ## --cached and --fresh
 
-Two global flags control the cache for one command. They precede the subcommand and are mutually exclusive (exit code 2 otherwise):
+Two global flags control the cache for one command. They precede the subcommand and are mutually exclusive (exit code 2 otherwise); after the subcommand, they are [a usage error](errors.md#a-global-flag-after-the-command):
 
 ```bash
 agent-discogs --cached price @r352665      # serve only from the cache; never touches the API
 agent-discogs --fresh get release @r352665 # bypass the cache; go to the API
 ```
 
-`--cached` fails with a `cache_miss` error (exit code 1) on any request the cache cannot serve, before any network I/O. With several refs, hits print normally and each miss reports inline, exactly like other per-ref failures; under `--json` the miss item carries `error.code == "cache_miss"`.
+`--cached` fails with a `cache_miss` error (exit code 1) on any request the cache cannot serve, before any network I/O. With several refs, hits print normally and each miss reports inline, exactly like other per-ref failures; under `--json` the miss item carries `error.code == "cache_miss"`. Two lookups instead report a miss inline, beside the data that was read: the want rows of `get wantlist --for-sale` (exit 1) and the master of `get release --master-year` (exit 0); both are described below.
 
 The check is exact: it uses the real cache key at the real moment, so a command that issues several requests fails at the first one that is not cached. There is no separate "is it cached?" query because the answer depends on the whole request sequence a command issues.
 
@@ -22,6 +22,8 @@ That includes client-side scans: under `--cached` a scan reads cached pages unti
 `--owned` reads your collection through the same cache: under `--cached`, the username or a collection page the cache does not hold fails the whole command with `cache_miss`, as for a scan, and nothing is sent. So does `get collection`, on the username, the folder list, the fields list (with `--fields`) or a page. Without `--sort` or `--folder`, a filtered `get collection` scan sends the same page requests as the `--owned` read, so after an `--owned` listing within the hour it reads them from the cache (it still asks for the folder list, which `--owned` never reads).
 
 `get wantlist --for-sale` reads your wantlist through the same cache: under `--cached`, the username or a wants page the cache does not hold fails the whole command with `cache_miss` and nothing is sent. A want whose Marketplace stats are not cached does not fail the command: it becomes a row carrying its own `cache_miss` (`· ✗ Not cached: GET /marketplace/stats/5` in text, `error.code == "cache_miss"` under `--json`), counts toward `--limit`, and the command exits 1, like a missed ref of a multi-ref `get`. The want is never reported as not for sale; rerun without `--cached` to check it.
+
+`get release --master-year` reads the release, then its master, through the same cache: under `--cached` a release that is not cached fails the ref with `cache_miss` as before, and a cached release whose master is not cached still prints in full, its `Master:` line ending in `· ✗ Not cached: GET /masters/3719` instead of the year (`master_year_error.code == "cache_miss"` under `--json`). That ref does not fail, so the exit code is 0 unless another ref failed: the year is an extra the release does not need. Nothing is sent.
 
 `get inventory` with a filter reads the seller's inventory through the same cache, and `--in-wantlist` reads your wantlist through it first: under `--cached`, the username, a wants page or an inventory page the cache does not hold fails the whole command with `cache_miss` and nothing is sent, as for any other scan. `get inventory` alone sends no username request, so under `--cached` it fails only when its own page is not cached.
 
@@ -66,6 +68,7 @@ What commands cost (network requests; listing rows are per ref):
 | Command | Requests |
 |---|---|
 | `get artist\|label\|master\|release\|credits\|identifiers\|tracklist`, `tracks` | 1 per ref |
+| `get release --master-year` | 1 per ref, plus 1 per release with a master whose master is not cached (`GET /masters/{id}`, shared with `get master` and between releases of one master; under `--fresh`, 1 per such ref): at most 2 per ref, 20 for 10 refs |
 | `get price`, `price` | 3 per ref (`--json --full`: 2, the release itself is not read) |
 | `get releases @a...`, `get releases @l...`, `get versions @m...` (also with `--release-type all`, the default, or `unofficial` without `--format`, filtered by Discogs) | `--json`: 1; text: 2 (the header's artist, label or master name) |
 | `get versions @r...` | 2, text or `--json` (the release, for its master, then the list) |

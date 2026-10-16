@@ -18,7 +18,7 @@ from pydantic import TypeAdapter
 from agent_discogs import markup
 from agent_discogs.collection import CustomField, field_values, folder_name
 from agent_discogs.formatting import (
-    _community_have,
+    _community_counts,
     _format_string,
     _ref_type,
     _urls_short,
@@ -118,7 +118,7 @@ def project_search_result(r: Any) -> dict[str, Any]:
             "label": label[0] if label else None,
             "catno": getattr(r, "catalog_number", None),
             "format": getattr(r, "format", None),
-            "have": _community_have(r),
+            **_community_counts(r),
             "master": make_ref("master", master_id)
             if entity_type == "release" and master_id
             else None,
@@ -150,8 +150,15 @@ def project_added_release(rel: Any) -> dict[str, Any]:
 
 
 def project_release(
-    rel: Any, *, verbose: bool = False, compact: bool = False
+    rel: Any,
+    *,
+    verbose: bool = False,
+    compact: bool = False,
+    master_year: int | str | None = None,
+    master_year_error: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """The `get release` view. Under `--master-year`, `master_year` (the
+    master's year) or `master_year_error` (why it was not read) follow `master`."""
     community = getattr(rel, "community", None)
     rating = getattr(community, "rating", None)
     master_id = getattr(rel, "master_id", None)
@@ -177,6 +184,8 @@ def project_release(
         "genres": getattr(rel, "genres", None),
         "styles": getattr(rel, "styles", None),
         "master": make_ref("master", master_id) if master_id else None,
+        "master_year": master_year,
+        "master_year_error": master_year_error,
         "community": {
             "have": getattr(community, "have", None),
             "want": getattr(community, "want", None),
@@ -319,6 +328,7 @@ def project_label_release(rel: Any) -> dict[str, Any]:
             "year": known_year(getattr(rel, "year", None)),
             "catno": getattr(rel, "catalog_number", None),
             "format": getattr(rel, "format", None),
+            **_community_counts(rel),
         }
     )
 
@@ -355,7 +365,7 @@ def project_master_version(ver: Any) -> dict[str, Any]:
             "label": getattr(ver, "label", None),
             "catno": getattr(ver, "catalog_number", None),
             "format": getattr(ver, "format", None),
-            "have": _community_have(ver),
+            **_community_counts(ver),
         }
     )
 
@@ -372,6 +382,7 @@ def project_artist_release(rel: Any) -> dict[str, Any]:
             "role": getattr(rel, "role", None),
             "label": getattr(rel, "label", None),
             "format": getattr(rel, "format", None),
+            **_community_counts(rel),
         }
     )
 
