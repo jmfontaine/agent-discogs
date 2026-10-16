@@ -493,6 +493,31 @@ agent-discogs get versions @m3719 --release-type unofficial --country UK
 
 `releases` and `versions` also take `--owned`, which marks each release row with your own copies, and `--wanted`, which marks it with your wantlist: see [Marking rows with --owned](#marking-rows-with---owned) and [Marking rows with --wanted](#marking-rows-with---wanted).
 
+#### --market
+
+`get versions @m... --market` ends each pressing's row with its Marketplace numbers, the count for sale and the lowest asking price, as `get stats` and `get wantlist --for-sale` print them, after the `--owned` and `--wanted` marks:
+
+```
+Versions of @m3719 "The Downward Spiral" (page 1, 2 of 182 versions)
+
+@r847868 1994 US · Nothing Records 92346-2 · CD, Album · have 7,621 · want 1,354 · for sale: 45 from EUR 0.79
+@r352665 2004 US · Interscope Records B0003739-36 · Album, Deluxe Edition, Remastered · have 1,978 · want 735 · for sale: 9 from EUR 71.20
+```
+
+A version row carries no market data, so the CLI asks Discogs for each row's stats (`GET /marketplace/stats/{id}`, cached for an hour) after the listing: **one request per row**, so a page of N rows costs 1 + N with `--json`, 2 + N as text (the master title of the header, read first), and 2 + N with a release ref either way (the release lookup that finds the master). `--limit 20 --market` prices the first 20; a rerun within the hour costs nothing, and a rerun after a partial read sends only the rows not read yet. `--fresh` sends them all again. No user is needed: the stats endpoint answers anonymous callers, at 25 requests a minute.
+
+- **Currency**: each price carries the code Discogs priced it in, the account's buyer currency (USD without credentials) unless `--currency CODE` asks for another; `--currency` goes on every stats request and is accepted on `get versions` only with `--market` (`--currency needs --market with get versions.`). A cache entry is per URL, so rows read in one currency are not reused for another.
+- **Nothing for sale**: Discogs sends `null` counts for a release with nothing for sale and for one blocked from sale; both print `· for sale: 0`. A count with no price prints `· for sale: 3`, with no `from`.
+- **`--max-requests N`** is accepted with `--market` and caps the whole command: the text header and the listing page are always sent, then each row's lookup only while the command has sent fewer than N requests (cache hits are free). The rows not reached are left unchecked, and a note before the footer says so: `Market: the lookups stopped at --max-requests 4 (2 of 5 rows checked): rows without "for sale:" were not checked.` Under a `--release-type` scan the cap is shared: the lookups get what the scan leaves. It takes one ref.
+- **429**: a 429 on a lookup stops the lookups and keeps the rows read, with the note `Market: a lookup was rate limited, retry in 30s (2 of 5 rows checked): ...`, exit 0; a rerun after the wait resumes from the cache. When a `--release-type` scan was itself stopped by a 429 after its first page, no lookup is sent: its rows print unchecked under `Market: the listing was rate limited, ...`. A 429 on the first listing page, or any other failure of a lookup (a 5xx, a 404 for a release Discogs removed), fails the command.
+- **`--cached`**: a row whose stats are not cached ends `· ✗ Not cached: GET /marketplace/stats/847868`, the text adds `Rerun without --cached to check the rows marked ✗.`, and the command exits 1. As text the header must be cached too, or the command fails with `cache_miss` before any row.
+- `Next page:` repeats `--market` and `--currency`.
+
+```bash
+agent-discogs get versions @m3719 --format Vinyl --market --currency EUR --limit 20
+agent-discogs get versions @m3719 --market --limit 100 --max-requests 60 --json
+```
+
 ### artist and label
 
 Every navigable name in `artist` and `label` output carries a ref: members and former members, parent label, sub-labels. Their `URLs:` line lists each linked site by domain, omitting empty entries. `Former:` lists only members Discogs marks inactive; a member with no recorded status stays under `Members:`.
@@ -506,7 +531,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | `release` | `-v, --verbose`, `-c, --compact`, `--master-year` |
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--wanted`, `--after` and `--max-requests` (with `--role`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--wanted`, `--after` and `--max-requests` (with `--year`) |
-| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--wanted`, `--after` and `--max-requests` (both with a `--release-type` scan) |
+| `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--wanted`, `--market`, `--currency` (with `--market`), `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--market`) |
 | `collection` | no ref; `--limit`, `--page`, `--sort label\|artist\|title\|catno\|format\|rating\|added\|year`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--artist`, `--title`, `--folder`, `--fields`, `--after` and `--max-requests` (with a filter, not `--folder` alone); or `--value` alone |
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
