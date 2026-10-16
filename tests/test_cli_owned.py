@@ -36,10 +36,19 @@ class _Account:
     once (record 10), release 3 twice (records 20 and 150, the second on page
     2) and release 6 once, in no folder Discogs named (record 30). `throttle`
     answers with a 429: `"identity"` the username, `"collection:N"` collection
-    page N, and `"search:2"` a second search page (the search then has two)."""
+    page N, and `"search:2"` a second search page (the search then has two).
+    With `label_repeats`, a label catalogue sends releases 2 and 3 twice in a
+    row each."""
 
-    def __init__(self, size: int = 250, *, throttle: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self,
+        size: int = 250,
+        *,
+        throttle: tuple[str, ...] = (),
+        label_repeats: bool = False,
+    ) -> None:
         self.size, self.throttle = size, throttle
+        self.label_repeats = label_repeats
         # record: (release id, folder id)
         self.copies = {10: (2, 1), 20: (3, 5), 30: (6, None), 150: (3, 1)}
 
@@ -74,7 +83,12 @@ class _Account:
                 rows = [r for r in rows if params["format"] in r["format"].split(", ")]
             return {"pagination": _one_page(len(rows)), "versions": rows}
         if key == "releases" and path.startswith("/labels/"):
-            return {"pagination": _one_page(5), "releases": rows}
+            if self.label_repeats:
+                twice = (2, 3)
+                rows = [
+                    r for row in rows for r in [row] * (2 if row["id"] in twice else 1)
+                ]
+            return {"pagination": _one_page(len(rows)), "releases": rows}
         for row in rows:
             row["type"] = "release"
         if key == "releases":  # an artist's: release 4 is a master
@@ -369,6 +383,25 @@ class TestOwnedRows:
         # A master row has no ownership mark: the collection holds releases.
         if "@m4" in text.stdout:
             assert _marks(text)["@m4"] == "none"
+
+    def test_label_repeats_are_dropped_before_marking(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, _Account(label_repeats=True))
+        result, _ = h.run("get", "releases", "@l1", "--owned", "--json", "--limit", "7")
+        assert result.exit_code == 0, result.output
+        document = json.loads(result.stdout)
+        assert document["pagination"]["duplicates_dropped"] == 2
+        assert [(row["ref"], row["owned"]) for row in document["results"]] == [
+            *(("@r1", 0), ("@r2", 1), ("@r3", 2), ("@r4", 0), ("@r5", 0))
+        ]
+        text, _ = h.run("get", "releases", "@l1", "--owned", "--limit", "7")
+        assert "(page 1, 5 of 7 results; 2 repeated rows dropped)" in text.stdout
+        assert list(_marks(text).items()) == [
+            *(("@r1", "not owned"), ("@r2", "owned"), ("@r3", "owned x2")),
+            *(("@r4", "not owned"), ("@r5", "not owned")),
+        ]
+        assert sum(line.startswith("@r") for line in text.stdout.splitlines()) == 5
 
     def test_several_refs_read_the_collection_once(
         self, monkeypatch: pytest.MonkeyPatch

@@ -12,6 +12,7 @@ from discogs_sdk import (
     MarketplaceReleaseStats,
     PriceSuggestions,
 )
+from discogs_sdk.models import LabelRelease
 
 from agent_discogs import cli
 from agent_discogs.pagination import PageResult
@@ -27,6 +28,25 @@ from tests.conftest import (
     listed,
     text_error,
 )
+
+
+def _label_row(release_id: int, catno: str = "C1", year: int = 1999) -> LabelRelease:
+    """A label catalogue row; two built from the same values are `==`, as two
+    rows Discogs sent alike are."""
+    return LabelRelease.model_validate(
+        {
+            "id": release_id,
+            "title": f"T{release_id}",
+            "artist": "A",
+            "year": year,
+            "catno": catno,
+            "format": "CD",
+        }
+    )
+
+
+def _row_refs(stdout: str) -> list[str]:
+    return [line.split(" ", 1)[0] for line in stdout.splitlines() if line[:2] == "@r"]
 
 
 class TestVersionsRequest:
@@ -840,6 +860,81 @@ class TestGetCommand:
         )
         assert data["pagination"]["filtered"] is True
         assert all(r["year"] == 1999 for r in data["results"])
+
+    @pytest.mark.parametrize(
+        ("rows", "shown", "note"),
+        [
+            ([(1, "C1"), (1, "C1"), (2, "C1")], [1, 2], "; 1 repeated row dropped"),
+            ([(1, "C1")] * 3, [1], "; 2 repeated rows dropped"),
+            ([(1, "C1"), (2, "C1"), (1, "C1")], [1, 2, 1], ""),
+            ([(1, "C1"), (1, "C2")], [1, 1], ""),  # another catalogue number
+        ],
+        ids=["pair", "run of three", "apart", "different catno"],
+    )
+    def test_label_page_drops_a_row_equal_to_the_one_before(
+        self, rows: list[tuple[int, str]], shown: list[int], note: str
+    ) -> None:
+        label = listed(id=647, name="Nothing Records")
+        self._set_client(fake_client(labels_get=lambda _id: label))
+        items = [_label_row(i, catno) for i, catno in rows]
+        self._serve_page(PageResult(items, page=1, total_items=2718, total_pages=544))
+        result = CliRunner().invoke(cli, ["get", "releases", "@l647"])
+        assert result.exit_code == 0, result.output
+        assert f"(page 1, {len(shown)} of 2,718 results{note})\n" in result.stdout
+        assert _row_refs(result.stdout) == [f"@r{i}" for i in shown]
+        assert "Next page: agent-discogs get releases @l647 --page 2" in result.stdout
+
+    @pytest.mark.parametrize("full", [False, True])
+    def test_label_page_json_counts_the_dropped_rows(self, full: bool) -> None:
+        label = listed(id=647, name="Nothing Records")
+        self._set_client(fake_client(labels_get=lambda _id: label))
+        argv = ["get", "--json", "releases", "@l647", *(["--full"] if full else [])]
+        items = [_label_row(1), _label_row(1), _label_row(2)]
+        self._serve_page(PageResult(items, page=1, total_items=2718, total_pages=544))
+        data = json.loads(CliRunner().invoke(cli, argv).stdout)
+        assert data["pagination"] == {
+            "page": 1,
+            "total_items": 2718,
+            "total_pages": 544,
+            "duplicates_dropped": 1,
+        }
+        assert [row["id" if full else "ref"] for row in data["results"]] == (
+            [1, 2] if full else ["@r1", "@r2"]
+        )
+
+        self._serve_page(PageResult(items[1:], page=1, total_items=2, total_pages=1))
+        data = json.loads(CliRunner().invoke(cli, argv).stdout)
+        assert "duplicates_dropped" not in data["pagination"]
+
+    def test_label_year_scan_drops_repeats_and_still_fills_the_page(self) -> None:
+        label = listed(id=647, name="Nothing Records")
+        self._set_client(fake_client(labels_get=lambda _id: label))
+        # A matching pair, a pair from another year (not counted), then two
+        # distinct matches; the page of 2 fills on row 4.
+        years = [(1, 1999), (1, 1999), (2, 2001), (2, 2001), (3, 1999), (4, 1999)]
+        items = [_label_row(i, year=year) for i, year in years]
+        self._serve_page(PageResult(items, page=1, total_items=60, total_pages=1))
+        argv = ["get", "releases", "@l647", "--year", "1999", "--limit", "2"]
+        result = CliRunner().invoke(cli, argv)
+        assert result.exit_code == 0, result.output
+        assert "(page 1, 2 of ≤60 results; 1 repeated row dropped)\n" in result.stdout
+        assert _row_refs(result.stdout) == ["@r1", "@r3"]
+        assert "--after 2:5" in result.stdout  # the row after @r3, as before
+
+        data = json.loads(CliRunner().invoke(cli, [*argv, "--json"]).stdout)
+        assert data["pagination"]["duplicates_dropped"] == 1
+        assert data["pagination"]["next_cursor"] == "2:5"
+        assert [row["ref"] for row in data["results"]] == ["@r1", "@r3"]
+
+    def test_artist_releases_keep_equal_rows(self) -> None:
+        artist = listed(id=3857, name="NIN")
+        self._set_client(fake_client(artists_get=lambda _id: artist))
+        row = fake_model(id=1, type="release", title="T", role="Main")
+        self._serve_page(PageResult([row, row], page=1, total_items=2, total_pages=1))
+        result = CliRunner().invoke(cli, ["get", "releases", "@a3857"])
+        assert result.exit_code == 0, result.output
+        assert "(page 1, 2 of 2 results)\n" in result.stdout
+        assert _row_refs(result.stdout) == ["@r1", "@r1"]
 
 
 class TestShortcutCommands:

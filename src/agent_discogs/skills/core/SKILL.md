@@ -78,7 +78,7 @@ Color is off when stdout is a pipe, and a `--json` command is never colored. If 
 |------|----------|
 | Find a specific pressing | `search release "<title>" --year --country` → `get release @r...` |
 | Explore discography | `search artist "<name>"` → `get releases @a... --sort year` |
-| Label catalogue | `get releases @l...` — copy `@l...` from a release's `Label:` line |
+| Label catalogue | `get releases @l...` — copy `@l...` from a release's `Label:` line; a page can be short: [repeated rows dropped](references/commands.md#get) |
 | Band → member → solo work | `get artist @a...` → copy a `[@a...]` from `Members:` → `get releases @a...` |
 | Newest additions first | `search release --artist "<name>" --sort date_added --desc` (release searches only; undocumented by Discogs) |
 | Recently added releases / unofficial releases | `search release --artist "<name>" --release-type all --added-since YYYY-MM-DD --max-requests 60` (experimental; one request per release in the window); `--release-type unofficial`: [search patterns](references/search-patterns.md#releases-or-unofficial-releases-added-since-a-date) |

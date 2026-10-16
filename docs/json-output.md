@@ -22,7 +22,8 @@ Lists are wrapped as `{"pagination":{...},"results":[...]}`. The `pagination` en
 
 - `page`, `total_items` and `total_pages` are always present, with `null` totals only when a scan stopped before reading any page;
 - a filtered list always adds `filtered`, `capped` and `next_cursor`, `null` when nothing remains;
-- a capped one adds `stop_reason`, plus `retry_after` when Discogs sent one.
+- a capped one adds `stop_reason`, plus `retry_after` when Discogs sent one;
+- a label catalogue page (`get releases @l...`) that dropped rows equal to the row Discogs sent just before them adds `duplicates_dropped`, their count, only when it is above 0: `results` holds the remaining rows, and `total_items` and `total_pages` keep Discogs' counts, repeats included (see [Repeated rows in a label catalogue](commands.md#repeated-rows-in-a-label-catalogue)).
 
 In a filtered list, the totals describe the listing before the filter, not your pages: `page` counts pages of `--limit` matching rows, while `total_items` is the unfiltered total (the `≤N` of the text header) and `total_pages` counts the 100-row pages the scan reads from Discogs.
 

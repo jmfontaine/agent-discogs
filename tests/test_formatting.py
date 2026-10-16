@@ -1046,6 +1046,31 @@ class TestFormatLabelReleases:
         )
         assert output.endswith("Next page: agent-discogs get releases @l647 --page 2")
 
+    def test_header_notes_the_dropped_repeats(self) -> None:
+        def header(dropped: int, *, filtered: bool) -> str:
+            return (
+                format_label_releases(
+                    [],
+                    "@l647",
+                    "Nothing Records",
+                    1,
+                    2718,
+                    None,
+                    filtered=filtered,
+                    dropped=dropped,
+                )
+                .splitlines()[0]
+                .removeprefix('Releases on @l647 "Nothing Records" ')
+            )
+
+        assert header(1, filtered=False) == (
+            "(page 1, 0 of 2,718 results; 1 repeated row dropped)"
+        )
+        assert header(1_200, filtered=True) == (
+            "(page 1, 0 of ≤2,718 results; 1,200 repeated rows dropped)"
+        )
+        assert header(0, filtered=False) == "(page 1, 0 of 2,718 results)"
+
 
 class TestFormatTracklistEdgeCases:
     def test_heading_track(self) -> None:
