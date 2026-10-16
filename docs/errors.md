@@ -35,12 +35,12 @@ Errors under `--json` are a JSON document on stdout with exit code 1:
 
 Codes:
 
-- `not_found`
+- `not_found`: a `get release --master-year` whose master was deleted carries one in `master_year_error`, with the release printed and exit 0 (see [release](commands.md#release))
 - `seller_settings_required`
 - `auth_required`
 - `forbidden`
 - `rate_limited`: with `retry_after` in whole seconds, rounded up, when Discogs sends a usable `Retry-After`, as seconds or an HTTP date; `0` means retry now; and `limit`/`remaining` for the current minute when Discogs reports them
-- `cache_miss`: only under `--cached`; a `get wantlist --for-sale` want whose stats are not cached carries one in its own row, with exit 1 (see [--cached](caching-and-budget.md#--cached-and---fresh))
+- `cache_miss`: only under `--cached`; a `get wantlist --for-sale` want whose stats are not cached carries one in its own row, with exit 1, and a `get release --master-year` whose master is not cached carries one in `master_year_error`, with the release printed and exit 0 (see [--cached](caching-and-budget.md#--cached-and---fresh))
 - `cache_error`: with `path`, the cache database; see [Cache errors](caching-and-budget.md#cache-errors)
 - `api_error`
 - `connection_error`

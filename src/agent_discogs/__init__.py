@@ -296,6 +296,11 @@ Options:
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its
                    own duration; total omitted if any track lacks a duration)
+  --master-year    get release: 'Master: @m3719 (1994)', the master's year
+                   (--json: master_year), 1 more request per release with a
+                   master (the one get master sends, cached); a --cached miss
+                   or a deleted master prints '· ✗ <why>' instead (--json:
+                   master_year_error), exit 0
   --sort KEY       Server-side order. get releases @a: year|title|format;
                    get versions: released|title|format|label|catno|country;
                    get collection: label|artist|title|catno|format|rating|
@@ -318,7 +323,7 @@ Options:
   --help           Show this message and exit
 
 Get flags by noun (any other get flag fails with invalid_argument):
-  release          -v/--verbose, -c/--compact
+  release          -v/--verbose, -c/--compact, --master-year
   releases @a      --limit, --page, --role, --sort, --desc, --owned, --after
                    and --max-requests (with --role or --owned)
   releases @l      --limit, --page, --year, --owned, --after and --max-requests
@@ -436,6 +441,7 @@ Examples:
   agent-discogs search "The Downward Spiral"
   agent-discogs search artist "Nine Inch Nails"
   agent-discogs get release @r847868
+  agent-discogs get release @r352665 --master-year
   agent-discogs get versions @m3719 --country US --format Vinyl
   agent-discogs get versions @m3719 --release-type official --json
   agent-discogs tracks @r847868
