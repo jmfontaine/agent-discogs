@@ -20,6 +20,7 @@ from discogs_sdk.models import ArtistRelease
 
 from agent_discogs import cli
 from agent_discogs.pagination import PageResult
+from agent_discogs.projections import project_release
 from tests.conftest import (
     ServePage,
     UseClient,
@@ -189,7 +190,7 @@ class TestJsonGet:
             artists=[fake(id=3857, name="Nine Inch Nails", join=None)],
             labels=[fake(id=647, name="Nothing Records", catalog_number="92346-2")],
             formats=[fake(name="CD", descriptions=["Album"])],
-            genres=["Electronic", "Rock"],
+            genres=["Electronic", "Folk, World, & Country"],
             styles=None,
             master_id=3719,
             community=fake(have=7545, want=1342, rating=fake(average=4.42, count=593)),
@@ -224,7 +225,7 @@ class TestJsonGet:
             "country": "US",
             "labels": [{"ref": "@l647", "name": "Nothing Records", "catno": "92346-2"}],
             "formats": "CD (Album)",
-            "genres": ["Electronic", "Rock"],
+            "genres": ["Electronic", "Folk, World, & Country"],
             "master": "@m3719",
             "community": {"have": 7545, "want": 1342, "rating": 4.42, "votes": 593},
             "market": {"for_sale": 49, "lowest": 2.45},
@@ -336,7 +337,7 @@ class TestJsonGet:
             title="The Downward Spiral",
             year=1994,
             artists=[fake(id=3857, name="Nine Inch Nails", join=None)],
-            genres=["Rock"],
+            genres=["Rock", "Folk, World, & Country"],
             styles=["Industrial"],
             main_release=847868,
             num_for_sale=200,
@@ -354,7 +355,7 @@ class TestJsonGet:
             "title": "The Downward Spiral",
             "artists": [{"ref": "@a3857", "name": "Nine Inch Nails"}],
             "year": 1994,
-            "genres": ["Rock"],
+            "genres": ["Rock", "Folk, World, & Country"],
             "styles": ["Industrial"],
             "main_release": "@r847868",
             "market": {"for_sale": 200, "lowest": 1.5},
@@ -654,3 +655,29 @@ class TestJsonShortcuts:
 
         result = CliRunner().invoke(cli, ["price", "--full", "@r123"])
         assert text_error(result) == "✗ --full requires --json.\n"
+
+
+class TestReleaseMasterYear:
+    """`project_release` puts the master's year, or why it is missing, right
+    after `master`, and neither without `--master-year`."""
+
+    _RELEASE = Release.model_validate({"id": 1, "title": "T", "master_id": 5460})
+
+    def test_year_follows_master(self) -> None:
+        data = project_release(self._RELEASE, master_year=1959)
+        keys = list(data)
+        assert keys[keys.index("master") :][:2] == ["master", "master_year"]
+        assert data["master_year"] == 1959
+        assert "master_year_error" not in data
+
+    def test_error_replaces_the_year(self) -> None:
+        error = {"code": "cache_miss", "message": "Not cached: GET /masters/5460"}
+        data = project_release(self._RELEASE, master_year_error=error)
+        assert data["master_year_error"] == error
+        assert "master_year" not in data
+
+    def test_neither_by_default(self) -> None:
+        data = project_release(self._RELEASE)
+        assert data["master"] == "@m5460"
+        assert "master_year" not in data
+        assert "master_year_error" not in data

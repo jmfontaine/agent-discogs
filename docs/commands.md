@@ -46,7 +46,35 @@ A query starting with `-` goes after `--` (`agent-discogs search --release-type 
 
 ### Filters
 
-Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for JSON output (see [JSON output](json-output.md)).
+Filters: `--anv`, `--artist`, `--barcode`, `--catno`, `--country`, `--credit`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--title`, `--track`, `--year`. Use `--json` for JSON output (see [JSON output](json-output.md)).
+
+Four filters search fields the query alone mixes together. Each works with or without a query and with every other filter, and costs what the same search costs without it:
+
+| Flag | Matches |
+|---|---|
+| `--credit` | a person credited on a release or master (an engineer, producer, mixer, ...) |
+| `--track` | track titles |
+| `--title` | release titles; on `search artist` and `search label`, the artist's or label's own name. Sent to Discogs as `release_title`; the header and the `Next page:` command keep `title` |
+| `--anv` | artist name variations (the name as credited on a release) |
+
+```bash
+agent-discogs search release --artist "Horace Silver" --credit "Rudy Van Gelder" --format Vinyl
+agent-discogs search release --track "So What" --artist "Miles Davis"
+agent-discogs search release --title "Kind of Blue"
+agent-discogs search artist --anv "Trane"
+```
+
+Discogs answers a filter it cannot match on a search type with an empty page, which reads as "nothing found", so the CLI refuses these before any request with `invalid_argument`: `--credit` and `--track` on `search artist` or `search label`, and `--anv` on `search release`, `search master` or `search label`. An untyped search takes all four.
+
+`--credit` is a broad match: `"Van Gelder"` finds about as many releases as `"Rudy Van Gelder"`, quoting the name does not make it an exact-phrase match, and the first rows of `--credit "Rudy Van Gelder"` alone were a Debussy and a Bach album. Narrow it with `--artist`, `--genre`, `--format` or `--year`. Adding a role word (`"Rudy Van Gelder Engineer"`) returns nothing. `get releases @a... --role` cannot replace it: for one engineer, 300 discography rows held only the roles Appearance, Mixed by, Remix and Producer, so `--role Engineer` matched nothing. To see what a person did on a given release, use `get credits @r...`.
+
+`--barcode` is matched against a release's identifier text, not only as a UPC/EAN: it also finds pressings by their matrix/runout etching, the one search that does. Other identifier types (label codes, for instance) have not been checked, so do not rely on them. For example, this finds the UK LP pressings whose runout contains `A3 TOWNHOUSE`:
+
+```bash
+agent-discogs search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all
+```
+
+Type a barcode as digits without spaces (`--barcode 602527826486`): `"6 02527 82648 6"` also matched an unrelated release. The value is matched as text, not as a number, so the barcode without its check digit (`60252782648`) found the same releases. Discogs writes some etchings in more than one way, so try each spelling (`TOWNHOUSE` and `TOWN HOUSE`): one can miss releases the other finds.
 
 ### Sorting
 
@@ -106,6 +134,7 @@ Get entity details by noun and ref. Aliases: `fetch`, `show`.
 
 ```bash
 agent-discogs get release @r352665
+agent-discogs get release @r352665 --master-year
 agent-discogs get artist @a3857
 agent-discogs get master @m3719
 agent-discogs get label @l647
@@ -139,7 +168,11 @@ Unknown date parts are left out, in text and `--json` alike: Discogs' year `0` i
 
 Its format lists one entry per physical format, separated by `;`: the quantity when above one, the name, then descriptions and free text in parentheses (`Format: 2×Vinyl (LP, Album, 180g, Gatefold); CD (Album)`; `--json` carries the same string).
 
+`Genres:` and `Styles:` are `;`-separated too (`Genres: Rock; Folk, World, & Country`), on `get release` and `get master` alike, because the genre `Folk, World, & Country` has commas; `--json` carries them as arrays (`"genres":["Rock","Folk, World, & Country"]`).
+
 `-v, --verbose` on `release` appends notes, credits, and identifiers in one call; `-c, --compact` replaces the tracklist with a one-line `Tracks: 14 (65:01)` summary; the total is omitted when any track lacks a duration (use `tracks` when the tracklist is what you want).
+
+`--master-year` ends the `Master:` line with the master's year, the year of the work rather than of this pressing: `get release @r352665 --master-year` prints `Master: @m3719 (1994)` for a 2004 release (`--json`: `master_year` next to `master`; `--json --full`: a top-level `master_year` beside the record's keys). It costs one more request per release that has a master, sent after the release is read: `GET /masters/{id}`, the request `get master` sends, so the two share the cache and releases of one master share one request (except under `--fresh`). A release with no master has no `Master:` line and sends nothing more; a master year Discogs does not know (`0`) prints no year. Two failures of that request leave the release whole, with exit code 0: a `--cached` miss and a deleted master (404) print the reason in place of the year (`Master: @m3719 · ✗ Not cached: GET /masters/3719`), and `--json` carries `master_year_error` (`code` `cache_miss` or `not_found`, and `message`) instead of `master_year`. Any other failure of it (a 429, a 5xx, a connection error, a response that does not parse) fails the ref as usual: its `✗` block, exit 1, the release not printed; the release is cached by then (not under `--fresh`), so a rerun costs only the master request.
 
 Index tracks (a suite or medley split into parts) list their sub-tracks indented beneath them. The compact count includes each part, and the total sums the parts' durations; when a part is untimed, the index track's own duration stands in for the suite.
 
@@ -412,7 +445,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 
 | Noun | Flags besides `--json` / `--full` |
 |---|---|
-| `release` | `-v, --verbose`, `-c, --compact` |
+| `release` | `-v, --verbose`, `-c, --compact`, `--master-year` |
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |

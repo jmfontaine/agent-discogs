@@ -184,6 +184,21 @@ def _format_string(formats: list[Any] | None) -> str:
     return "; ".join(entries)
 
 
+def _genre_lines(entity: Any) -> list[Line]:
+    """The `Genres:` and `Styles:` lines, entries `;`-separated.
+
+    One genre is called `Folk, World, & Country`, so a comma cannot separate
+    entries; `;` is also what the `Format:` line uses. An empty list prints
+    no line.
+    """
+    lines: list[Line] = []
+    for label, attr in (("Genres", "genres"), ("Styles", "styles")):
+        values = getattr(entity, attr, None)
+        if values:
+            lines.append([_label(label), f" {'; '.join(values)}"])
+    return lines
+
+
 def _label_parts(labels: list[Any] | None) -> list[Part]:
     """First label name with its ref and catalog number."""
     if not labels:
@@ -1128,13 +1143,7 @@ def format_master(master: Any) -> str:
         ]
     ]
 
-    genres = getattr(master, "genres", None)
-    if genres:
-        lines.append([_label("Genres"), f" {', '.join(genres)}"])
-
-    styles = getattr(master, "styles", None)
-    if styles:
-        lines.append([_label("Styles"), f" {', '.join(styles)}"])
+    lines.extend(_genre_lines(master))
 
     main_release = getattr(master, "main_release", None)
     if main_release:
@@ -1321,14 +1330,21 @@ def track_summary(tracklist: list[Any]) -> str:
 
 
 def format_release(
-    release: Any, *, verbose: bool = False, compact: bool = False
+    release: Any,
+    *,
+    verbose: bool = False,
+    compact: bool = False,
+    master_year: int | str | None = None,
+    master_error: str | None = None,
 ) -> str:
     """Format a full release detail view.
 
     `verbose` appends notes, credits, and identifiers: the facets that matter
     when identifying a pressing or asking who worked on it. `compact` replaces
     the tracklist with a one-line `Tracks:` summary; `tracks @r...` is the
-    dedicated tracklist view.
+    dedicated tracklist view. Under `--master-year`, the `Master:` line ends in
+    the master's year (`master_year`), or in why it was not read
+    (`master_error`, a message).
     """
     artists = _artist_parts(getattr(release, "artists", None))
     year = known_year(getattr(release, "year", None)) or ""
@@ -1366,13 +1382,7 @@ def format_release(
     if origin:
         lines.append(_joined(origin, " · "))
 
-    genres = getattr(release, "genres", None)
-    if genres:
-        lines.append([_label("Genres"), f" {', '.join(genres)}"])
-
-    styles = getattr(release, "styles", None)
-    if styles:
-        lines.append([_label("Styles"), f" {', '.join(styles)}"])
+    lines.extend(_genre_lines(release))
 
     community = getattr(release, "community", None)
     if community:
@@ -1396,7 +1406,12 @@ def format_release(
 
     master_id = getattr(release, "master_id", None)
     if master_id:
-        lines.append([_label("Master"), " ", _ref("master", master_id)])
+        master: list[Part] = [_label("Master"), " ", _ref("master", master_id)]
+        if master_error:
+            master += [" ", Span("· ✗", "error"), f" {master_error}"]
+        elif master_year:
+            master.append(f" ({master_year})")
+        lines.append(master)
 
     if verbose:
         lines.extend(

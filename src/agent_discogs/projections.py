@@ -150,8 +150,15 @@ def project_added_release(rel: Any) -> dict[str, Any]:
 
 
 def project_release(
-    rel: Any, *, verbose: bool = False, compact: bool = False
+    rel: Any,
+    *,
+    verbose: bool = False,
+    compact: bool = False,
+    master_year: int | str | None = None,
+    master_year_error: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """The `get release` view. Under `--master-year`, `master_year` (the
+    master's year) or `master_year_error` (why it was not read) follow `master`."""
     community = getattr(rel, "community", None)
     rating = getattr(community, "rating", None)
     master_id = getattr(rel, "master_id", None)
@@ -177,6 +184,8 @@ def project_release(
         "genres": getattr(rel, "genres", None),
         "styles": getattr(rel, "styles", None),
         "master": make_ref("master", master_id) if master_id else None,
+        "master_year": master_year,
+        "master_year_error": master_year_error,
         "community": {
             "have": getattr(community, "have", None),
             "want": getattr(community, "want", None),
