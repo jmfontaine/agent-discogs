@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     )
     from agent_discogs.inventory import Wants
     from agent_discogs.pagination import ScanStop
-    from agent_discogs.wantlist import Market
+    from agent_discogs.wantlist import Market, MarketRead
 
 # A view line is plain text, or a list of parts (`markup.Part`): text (which
 # may hold Discogs values), `Span`s of CLI framing color may paint, and
@@ -661,6 +661,41 @@ def _market_tail(market: Market) -> list[Part]:
     lowest = _price(market.lowest)
     sale = f" {market.for_sale:,}" + (f" from {lowest}" if lowest else "")
     return [Span("· for sale:", "dim"), sale]
+
+
+def community_rating(rating: Any) -> str | None:
+    """`4.43/5 (602 votes)`: a release's community rating, or None when
+    Discogs sent no average or no vote count."""
+    average = getattr(rating, "average", None)
+    count = getattr(rating, "count", None)
+    if average is None or count is None:
+        return None
+    return f"{average:.2f}/5 ({count:,} votes)"
+
+
+def format_stats(release: Any, market: Market) -> str:
+    """`get stats`: one release row, its community numbers (`have`, `want`,
+    the rating when anyone voted) from the release record, then its
+    Marketplace numbers from the stats, which name their currency. A part
+    Discogs did not send is left out."""
+    community = getattr(release, "community", None)
+    rating = getattr(community, "rating", None)
+    rated = community_rating(rating) if getattr(rating, "count", None) else None
+    tail: list[list[Part]] = [[f"· rating {rated}"]] if rated else []
+    tail.append(_market_tail(market))
+    return _text(
+        [
+            _release_row(
+                ref=_ref("release", release.id),
+                title=release.title,
+                artist=artist_names(release) or None,
+                year=getattr(release, "year", None),
+                have=_count(getattr(community, "have", None)),
+                want=_count(getattr(community, "want", None)),
+                tail=_joined(tail, " "),
+            )
+        ]
+    )
 
 
 def format_wantlist(
@@ -1471,8 +1506,13 @@ def format_master_versions(
     header_resent: bool = False,
     owned: bool = False,
     wanted: bool = False,
+    market: MarketRead | None = None,
+    misses: dict[int, str] | None = None,
 ) -> str:
-    """Format master release versions (`--release-type` scans are `filtered`)."""
+    """Format master release versions (`--release-type` scans are `filtered`).
+    Under `--market` each row read ends in its Marketplace numbers, or in the
+    `--cached` miss that left it unchecked (`misses`, by release id, the error
+    message); a read that stopped short says which rows were not checked."""
     counts = _page_counts(
         page,
         len(versions),
@@ -1492,6 +1532,7 @@ def format_master_versions(
         "",
     ]
 
+    misses = misses or {}
     lines.extend(
         _release_row(
             ref=_ref("release", ver.id),
@@ -1503,11 +1544,50 @@ def format_master_versions(
             **_community_counts(ver),
             owned=_stat_owned(owned, ver),
             wanted=_stat_wanted(wanted, ver),
+            tail=_market_or_miss(market, misses, ver.id),
         )
         for ver in versions
     )
+    lines.extend(_market_note(market))
+    if misses:
+        lines += ["", "Rerun without --cached to check the rows marked ✗."]
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
+
+
+def _market_or_miss(
+    market: MarketRead | None, misses: dict[int, str], row_id: int
+) -> list[Part] | None:
+    """A `--market` row's tail: its numbers, its `--cached` miss, or nothing
+    for a row not checked."""
+    if row_id in misses:
+        return [Span("· ✗", "error"), f" {misses[row_id]}"]
+    if market is not None and row_id in market.markets:
+        return _market_tail(market.markets[row_id])
+    return None
+
+
+def _market_note(market: MarketRead | None) -> list[Line]:
+    """Why some `--market` rows have no numbers: the lookups stopped short."""
+    if market is None or market.stop is None:
+        return []
+    if market.unsent:
+        who = "the listing"
+    elif market.stop.reason == "rate_limited":
+        who = "a lookup"
+    else:
+        who = "the lookups"
+    checked = f"{market.rows_read:,} of {market.rows:,} rows checked"
+    return [
+        "",
+        [
+            _label("Market"),
+            (
+                f" {who} {_stopped(market.stop)} ({checked}): "
+                'rows without "for sale:" were not checked.'
+            ),
+        ],
+    ]
 
 
 def _price(price: Any) -> str | None:
@@ -1682,12 +1762,9 @@ def format_release(
 
     community = getattr(release, "community", None)
     if community:
-        rating = getattr(community, "rating", None)
+        rating = community_rating(getattr(community, "rating", None))
         if rating:
-            avg = getattr(rating, "average", None)
-            count = getattr(rating, "count", None)
-            if avg is not None and count is not None:
-                lines.append([_label("Rating"), f" {avg:.2f}/5 ({count:,} votes)"])
+            lines.append([_label("Rating"), f" {rating}"])
 
         have = getattr(community, "have", None)
         want = getattr(community, "want", None)
@@ -1817,9 +1894,10 @@ def _search_head(
     return [_label("Search"), f" {searched}"]
 
 
-def artist_title(release: Any) -> str | None:
-    """`Artist - Title`, the way a search result titles a release. A comma
-    join attaches to the name before it (`A, B`); others stand apart (`A & B`)."""
+def artist_names(release: Any) -> str:
+    """A release's artist names as credited (`A, B & C`), or `""` with none.
+    A comma join attaches to the name before it (`A, B`); others stand apart
+    (`A & B`)."""
     names = ""
     for artist in getattr(release, "artists", None) or []:
         names += getattr(artist, "name", None) or "Unknown"
@@ -1827,8 +1905,14 @@ def artist_title(release: Any) -> str | None:
         if join:
             names += join if join == "," else f" {join}"
         names += " "
+    return names.rstrip()
+
+
+def artist_title(release: Any) -> str | None:
+    """`Artist - Title`, the way a search result titles a release."""
+    names = artist_names(release)
     title = getattr(release, "title", None)
-    return f"{names.rstrip()} - {title}" if names else title
+    return f"{names} - {title}" if names else title
 
 
 def _utc_day(moment: datetime | None) -> str | None:

@@ -96,6 +96,7 @@ agent-discogs search release "The Downward Spiral" --year 1994
 agent-discogs search artist "Nine Inch Nails" --limit 10
 agent-discogs get artist @a3857
 agent-discogs get versions @m3719 --country US --format Vinyl
+agent-discogs get stats @r847868 @r352665 --currency EUR
 agent-discogs get owned @r352665 @r847868
 agent-discogs search release --artist "Nine Inch Nails" --year 1994 --limit 20 --owned
 agent-discogs get collection --style Techno --format 12\" --max-requests 20
@@ -136,8 +137,8 @@ Smart resolution: `get versions @r352665` auto-resolves the release to its maste
 
 ## Documentation
 
-- [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md): `search` (filters, sorting, client-side scans, `--added-since`, `--owned`, `--wanted`), `get` and its nouns (`get owned`, `get collection` and its filters, `get wantlist` and its `--for-sale` scan, `get inventory` and its grade, origin, price and `--in-wantlist` filters, `get lists` and `get list`), `tracks` / `price`, `status`, `cache`, `skills`, shell completion.
-- [JSON output](https://github.com/jmfontaine/agent-discogs/blob/main/docs/json-output.md): projections, `--full`, the pagination envelope, `owned` and `wanted` rows, collection rows, wantlist rows and their `market`, inventory listings and their `wantlist` object, lists and their items, non-ASCII and control-character escaping.
+- [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md): `search` (filters, sorting, client-side scans, `--added-since`, `--owned`, `--wanted`), `get` and its nouns (`get stats`, `get owned`, `get collection` and its filters, `get wantlist` and its `--for-sale` scan, `get inventory` and its grade, origin, price and `--in-wantlist` filters, `get lists` and `get list`), `tracks` / `price`, `status`, `cache`, `skills`, shell completion.
+- [JSON output](https://github.com/jmfontaine/agent-discogs/blob/main/docs/json-output.md): projections, `--full`, the pagination envelope, `owned` and `wanted` rows, collection rows, `get stats` and its `market` object, wantlist rows and their `market`, inventory listings and their `wantlist` object, lists and their items, non-ASCII and control-character escaping.
 - [Caching and request budget](https://github.com/jmfontaine/agent-discogs/blob/main/docs/caching-and-budget.md): `--cached` / `--fresh`, cache errors, rate limits, what each command costs, `--max-requests`.
 - [Errors](https://github.com/jmfontaine/agent-discogs/blob/main/docs/errors.md): the error layout, error codes, and the 401, 429 and connection-error hints.
 - [Debugging](https://github.com/jmfontaine/agent-discogs/blob/main/docs/debugging.md): the `--debug` panel, output encoding, how Discogs text is neutralized, and `--color`.
