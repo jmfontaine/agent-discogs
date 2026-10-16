@@ -16,8 +16,10 @@ from agent_discogs import account, style, trace
 from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import (
+    ALL_FOLDER,
     Ownership,
     copies,
+    folder_id,
     folder_names,
     mark_rows,
     ownership_of,
@@ -55,6 +57,7 @@ from agent_discogs.pagination import (
     DEFAULT_LIMIT,
     DropRepeats,
     PageResult,
+    ScanStop,
     fetch_filtered_page,
     fetch_page,
     max_requests_error,
@@ -667,27 +670,39 @@ def _get_collection(
     limit: int,
     after: str | None,
     filters: dict[str, str],
+    folder: str | None,
     sort: str | None,
     desc: bool,
     max_requests: int | None,
     mode: Mode,
 ) -> Any:
-    """The user's collection, one row per copy: server-side pages, or with a
-    filter a client-side scan of 100-record pages."""
+    """The user's collection, or with `folder` one folder of it, one row
+    per copy: server-side pages, or with a filter a client-side scan of
+    100-record pages."""
     # The username and the folder list go before the listing, the way a
     # header does, so --max-requests counts them first. --full names folders
-    # by id, and once the cap is spent the scan reads no row to name.
+    # by id, so it reads the list only to resolve --folder; once the cap is
+    # spent the scan reads no row to name and no folder to resolve.
     user = account.user(client)
     spent = max_requests is not None and trace.sends() >= max_requests
-    names = {} if mode.full or spent else folder_names(user)
-    listing = records(user, sort=sort, desc=desc)
+    names = {} if spent or (mode.full and folder is None) else folder_names(user)
     keep = record_filter(filters)
-    if keep:
-        result = fetch_filtered_page(
-            listing, limit=limit, keep=keep, cursor=after, max_requests=max_requests
-        )
+    if spent:
+        # Only a scan takes --max-requests; it continues where it was asked.
+        result = unscanned(after, ScanStop("max_requests", max_requests=max_requests))
     else:
-        result = fetch_page(listing, page=page or 1, per_page=limit)
+        listing = records(
+            user,
+            folder=ALL_FOLDER if folder is None else folder_id(names, folder),
+            sort=sort,
+            desc=desc,
+        )
+        if keep:
+            result = fetch_filtered_page(
+                listing, limit=limit, keep=keep, cursor=after, max_requests=max_requests
+            )
+        else:
+            result = fetch_page(listing, page=page or 1, per_page=limit)
 
     if mode.json:
         return mode.page(result, lambda record: project_record(record, names))
@@ -696,15 +711,19 @@ def _get_collection(
         ["get", "collection"],
         result,
         limit=limit,
+        folder=folder,
         format=filters.get("format"),
         genre=filters.get("genre"),
         style=filters.get("style"),
         year=filters.get("year"),
         label=filters.get("label"),
+        artist=filters.get("artist"),
+        title=filters.get("title"),
         sort=sort,
         desc=desc,
         max_requests=max_requests,
     )
+    shown = {"folder": folder, **filters} if folder is not None else filters
     return format_collection(
         result.items,
         account.username(client),
@@ -712,7 +731,7 @@ def _get_collection(
         result.total_items,
         footer_cmd,
         folders=names,
-        filters=filters,
+        filters=shown,
         filtered=result.filtered,
         stop=result.stop,
         header_resent=_fresh(),
@@ -936,7 +955,9 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
     "collection": frozenset(
         {
             "after",
+            "artist",
             "desc",
+            "folder",
             "format_",
             "genre",
             "label",
@@ -945,6 +966,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "page",
             "sort",
             "style_",
+            "title",
             "value",
             "year",
         },
@@ -1144,11 +1166,13 @@ def _collection_error(
     *,
     explicit: frozenset[str],
     filters: dict[str, str],
+    folder: str | None,
     max_requests: int | None,
 ) -> str | None:
     """What `get collection` cannot take: a ref, any other flag with
-    --value, an empty filter (it would match nothing), or --max-requests
-    without a filter, which leaves no scan to cap."""
+    --value, an empty filter (it would match nothing) or folder name, or
+    --max-requests without a filter, which leaves no scan to cap
+    (`--folder` alone pages server-side)."""
     if refs:
         return "get collection takes no ref: it lists your own collection."
     others = sorted(_option_flag(name) for name in explicit - {"value"})
@@ -1160,12 +1184,20 @@ def _collection_error(
     empty = [f"--{key}" for key, value in filters.items() if not value.strip()]
     if empty:
         verb = "needs a value" if len(empty) == 1 else "need values"
-        return f"{', '.join(empty)} {verb}: a filter matches one value exactly."
+        return (
+            f"{', '.join(empty)} {verb}: a filter matches a whole value, "
+            "ignoring case, with * for any run of characters."
+        )
+    if folder is not None and not folder.strip():
+        return (
+            "--folder needs a folder name, as get collection prints it (· folder Jazz)."
+        )
     if max_requests is not None and not filters:
         return (
             "--max-requests caps a filtered get collection scan (--format, "
-            "--genre, --style, --year or --label); get collection alone pages "
-            "server-side and sends one request per page."
+            "--genre, --style, --year, --label, --artist or --title); get "
+            "collection alone, or with --folder alone, pages server-side and "
+            "sends one request per page."
         )
     return None
 
@@ -1194,6 +1226,7 @@ def _flag_error(
     sleeve: str | None,
     ships_from: str | None,
     in_wantlist: bool,
+    folder: str | None,
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
@@ -1235,6 +1268,7 @@ def _flag_error(
             refs,
             explicit=explicit,
             filters=collection_filters,
+            folder=folder,
             max_requests=max_requests,
         )
         if collection_error:
@@ -1257,7 +1291,8 @@ def _flag_error(
             "--after only continues a client-side filtered listing "
             "(get releases --role, get releases @l... --year, get versions "
             "--release-type official or unofficial with --format, get "
-            "collection with --format, --genre, --style, --year or --label, get "
+            "collection with --format, --genre, --style, --year, --label, "
+            "--artist or --title, get "
             "wantlist --for-sale, or get inventory with --condition, --sleeve, "
             "--ships-from, --max-price or --in-wantlist). This command pages "
             "server-side or is not paginated; use --page where applicable."
@@ -1301,7 +1336,8 @@ def _flag_error(
         return (
             "--page is not available while results are filtered client-side "
             "(--role, --year on a label catalogue, --release-type official or "
-            "unofficial with --format on versions, a get collection filter, "
+            "unofficial with --format on versions, a get collection filter "
+            "(--folder alone pages), "
             "--for-sale, or a get inventory filter). Use the Next page / "
             "Continue scan command from the previous output."
         )
@@ -1478,6 +1514,9 @@ def _dispatch(
     sleeve: str | None,
     ships_from: str | None,
     in_wantlist: bool,
+    artist: str | None,
+    title: str | None,
+    folder: str | None,
     verbose: bool,
     compact: bool,
     master_year: bool,
@@ -1504,6 +1543,8 @@ def _dispatch(
             ("style", style_),
             ("year", year),
             ("label", label),
+            ("artist", artist),
+            ("title", title),
         )
         if value is not None
     }
@@ -1526,6 +1567,7 @@ def _dispatch(
         max_price=max_price,
         currency=currency,
         collection_filters=collection_filters,
+        folder=folder,
         condition=condition,
         sleeve=sleeve,
         ships_from=ships_from,
@@ -1573,6 +1615,7 @@ def _dispatch(
                         limit=limit,
                         after=after,
                         filters=collection_filters,
+                        folder=folder,
                         sort=sort,
                         desc=desc,
                         max_requests=max_requests,
@@ -1709,6 +1752,13 @@ def _json_options(command: Any) -> Any:
 @click.argument("noun", type=click.Choice(GET_NOUNS))
 @click.argument("refs", nargs=-1, metavar="REF...")
 @click.option(
+    "--artist",
+    metavar="PATTERN",
+    help="collection: keep records with a credited artist whose name matches "
+    "PATTERN: the whole name, any case, * for any run of characters, \\ to "
+    "escape (\\* is a literal *)",
+)
+@click.option(
     "--after",
     help="Continuation cursor copied from a previous Next page / Continue scan line",
 )
@@ -1742,7 +1792,7 @@ def _json_options(command: Any) -> Any:
     "--format",
     "format_",
     help="versions: filter by format; collection: keep records with this format "
-    'name or description (e.g. Vinyl, 12")',
+    'name or description (e.g. Vinyl, 12"; a pattern, as --artist)',
 )
 @click.option(
     "--for-sale",
@@ -1750,7 +1800,15 @@ def _json_options(command: Any) -> Any:
     default=False,
     help="wantlist: keep the wants with copies for sale (one stats request each)",
 )
-@click.option("--genre", help="collection: keep records with this genre")
+@click.option(
+    "--folder",
+    metavar="NAME",
+    help="collection: list only this folder, by name as rows print it (any "
+    "case; not a pattern); pages server-side unless a filter is given",
+)
+@click.option(
+    "--genre", help="collection: keep records with this genre (a pattern, as --artist)"
+)
 @click.option(
     "--in-wantlist",
     is_flag=True,
@@ -1761,7 +1819,8 @@ def _json_options(command: Any) -> Any:
 @_json_options
 @click.option(
     "--label",
-    help="versions: filter by label; collection: keep records with this label name",
+    help="versions: filter by label; collection: keep records with this label "
+    "name (a pattern, as --artist)",
 )
 @click.option(
     "--limit", type=int, default=DEFAULT_LIMIT, help="Results per page (1-100)"
@@ -1783,8 +1842,8 @@ def _json_options(command: Any) -> Any:
     "--max-requests",
     type=int,
     help="releases --role / @l --year, versions --release-type official, --owned, "
-    "a collection filter, wantlist --for-sale, or an inventory filter: cap the "
-    "command's HTTP sends (default: no cap)",
+    "a collection filter (not --folder alone), wantlist --for-sale, or an "
+    "inventory filter: cap the command's HTTP sends (default: no cap)",
 )
 @click.option(
     "--owned",
@@ -1793,7 +1852,12 @@ def _json_options(command: Any) -> Any:
     help="releases / versions / inventory: mark each release row with the copies "
     "in your own collection (needs DISCOGS_TOKEN or OAuth)",
 )
-@click.option("--page", type=int, help="Page number, from 1 (server-side pages only)")
+@click.option(
+    "--page",
+    type=int,
+    help="Page number, from 1 (server-side pages only: not with a collection "
+    "filter; get collection --folder alone pages)",
+)
 @click.option(
     "--release-type",
     type=click.Choice(RELEASE_TYPES),
@@ -1825,7 +1889,17 @@ def _json_options(command: Any) -> Any:
         "inventory: listed|price|item|artist|label|catno"
     ),
 )
-@click.option("--style", "style_", help="collection: keep records with this style")
+@click.option(
+    "--style",
+    "style_",
+    help="collection: keep records with this style (a pattern, as --artist)",
+)
+@click.option(
+    "--title",
+    metavar="PATTERN",
+    help="collection: keep records whose release title (without the artist) "
+    "matches PATTERN",
+)
 @click.option(
     "-v",
     "--verbose",
@@ -1874,6 +1948,9 @@ def get(
     sort: str | None,
     style_: str | None,
     value: bool,
+    artist: str | None,
+    title: str | None,
+    folder: str | None,
     verbose: bool,
     year: str | None,
 ) -> None:
@@ -1913,6 +1990,9 @@ def get(
         max_price=max_price,
         currency=currency,
         value=value,
+        artist=artist,
+        title=title,
+        folder=folder,
         condition=condition,
         sleeve=sleeve,
         ships_from=ships_from,
@@ -1947,6 +2027,9 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         max_price=None,
         currency=None,
         value=False,
+        artist=None,
+        title=None,
+        folder=None,
         condition=None,
         sleeve=None,
         ships_from=None,
