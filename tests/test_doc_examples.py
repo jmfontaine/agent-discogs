@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -20,18 +19,13 @@ from discogs_sdk import Discogs
 
 from agent_discogs import _HELP_TEXT
 from agent_discogs.refs import parse_ref
+from tests.conftest import DOC_FILES, REPO_ROOT
 
 if TYPE_CHECKING:
     from discogs_sdk import RequestEvent
 
-ROOT = Path(__file__).resolve().parent.parent
-DOC_FILES = [
-    ROOT / "README.md",
-    *sorted((ROOT / "docs").glob("*.md")),
-    ROOT / "AGENTS.md",
-    ROOT / "skills" / "agent-discogs" / "SKILL.md",
-    *sorted((ROOT / "src" / "agent_discogs" / "skills").rglob("*.md")),
-]
+# AGENTS.md cites refs too, but its commands are not checked as examples.
+REF_FILES = (*DOC_FILES, REPO_ROOT / "AGENTS.md")
 
 # Every ref that may appear in docs, and what it must resolve to. Adding a new
 # example ID means adding it here, which is the point: examples are deliberate.
@@ -80,8 +74,8 @@ _PLACEHOLDER_IDS = {"123"}
 
 def _sources() -> dict[str, list[str]]:
     sources: dict[str, list[str]] = {
-        str(p.relative_to(ROOT)): p.read_text(encoding="utf-8").splitlines()
-        for p in DOC_FILES
+        str(p.relative_to(REPO_ROOT)): p.read_text(encoding="utf-8").splitlines()
+        for p in REF_FILES
     }
     sources["_HELP_TEXT"] = list(str(_HELP_TEXT).splitlines())
     return sources
@@ -104,7 +98,7 @@ OCCURRENCES = _occurrences()
 
 
 def test_docs_contain_refs() -> None:
-    assert OCCURRENCES, "no refs found in docs; DOC_FILES is probably wrong"
+    assert OCCURRENCES, "no refs found in docs; REF_FILES is probably wrong"
 
 
 def test_every_known_ref_is_cited() -> None:

@@ -440,6 +440,7 @@ Print the bundled agent guide. The content ships in the package, so it always ma
 
 ```bash
 agent-discogs skills                     # list bundled skills with the installed version (same as skills list)
+agent-discogs skills list --json         # [{"name":...,"description":...,"version":...}], one object per skill
 agent-discogs skills get core            # setup, refs, search and navigation, output, budget, troubleshooting
 agent-discogs skills get core --full     # plus references: command reference, errors, JSON output, search patterns, Discogs data model
 agent-discogs skills get collection      # your collection, lists and ownership marks (--owned, get owned, get collection, get lists, get list)

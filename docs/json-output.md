@@ -2,7 +2,7 @@
 
 ## Projections
 
-`search`, `get`, `tracks`, and `price` accept `--json` (as does `cache clear`, which prints `{"cleared":true}` or the error envelope). The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping.
+`search`, `get`, `tracks`, and `price` accept `--json` (as do `cache clear`, which prints `{"cleared":true}` or the error envelope, and `skills list`, which prints one `{"name","description","version"}` object per bundled skill). The output is a compact projection of what the text view shows — refs, names, catalog numbers, counts — not the raw Discogs record, so a release is ~2 KB instead of ~30–50 KB of image URLs and bookkeeping.
 
 Empty fields are omitted, so test for a key rather than for null; for the `pagination` envelope, see [Pagination](#pagination).
 
