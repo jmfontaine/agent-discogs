@@ -35,12 +35,12 @@ Errors under `--json` are a JSON document on stdout with exit code 1:
 
 Codes:
 
-- `not_found`
+- `not_found`: a `get release --master-year` whose master was deleted carries one in `master_year_error`, with the release printed and exit 0 (see [release](commands.md#release))
 - `seller_settings_required`
 - `auth_required`
 - `forbidden`
 - `rate_limited`: with `retry_after` in whole seconds, rounded up, when Discogs sends a usable `Retry-After`, as seconds or an HTTP date; `0` means retry now; and `limit`/`remaining` for the current minute when Discogs reports them
-- `cache_miss`: only under `--cached`; a `get wantlist --for-sale` want whose stats are not cached carries one in its own row, with exit 1 (see [--cached](caching-and-budget.md#--cached-and---fresh))
+- `cache_miss`: only under `--cached`; a `get wantlist --for-sale` want whose stats are not cached carries one in its own row, with exit 1, and a `get release --master-year` whose master is not cached carries one in `master_year_error`, with the release printed and exit 0 (see [--cached](caching-and-budget.md#--cached-and---fresh))
 - `cache_error`: with `path`, the cache database; see [Cache errors](caching-and-budget.md#cache-errors)
 - `api_error`
 - `connection_error`
@@ -88,6 +88,19 @@ Under `--for-sale`, a 429 on a stats request ends the scan with the rows kept in
 Before any request, `get inventory` rejects with `invalid_argument` (no budget footer): anything but exactly one username (`get inventory takes exactly one username (2 given).`; none at all is a usage error, exit 2) or a blank one; a `--condition` or `--sleeve` that is not a Discogs grade (`--condition must be a Discogs grade: M, NM, VG+, VG, G+, G, F or P, or its full name such as 'Very Good Plus (VG+)' (any case; 'mint-' given).`); a blank `--ships-from`; an unknown `--currency` code; `--max-price` without `--currency` and `--currency` without `--max-price` (`get inventory` only; on `get wantlist` the currency stands alone); a negative or non-finite `--max-price` (a value that is not a number at all, such as `abc`, is click's usage error: exit 2, text on stderr); an unknown `--sort` key (keys: listed, price, item, artist, label, catno) or `--desc` without `--sort`; `--page` with a filter (use the `Continue scan:` / `Next page:` command); `--after` without a filter; `--max-requests` without a filter or `--owned` (`get inventory` alone pages server-side and sends one request per page); a flag of another noun (`--for-sale`, `--role`, ...). A username starting with `-` goes after `--` (`get inventory -- -name`). See [get inventory](commands.md#inventory).
 
 A 429 after the first page of a filter scan keeps the rows matched so far, and `--in-wantlist` stopped short by `--max-requests` or a 429 scans nothing and prints an empty capped page, exit 0 (see [get inventory](commands.md#inventory)); a `--cached` miss on the username, a wants page or an inventory page fails with `cache_miss`.
+
+## A global flag after the command
+
+`--cached`, `--fresh`, `--debug` and `--color` are options of `agent-discogs` itself and go before the command (`agent-discogs --fresh get collection --value`). Typed after it, click rejects them: exit 2, text on stderr (under `--json` too), and nothing is sent to Discogs. The error says where the flag goes, with the command's canonical name (`get` for `fetch` or `show`):
+
+```
+Usage: agent-discogs get [OPTIONS] {artist|...|ids} REF...
+Try 'agent-discogs get --help' for help.
+
+Error: No such option '--fresh'. It is a global option: put it before the command, as in 'agent-discogs --fresh get ...'.
+```
+
+`--color never` and `--color=never` both report `--color`, and the example spells it `--color never` whatever value was typed. Any other unknown option keeps click's message and its `Did you mean` suggestion.
 
 ## Rate limited (429)
 

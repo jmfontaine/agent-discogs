@@ -31,7 +31,7 @@ Bootlegs, counterfeits and pirate copies all carry the format description "Unoff
 |------|----------|
 | Compare pressings | `search master "<title>"` → `get versions @m...` |
 | Release → all its pressings | Copy `→ @m...` from any release row → `get versions @m...` |
-| Get original pressing | `search master "<title>"` → `get versions @m... --sort released` → `get release @r...` |
+| Get original pressing | `search master "<title>"` → `get versions @m... --sort released` → `get release @r...`. From a release, `get release @r... --master-year` first gives the work's year (`Master: @m3719 (1994)`, 1 more request) |
 | Pick among look-alike rows | Compare catalog number and `have N` in the row itself; `have` is how many Discogs users own it (popularity, not yours, not identification). Same catno on several rows means variants: see `get release @r...` |
 | Identify by catalog number | `search release --catno "INT-92346"` → `get release @r...` |
 | Find by barcode or runout | `search release --barcode "606949235024"` (digits, no spaces); `search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all` (runout etching; try `TOWN HOUSE` too) → `get identifiers @r...` |
