@@ -80,11 +80,11 @@ Color is off when stdout is a pipe, and a `--json` command is never colored. If 
 | Explore discography | `search artist "<name>"` → `get releases @a... --sort year` |
 | Label catalogue | `get releases @l...` — copy `@l...` from a release's `Label:` line |
 | Band → member → solo work | `get artist @a...` → copy a `[@a...]` from `Members:` → `get releases @a...` |
-| Narrow release search | `search release "<title>" --artist "<name>"` |
 | Newest additions first | `search release --artist "<name>" --sort date_added --desc` (release searches only; undocumented by Discogs) |
-| Recently added releases / unofficial releases | `search release --artist "<name>" --release-type all --added-since YYYY-MM-DD --max-requests 60` (experimental; one request per release in the window). `--release-type unofficial` for unofficial releases only: see [search patterns](references/search-patterns.md#releases-or-unofficial-releases-added-since-a-date) |
+| Recently added releases / unofficial releases | `search release --artist "<name>" --release-type all --added-since YYYY-MM-DD --max-requests 60` (experimental; one request per release in the window); `--release-type unofficial`: [search patterns](references/search-patterns.md#releases-or-unofficial-releases-added-since-a-date) |
 | Get release notes / credits / identifiers together | `get release @r... --verbose` |
 | Who produced / engineered / played on this? | `get credits @r...` → follow a `[@a...]` into `get releases @a...` |
+| What did this engineer work on? | `search release --credit "<name>" --artist "<artist>"`, not `get releases @a... --role` |
 | Get artist/label refs from a release | `get release @r...` — `[@a...]` and `[@l...]` are always inline |
 | VA compilation tracks | `get release @r...` — per-track artists shown automatically |
 | New entry or an old one? | `get release @r...` — `Added:` is when it joined Discogs (no extra request; add `-c` to several refs to compare) |
@@ -199,4 +199,4 @@ agent-discogs --fresh price @r847868      # bypass the cache; the response is no
 | [references/errors.md](references/errors.md) | Every error, its message and hint, and how to recover |
 | [references/json-output.md](references/json-output.md) | `--json` and `--full` documents |
 | [references/search-patterns.md](references/search-patterns.md) | Effective search strategies |
-| [references/discogs-domain.md](references/discogs-domain.md) | Discogs data model: genres, country, artists, titles, labels, track positions, release dates |
+| [references/discogs-domain.md](references/discogs-domain.md) | Discogs data model: genres, country, artists, titles, labels, release dates |

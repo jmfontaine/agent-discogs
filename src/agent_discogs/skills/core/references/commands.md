@@ -71,10 +71,12 @@ agent-discogs search [type] <query> [--flags]
 
 | Flag | Description |
 |------|-------------|
+| `--anv` | Match an artist name variation; `search artist` or untyped only |
 | `--artist` | Filter by artist name |
 | `--barcode` | Match identifier text (barcode, matrix/runout etching) |
 | `--catno` | Filter by catalog number |
 | `--country` | Filter by country |
+| `--credit` | Match a person credited on a release or master; not on `search artist\|label`. A broad match: see [search patterns](search-patterns.md#credit-track-and-title-searches) |
 | `--desc` | With `--sort`: descending (newest first) |
 | `--format` | Filter by format (e.g., "Vinyl", "CD") |
 | `--genre` | Filter by genre |
@@ -90,6 +92,8 @@ agent-discogs search [type] <query> [--flags]
 | `--release-type` | `official` (default): client-side scan, `≤N` total, continues with `--after`. `unofficial`: filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` it falls back to the client-side scan. It returns every unofficial release: bootlegs, counterfeits and pirates alike; for bootlegs only, see Unofficial Releases in the pressings skill (`agent-discogs skills get pressings --full`). `all`: no filter. |
 | `--sort` | `date_added` only, and only on `search release ...`: order by when releases were added to Discogs (ascending; add `--desc` for newest first). Undocumented by Discogs and only seen working on release searches, so any other search, or `--desc` without `--sort`, fails with `invalid_argument` before any request. If Discogs drops it, results most likely come back in relevance order with no error. The filtered (default) path keeps the server's order. |
 | `--style` | Filter by style |
+| `--title` | Match release titles, sent as `release_title` (`search artist\|label`: the name) |
+| `--track` | Match track titles; not on `search artist\|label` |
 | `--year` | Filter by release year |
 
 **Examples:**
@@ -103,6 +107,7 @@ agent-discogs search master "The Downward Spiral"
 agent-discogs search release --catno "INT-92346"
 agent-discogs search release --barcode "606949235024"
 agent-discogs search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all   # runout etching
+agent-discogs search release --artist "Horace Silver" --credit "Rudy Van Gelder" --format Vinyl
 agent-discogs search release "Blue Monday" --artist "New Order"
 agent-discogs search release "Pretty Hate Machine" --format "Vinyl" --country US
 agent-discogs search release "The Downward Spiral" --release-type all --page 2 --limit 10

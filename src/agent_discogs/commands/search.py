@@ -37,21 +37,44 @@ if TYPE_CHECKING:
 KNOWN_TYPES = {"artist", "label", "master", "release"}
 
 
+# The CLI name of a filter whose Discogs parameter differs: `params` keeps the
+# CLI name for the header and the continuation, the request the Discogs one.
+_REQUEST_NAMES = {"title": "release_title"}
+
+# Filters Discogs matches only on some result types; on any other it returns
+# an empty page with no error, so the CLI refuses it before any request.
+# filter -> (what it matches, the types it cannot match, the type it suits)
+_TYPED_FILTERS = {
+    "credit": ("the credits of releases and masters", ("artist", "label"), "release"),
+    "track": (
+        "the track titles of releases and masters",
+        ("artist", "label"),
+        "release",
+    ),
+    "anv": ("artist name variations", ("release", "master", "label"), "artist"),
+}
+
+
 def _build_search_params(
     *,
     query: str,
     type_filter: str | None,
+    anv: str | None,
     artist: str | None,
     barcode: str | None,
     catno: str | None,
     country: str | None,
+    credit: str | None,
     format: str | None,  # noqa: A002  # click option name for --format
     genre: str | None,
     label: str | None,
     style: str | None,
+    title: str | None,
+    track: str | None,
     year: str | None,
 ) -> dict[str, Any]:
-    """Build Discogs API search parameters from CLI args (without pagination).
+    """Build search parameters from CLI args (without pagination), keyed by
+    CLI name: `_request_params()` gives the Discogs names.
 
     Blank values are dropped: they constrain nothing, so they must not count
     as a query or filter either.
@@ -74,12 +97,35 @@ def _build_search_params(
                 ("barcode", barcode),
                 ("artist", artist),
                 ("label", label),
+                ("title", title),
+                ("credit", credit),
+                ("track", track),
+                ("anv", anv),
             ]
             if value and value.strip()
         }
     )
 
     return params
+
+
+def _request_params(params: dict[str, Any]) -> dict[str, Any]:
+    """`params` under the names Discogs takes (`title` is `release_title`)."""
+    return {_REQUEST_NAMES.get(name, name): value for name, value in params.items()}
+
+
+def _typed_filter_error(type_filter: str | None, params: dict[str, Any]) -> str | None:
+    """Why a filter cannot match on this search type, or None. Checked before
+    any request: Discogs answers such a search with an empty page."""
+    for name, (matches, refused, suited) in _TYPED_FILTERS.items():
+        if name in params and type_filter in refused:
+            article = "an" if type_filter == "artist" else "a"
+            return (
+                f"--{name} matches {matches}; {article} {type_filter} search has "
+                f"none. Search {suited}s: agent-discogs search {suited} "
+                f'--{name} "..."'
+            )
+    return None
 
 
 def _is_unofficial(item: SearchResult) -> bool:
@@ -230,6 +276,10 @@ def _search_added_since(
     "--after",
     help="Continuation cursor copied from a previous Next page / Continue scan line",
 )
+@click.option(
+    "--anv",
+    help="Match artist name variations (artist or untyped searches only)",
+)
 @click.option("--artist", help="Filter by artist")
 @click.option(
     "--barcode",
@@ -238,6 +288,11 @@ def _search_added_since(
 )
 @click.option("--catno", help="Filter by catalog number")
 @click.option("--country", help="Filter by country")
+@click.option(
+    "--credit",
+    help="Match a person credited on a release or master (not on artist/label "
+    "searches)",
+)
 @click.option(
     "--desc", is_flag=True, default=False, help="With --sort: descending order"
 )
@@ -292,6 +347,14 @@ def _search_added_since(
     help="search release only: server-side order (undocumented by Discogs)",
 )
 @click.option("--style", help="Filter by style")
+@click.option(
+    "--title",
+    help="Match release titles (artist/label searches: the name)",
+)
+@click.option(
+    "--track",
+    help="Match track titles (not on artist/label searches)",
+)
 @click.option("--year", help="Filter by year")
 def search(
     args: tuple[str, ...],
@@ -299,10 +362,12 @@ def search(
     json_output: bool,
     full: bool,
     after: str | None,
+    anv: str | None,
     artist: str | None,
     barcode: str | None,
     catno: str | None,
     country: str | None,
+    credit: str | None,
     desc: bool,
     format_: str | None,
     genre: str | None,
@@ -314,6 +379,8 @@ def search(
     release_type: str,
     sort: str | None,
     style: str | None,
+    title: str | None,
+    track: str | None,
     year: str | None,
 ) -> None:
     """Search Discogs database.
@@ -325,14 +392,18 @@ def search(
     params = _build_search_params(
         query=query,
         type_filter=type_filter,
+        anv=anv,
         artist=artist,
         barcode=barcode,
         catno=catno,
         country=country,
+        credit=credit,
         format=format_,
         genre=genre,
         label=label,
         style=style,
+        title=title,
+        track=track,
         year=year,
     )
     if not params.keys() - {"type"}:
@@ -340,6 +411,9 @@ def search(
             ValueError("No search query or filters provided."),
             json_output=json_output,
         )
+    typed_error = _typed_filter_error(type_filter, params)
+    if typed_error:
+        fail(ValueError(typed_error), json_output=json_output)
     bad_paging = paging_error(limit, page)
     if bad_paging:
         fail(ValueError(bad_paging), json_output=json_output)
@@ -360,9 +434,10 @@ def search(
             ),
             json_output=json_output,
         )
-    # Kept out of `params`, which doubles as the header filters and the
-    # footer's flags. A filtered scan keeps the server's order.
-    request = {**params, **sort_params(sort, desc)}
+    # Under Discogs' names, and the sort kept out of `params`, which doubles as
+    # the header filters and the footer's flags. A filtered scan keeps the
+    # server's order.
+    request = {**_request_params(params), **sort_params(sort, desc)}
 
     # Release-type filtering only applies to release/master searches.
     # Artist and label results never have format metadata, so filtering
