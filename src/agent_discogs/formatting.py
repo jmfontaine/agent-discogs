@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from agent_discogs import markup, sanitize, style
-from agent_discogs.collection import is_release_row
+from agent_discogs.collection import CustomField, field_values, is_release_row
 from agent_discogs.config import CACHE_TTL_LABEL
 from agent_discogs.inventory import GRADES, release_id, short_grade
 from agent_discogs.markup import Part, plain
@@ -676,14 +676,17 @@ def format_collection(
     next_page_cmd: str | None,
     *,
     folders: dict[int, str],
+    fields: dict[int, CustomField] | None = None,
     filters: dict[str, str] | None = None,
     filtered: bool = False,
     stop: ScanStop | None = None,
     header_resent: bool = False,
 ) -> str:
     """`get collection`: one row per copy, the release titled like a search
-    result, then the copy's folder by name (`folders`), the day it was added
-    and its rating when set. A filter makes it a scan (`filtered`)."""
+    result, then the copy's folder by name (`folders`), the day it was added,
+    its rating when set and, with the user's custom `fields` (`--fields`),
+    `· Name: value` for each of its notes. A filter makes it a scan
+    (`filtered`)."""
     counts = _page_counts(
         page,
         len(records),
@@ -699,6 +702,7 @@ def format_collection(
         "",
     ]
     for record in records:
+        values = {} if fields is None else field_values(record, fields)
         release = getattr(record, "basic_information", None)
         labels = getattr(release, "labels", None) or []
         first = labels[0] if labels else None
@@ -720,6 +724,9 @@ def format_collection(
                 # the JSON `added` beside it give it.
                 added=added.date().isoformat() if added else None,
                 rating=getattr(record, "rating", None),
+                tail=[" ".join(f"· {k}: {v}" for k, v in values.items())]
+                if values
+                else None,
             )
         )
     lines.extend(_footer(next_page_cmd, capped=stop is not None))

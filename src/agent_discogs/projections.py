@@ -16,7 +16,7 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from agent_discogs import markup
-from agent_discogs.collection import folder_name
+from agent_discogs.collection import CustomField, field_values, folder_name
 from agent_discogs.formatting import (
     _community_have,
     _format_string,
@@ -454,10 +454,15 @@ def _credits(artists: list[Any] | None) -> list[dict[str, Any]]:
     return [credit for credit in known if credit]
 
 
-def project_record(record: Any, folders: dict[int, str]) -> dict[str, Any]:
+def project_record(
+    record: Any,
+    folders: dict[int, str],
+    fields: dict[int, CustomField] | None = None,
+) -> dict[str, Any]:
     """A `get collection` row: one copy, its release titled like a search
     result, with the copy's folder by name (`folders`), `added`, its full
-    RFC 3339 timestamp, and `rating` (Discogs' 0 is unrated).
+    RFC 3339 timestamp, `rating` (Discogs' 0 is unrated) and, with the
+    user's custom `fields` (`--fields`), its notes by field name.
 
     Unlike the text row, it also carries the release's artists, genres,
     styles and master (Discogs' master 0 is none), from the same response."""
@@ -480,6 +485,7 @@ def project_record(record: Any, folders: dict[int, str]) -> dict[str, Any]:
             "folder": folder_name(folders, getattr(record, "folder_id", None)),
             "added": _timestamp(getattr(record, "date_added", None)),
             "rating": getattr(record, "rating", None) or None,
+            "fields": None if fields is None else field_values(record, fields),
         }
     )
 
