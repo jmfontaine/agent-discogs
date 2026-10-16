@@ -19,6 +19,7 @@ _NOUNS = [
     "price",
     "release",
     "releases",
+    "stats",
     "tracklist",
     "versions",
     "list",
@@ -120,6 +121,7 @@ class TestCompletion:
                 ],
             ),
             ("agent-discogs get wantlist --currency e", ["EUR"]),
+            ("agent-discogs get stats --currency e", ["EUR"]),
             (
                 "agent-discogs get inventory seller --condition ",
                 ["M", "NM", "VG+", "VG", "G+", "G", "F", "P"],
