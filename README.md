@@ -63,7 +63,7 @@ Install the skill so your AI coding agent can use agent-discogs automatically:
 npx skills add jmfontaine/agent-discogs
 ```
 
-The installed skill is a thin pointer; the usage guide itself ships inside the package and is served by `agent-discogs skills get core`, so agents always read instructions that match the version they run (see [skills](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md#skills)).
+The installed skill is a thin pointer; the usage guides themselves ship inside the package and are served by `agent-discogs skills get core`, plus `collection`, `marketplace` and `pressings` for the tasks that need them, so agents always read instructions that match the version they run (see [skills](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md#skills)).
 
 ## Authentication
 
@@ -107,6 +107,7 @@ agent-discogs get release @r352665 --json
 agent-discogs status
 agent-discogs cache clear
 agent-discogs skills get core
+agent-discogs skills get pressings
 ```
 
 Each command, its own flags and its text output are described in [Commands](https://github.com/jmfontaine/agent-discogs/blob/main/docs/commands.md). The global flags (`--cached`, `--fresh`, `--debug`, `--color`), the output modes (`--json`, `--full`) and the `--max-requests` cap have their own pages:

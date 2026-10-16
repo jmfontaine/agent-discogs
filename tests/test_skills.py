@@ -3,56 +3,95 @@
 from __future__ import annotations
 
 import importlib.metadata
+import re
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from agent_discogs import cli
 from agent_discogs.commands.skills import _description, _render
-from tests.conftest import text_error
+from tests.conftest import SKILLS, text_error
+
+_SKILLS_DIR = (
+    Path(__file__).resolve().parent.parent / "src" / "agent_discogs" / "skills"
+)
+
+# Bytes each level may print. `skills get core` is loaded in every session, so
+# a later addition must not quietly regrow it: put detail in references/ or in
+# the skill the task needs.
+_BRIEF_LIMIT = 20_000
+_FULL_LIMIT = {"core": 75_000}
+_FULL_LIMIT_DEFAULT = 40_000
+
+
+def _get(*argv: str) -> str:
+    result = CliRunner().invoke(cli, ["skills", "get", *argv])
+    assert result.exit_code == 0, result.output
+    return result.stdout
 
 
 class TestSkillsCommand:
-    def test_list_is_default_and_shows_description_and_version(self) -> None:
+    def test_list_is_default_and_aligns_every_skill(self) -> None:
         result = CliRunner().invoke(cli, ["skills"])
         assert result.exit_code == 0
-        assert result.stdout.startswith("core ")
-        assert "usage guide" in result.stdout
         installed = importlib.metadata.version("agent-discogs")
-        assert result.stdout.rstrip().endswith(f"(agent-discogs {installed})")
+        lines = result.stdout.splitlines()
+        assert [line.split(" ", 1)[0] for line in lines] == list(SKILLS)
+        width = max(map(len, SKILLS))
+        for name, line in zip(SKILLS, lines, strict=True):
+            text = (_SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
+            match = re.search(r"^description: (\S.*)$", text, re.MULTILINE)
+            assert match
+            assert line == f"{name:<{width}} {match[1]} (agent-discogs {installed})"
         assert CliRunner().invoke(cli, ["skills", "list"]).stdout == result.stdout
 
-    def test_get_core_prints_the_guide_without_references(self) -> None:
-        result = CliRunner().invoke(cli, ["skills", "get", "core"])
-        assert result.exit_code == 0
-        assert result.stdout.startswith("---\nname: core\n")
-        assert "## Core Workflow" in result.stdout
-        assert "<!-- references/" not in result.stdout
+    @pytest.mark.parametrize("name", SKILLS)
+    def test_get_prints_the_named_skill(self, name: str) -> None:
+        out = _get(name)
+        assert out.startswith(f"---\nname: {name}\n")
+        assert "<!-- references/" not in out
 
-    def test_get_core_full_appends_every_reference(self) -> None:
-        brief = CliRunner().invoke(cli, ["skills", "get", "core"]).stdout
-        result = CliRunner().invoke(cli, ["skills", "get", "core", "--full"])
-        assert result.exit_code == 0
-        assert result.stdout.startswith(brief)
-        for name in (
-            "commands.md",
-            "discogs-domain.md",
-            "pressings-guide.md",
-            "search-patterns.md",
-        ):
-            assert f"<!-- references/{name} -->" in result.stdout
-        assert "# Command Reference" in result.stdout
+    def test_get_core_prints_the_guide_without_references(self) -> None:
+        assert "## Core Workflow" in _get("core")
+
+    def test_get_core_full_appends_its_references(self) -> None:
+        brief = _get("core")
+        full = _get("core", "--full")
+        assert full.startswith(brief)
+        refs = sorted(p.name for p in (_SKILLS_DIR / "core" / "references").iterdir())
+        assert refs
+        for name in refs:
+            assert f"<!-- references/{name} -->" in full
+        assert "# Command Reference" in full
+
+    @pytest.mark.parametrize("other", [s for s in SKILLS if s != "core"])
+    def test_get_core_full_leaves_out_the_other_skills(self, other: str) -> None:
+        full = _get("core", "--full")
+        text = (_SKILLS_DIR / other / "SKILL.md").read_text(encoding="utf-8")
+        # Every substantial line: a fact said in two skills drifts apart.
+        shared = [line for line in text.splitlines() if len(line) > 60 and line in full]
+        assert shared == []
+
+    @pytest.mark.parametrize("name", SKILLS)
+    def test_each_level_stays_within_its_size_budget(self, name: str) -> None:
+        assert len(_get(name).encode()) <= _BRIEF_LIMIT
+        limit = _FULL_LIMIT.get(name, _FULL_LIMIT_DEFAULT)
+        assert len(_get(name, "--full").encode()) <= limit
 
     def test_path(self) -> None:
         root = CliRunner().invoke(cli, ["skills", "path"]).stdout.strip()
-        core = CliRunner().invoke(cli, ["skills", "path", "core"]).stdout.strip()
         assert root.endswith("agent_discogs/skills")
-        assert core == f"{root}/core"
+        for name in SKILLS:
+            argv = ["skills", "path", name]
+            assert CliRunner().invoke(cli, argv).stdout.strip() == f"{root}/{name}"
 
     def test_unknown_skill(self) -> None:
+        available = ", ".join(SKILLS)
         for argv in (["skills", "get", "nope"], ["skills", "path", "nope"]):
             result = CliRunner().invoke(cli, argv)
-            assert text_error(result) == "✗ Unknown skill 'nope'. Available: core\n"
+            expected = f"✗ Unknown skill 'nope'. Available: {available}\n"
+            assert text_error(result) == expected
 
     def test_help_mentions_skills(self) -> None:
         result = CliRunner().invoke(cli, ["--help"])

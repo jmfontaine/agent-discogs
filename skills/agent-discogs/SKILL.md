@@ -23,11 +23,18 @@ Install: `pip install agent-discogs` (or `uv tool install agent-discogs`, or `br
 
 ## Start here
 
-This file is a discovery stub, not the usage guide. Before running any `agent-discogs` command, load the workflow guide from the CLI itself so the instructions match the installed version:
+This file is a discovery stub, not the usage guide. Before running any `agent-discogs` command, load the core guide from the CLI itself so the instructions match the installed version, then the skill the task needs:
 
 ```bash
-agent-discogs skills get core          # workflows, output format, common patterns, troubleshooting
-agent-discogs skills get core --full   # plus the full command reference, search patterns, pressings guide, Discogs data model
+agent-discogs skills get core          # setup, refs, search and navigation, output, budget, troubleshooting
 ```
 
-`agent-discogs skills` lists everything the installed version ships.
+## Specialized skills
+
+```bash
+agent-discogs skills get collection    # the user's own collection, lists, ownership marks
+agent-discogs skills get marketplace   # prices, the wantlist's copies for sale, a seller's inventory
+agent-discogs skills get pressings     # telling pressings apart: versions, identifiers, unofficial releases
+```
+
+Add `--full` to a skill only when you need its command reference. `agent-discogs skills` lists everything the installed version ships.

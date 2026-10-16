@@ -24,12 +24,22 @@ WHEEL_REQUIRED = (
     "agent_discogs/__init__.py",
     "agent_discogs/__main__.py",
     "agent_discogs/py.typed",
-    # `agent-discogs skills get core` serves these from the installed package.
+    # `agent-discogs skills get <name> [--full]` serves these from the
+    # installed package.
+    "agent_discogs/skills/collection/SKILL.md",
+    "agent_discogs/skills/collection/references/commands.md",
     "agent_discogs/skills/core/SKILL.md",
     "agent_discogs/skills/core/references/commands.md",
     "agent_discogs/skills/core/references/discogs-domain.md",
-    "agent_discogs/skills/core/references/pressings-guide.md",
+    "agent_discogs/skills/core/references/errors.md",
+    "agent_discogs/skills/core/references/json-output.md",
     "agent_discogs/skills/core/references/search-patterns.md",
+    "agent_discogs/skills/marketplace/SKILL.md",
+    "agent_discogs/skills/marketplace/references/commands.md",
+    "agent_discogs/skills/marketplace/references/discogs-domain.md",
+    "agent_discogs/skills/pressings/SKILL.md",
+    "agent_discogs/skills/pressings/references/discogs-domain.md",
+    "agent_discogs/skills/pressings/references/pressings-guide.md",
 )
 # Project-only trees: useful in the repository and in the sdist, wrong in the
 # importable distribution. `skills` is the repo-root discovery stub, not the

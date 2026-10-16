@@ -35,7 +35,8 @@ Commands:
   tracks <ref>...             Shortcut: get tracklist <ref>...
   price <ref>...              Shortcut: get price <ref>...
   cache clear [--json]        Clear HTTP cache; a failed purge exits 1 (cache_error)
-  skills [list|get|path]      Print the bundled agent guide (start: skills get core)
+  skills [list|get|path]      Print the bundled agent guides (start: skills get core;
+                              then collection, marketplace or pressings)
   status                      Show version, auth mode, and cache location
   completion bash|zsh|fish    Print the Tab-completion script for an interactive
                               shell, e.g. eval "$(agent-discogs completion zsh)"

@@ -22,6 +22,7 @@
     "This is jmfontaine/agent-discogs, a command-line tool (PyPI package agent-discogs). It is not the discogs-sdk Python library or any other Discogs client.",
     "Install it with `pipx install agent-discogs`, `uv tool install agent-discogs` or `brew install jmfontaine/tap/agent-discogs`, and authenticate by setting DISCOGS_TOKEN to a Discogs personal access token.",
     "Run `agent-discogs skills get core` (add `--full` for its references) and read it before relying on these pages: it is the authoritative guide for the installed version, while these pages describe the latest main branch.",
+    "Then load the bundled skill the task needs: `agent-discogs skills get collection` (collection, lists, ownership), `marketplace` (prices, wantlist for sale, a seller's inventory) or `pressings` (telling pressings apart).",
     "Pass the refs printed in the output (@r… release, @m… master, @a… artist, @l… label) back into later commands, such as `agent-discogs get release @r…`.",
     "Prefer `--json` (on search, get, tracks, price and cache clear) when parsing the output: the text output is meant for reading."
   ]

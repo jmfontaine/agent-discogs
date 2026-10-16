@@ -32,10 +32,13 @@ MINIMUM_PYDANTIC = (2, 12)
 # python_full_version == '3.15.*'`).
 MINIMUM_PYDANTIC_315 = (2, 14)
 
+SKILLS = ("collection", "core", "marketplace", "pressings")
+# The references `skills get core --full` appends.
 REFERENCES = (
     "commands.md",
     "discogs-domain.md",
-    "pressings-guide.md",
+    "errors.md",
+    "json-output.md",
     "search-patterns.md",
 )
 
@@ -90,8 +93,9 @@ def check_cli() -> None:
         fail(f"--version printed {out.strip()!r}, expected {installed}")
 
     out = run_cli("skills", "list")
-    if not out.startswith("core"):
-        fail(f"skills list does not start with the core skill: {out.strip()!r}")
+    listed = [line.split(" ", 1)[0] for line in out.splitlines()]
+    if listed != list(SKILLS):
+        fail(f"skills list names {listed}, expected {list(SKILLS)}")
 
     out = run_cli("skills", "get", "core", "--full")
     if not out.startswith("---"):

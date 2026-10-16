@@ -76,9 +76,11 @@ def skills(ctx: click.Context) -> None:
 def list_skills() -> None:
     """List available skills, tagged with the installed version they describe."""
     tag = f"(agent-discogs {version('agent-discogs')})"
-    for name, skill_dir in _skill_dirs().items():
+    dirs = _skill_dirs()
+    width = max(map(len, dirs), default=0)
+    for name, skill_dir in dirs.items():
         desc = _description((skill_dir / "SKILL.md").read_text(encoding="utf-8"))
-        print(f"{name:<8} {desc} {tag}")
+        print(f"{name:<{width}} {desc} {tag}")
 
 
 @skills.command("get")
