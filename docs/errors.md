@@ -67,6 +67,10 @@ Under `--json` this is the usual envelope, without `status`, since no HTTP respo
 
 `get inventory` needs no user: Discogs shows anyone a seller's For Sale listings, so it reads without credentials. Only `--in-wantlist` and `--owned` need one.
 
+## get owned argument errors
+
+`get owned` takes release and master refs; a raw id is a release. Another typed ref fails with `invalid_argument` before any request for it: `@a3857 is an artist, not a release or a master. Use a release or master ref or ID with 'get owned'.` With several refs, that ref's block reports it and the others still run (exit 1). A 429 during the collection read of a master ref is no error: the master answers from the part read, or reads `owned ?` (exit 0; see [get owned](commands.md#a-master-any-pressing)).
+
 ## get lists and get list argument errors
 
 Before any request, with `invalid_argument` (no budget footer): `get lists` with a ref (`get lists takes no ref: it lists your own lists. Open one with get list ID.`) or any flag but `--limit` and `--page`; `get list` with anything but a plain number, such as a typed ref (`get list takes a list id, a plain number such as 123 ('@r123' given): lists have no ref prefix.`; with several ids, that id's block reports it and the others still run), or with any flag but `--json` and `--full`.

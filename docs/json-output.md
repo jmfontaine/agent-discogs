@@ -47,6 +47,14 @@ Under `--owned` (`search`, `get versions`, `get releases`, `get inventory`; see 
 
 `get owned @r... --json` prints `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}`, or `{"ref":"@r847868","owned":0}` when not owned. Several refs give a list, with `{"ref","error"}` items for failures. `--full` prints `{"instances":[...]}`, your collection records for the release as the SDK normalizes them (their folders by id, not name).
 
+`get owned @m... --json` prints one document per master, from one read of your whole collection:
+
+```json
+{"ref":"@m3719","owned":3,"releases":[{"ref":"@r847868","owned":1,"folders":["Vinyl"]},{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}],"collection":{"complete":true,"records_read":250,"total_records":250}}
+```
+
+`owned` is the total of copies across the master's releases: `0` when you own none (then there is no `releases`), `null` when a 429 stopped the read before any copy was found. Each `releases` item is what `get owned @r...` prints for that release, in the order of its first copy in the collection. Every master document carries the `collection` object above, complete or not, so `collection.complete` reads the same way everywhere. `--full` prints `{"instances":[...],"collection":{...}}`: the matching collection records as the SDK normalizes them, in collection order, folders by id.
+
 ## Wanted rows
 
 Under `--wanted` (`search`, `get versions`, `get releases`; see [Marking rows with --wanted](commands.md#marking-rows-with---wanted)), each release row gets `wanted`, after `owned` when both flags are given. On `search`, which reads your wantlist to decide, the document also gets `wantlist`:
