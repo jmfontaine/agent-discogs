@@ -137,6 +137,8 @@ Unknown date parts are left out, in text and `--json` alike: Discogs' year `0` i
 
 Its format lists one entry per physical format, separated by `;`: the quantity when above one, the name, then descriptions and free text in parentheses (`Format: 2×Vinyl (LP, Album, 180g, Gatefold); CD (Album)`; `--json` carries the same string).
 
+`Genres:` and `Styles:` are `;`-separated too (`Genres: Rock; Folk, World, & Country`), on `get release` and `get master` alike, because the genre `Folk, World, & Country` has commas; `--json` carries them as arrays (`"genres":["Rock","Folk, World, & Country"]`).
+
 `-v, --verbose` on `release` appends notes, credits, and identifiers in one call; `-c, --compact` replaces the tracklist with a one-line `Tracks: 14 (65:01)` summary; the total is omitted when any track lacks a duration (use `tracks` when the tracklist is what you want).
 
 Index tracks (a suite or medley split into parts) list their sub-tracks indented beneath them. The compact count includes each part, and the total sums the parts' durations; when a part is untimed, the index track's own duration stands in for the suite.

@@ -136,6 +136,8 @@ release); 'owned' is your own copies (--owned).
 get release's Format line (and --json formats) lists one entry per physical
 format, ';'-separated: the quantity when above 1, the name, then descriptions
 and free text in parentheses, e.g. 2\u00d7Vinyl (LP, Album, 180g, Gatefold); CD (Album).
+get release and get master's Genres and Styles lines are ';'-separated too,
+since a genre can hold commas: Genres: Rock; Folk, World, & Country.
 
 Refs:
   Search results return typed refs: @a3857 (artist), @r847868 (release),
