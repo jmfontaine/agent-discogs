@@ -16,7 +16,6 @@ same folder (`records()`), a page at a time or, with a filter
 
 from __future__ import annotations
 
-import contextlib
 import functools
 from collections import Counter
 from collections.abc import Callable
@@ -389,7 +388,8 @@ def master_copies(client: Discogs, master_id: int, *, folders: bool) -> MasterCo
     0, matches none), plus, with `folders` and at least one copy, the folder
     list (once per invocation) to name their folders. A 429 on the folder
     list keeps the answer, its folders named by id (`folder 5`): like a 429
-    in the read, it never fails a master ref."""
+    in the read, it never fails a master ref, and the list is not asked for
+    again in this invocation (every later ref names folders by id too)."""
     ownership = _collection_read(client)
     found = [r for r in ownership.records if master_id and _master_id(r) == master_id]
     by_release: dict[int, list[Any]] = {}
@@ -397,8 +397,10 @@ def master_copies(client: Discogs, master_id: int, *, folders: bool) -> MasterCo
         by_release.setdefault(record.id, []).append(record)
     names: dict[int, str] = {}
     if folders and found:
-        with contextlib.suppress(RateLimitError):
+        try:
             names = folder_names(account.user(client))
+        except RateLimitError:
+            click.get_current_context().meta[_FOLDER_NAMES] = names
     releases = [
         (release_id, len(items), _folders_of(names, items) if folders else [])
         for release_id, items in by_release.items()

@@ -1066,13 +1066,16 @@ class TestGetOwnedMaster:
     ) -> None:
         account = _Account(throttle=("collection:2", "folders"))
         h = _Harness(monkeypatch, account)
-        text, _ = h.run("get", "owned", "@m77")
+        text, sent = h.run("get", "owned", "@m77", "@m77", "@r2")
         assert text.exit_code == 0, text.output
         assert text.stdout.splitlines()[:3] == [
             "@m77 owned \u00d72 in 2 releases",
             "  @r2 owned: folder 1",
             "  @r3 owned: folder 5",
         ]
+        assert "  @r3 owned: folder 5" in text.stdout.split("\n\n@m77")[1]
+        assert text.stdout.rstrip().endswith("@r2 owned: folder 1"), text.stdout
+        assert sent.count(f"{_USER}/collection/folders") == 1
 
     @pytest.mark.parametrize("throttle", ["identity", "collection:1"])
     def test_rate_limit_before_any_record_is_undecided(
