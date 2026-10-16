@@ -184,6 +184,21 @@ def _format_string(formats: list[Any] | None) -> str:
     return "; ".join(entries)
 
 
+def _genre_lines(entity: Any) -> list[Line]:
+    """The `Genres:` and `Styles:` lines, entries `;`-separated.
+
+    One genre is called `Folk, World, & Country`, so a comma cannot separate
+    entries; `;` is also what the `Format:` line uses. An empty list prints
+    no line.
+    """
+    lines: list[Line] = []
+    for label, attr in (("Genres", "genres"), ("Styles", "styles")):
+        values = getattr(entity, attr, None)
+        if values:
+            lines.append([_label(label), f" {'; '.join(values)}"])
+    return lines
+
+
 def _label_parts(labels: list[Any] | None) -> list[Part]:
     """First label name with its ref and catalog number."""
     if not labels:
@@ -1104,13 +1119,7 @@ def format_master(master: Any) -> str:
         ]
     ]
 
-    genres = getattr(master, "genres", None)
-    if genres:
-        lines.append([_label("Genres"), f" {', '.join(genres)}"])
-
-    styles = getattr(master, "styles", None)
-    if styles:
-        lines.append([_label("Styles"), f" {', '.join(styles)}"])
+    lines.extend(_genre_lines(master))
 
     main_release = getattr(master, "main_release", None)
     if main_release:
@@ -1342,13 +1351,7 @@ def format_release(
     if origin:
         lines.append(_joined(origin, " · "))
 
-    genres = getattr(release, "genres", None)
-    if genres:
-        lines.append([_label("Genres"), f" {', '.join(genres)}"])
-
-    styles = getattr(release, "styles", None)
-    if styles:
-        lines.append([_label("Styles"), f" {', '.join(styles)}"])
+    lines.extend(_genre_lines(release))
 
     community = getattr(release, "community", None)
     if community:

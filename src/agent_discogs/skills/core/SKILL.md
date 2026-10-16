@@ -157,7 +157,7 @@ Refs encode entity type and Discogs ID: `@a3857` (artist), `@r847868` (release),
 
 **Master** = canonical album. **Release** = specific pressing. **Version** = a release belonging to a master. Search masters to find all pressings; search releases to find a specific one. Telling pressings apart (versions, identifiers, unofficial releases): `agent-discogs skills get pressings`.
 
-**Genres**, **country**, **artists**, **labels** and other Discogs-specific data conventions are documented in [references/discogs-domain.md](references/discogs-domain.md); formats and identifiers in the pressings skill.
+**Genres** (`;`-separated in text), **country**, **artists**, **labels** and other Discogs-specific data conventions are documented in [references/discogs-domain.md](references/discogs-domain.md); formats and identifiers in the pressings skill.
 
 ## Token Efficiency
 
