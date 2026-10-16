@@ -8,13 +8,15 @@ reliable one, it reads the whole "All"
 folder once per invocation through the filtered-scan machinery
 (`fetch_filtered_page`, keeping every row), so `--max-requests` and a 429
 stop it the way they stop any scan, and matches list rows against it. `get
-owned` asks about one release at a time. `get collection` lists the same
-folder (`records()`), a page at a time or, with a filter
+owned` asks about one release at a time, and answers a master from that
+same read, matching each record's master id. `get collection` lists the
+same folder (`records()`), a page at a time or, with a filter
 (`record_filter()`), through a scan.
 """
 
 from __future__ import annotations
 
+import contextlib
 import functools
 from collections import Counter
 from collections.abc import Callable
@@ -129,13 +131,15 @@ def record_filter(filters: dict[str, str]) -> Callable[[Any], bool] | None:
 
 @dataclass(frozen=True)
 class Ownership:
-    """Copies per release id in the part of the collection read, and why the
-    read stopped short (`stop`), if it did."""
+    """Copies per release id in the part of the collection read, the records
+    read (in collection order), and why the read stopped short (`stop`), if
+    it did."""
 
     counts: Counter[int]
     records_read: int
     total_records: int | None
     stop: ScanStop | None
+    records: tuple[Any, ...] = ()
 
     @property
     def complete(self) -> bool:
@@ -257,6 +261,16 @@ def _unread(stop: ScanStop) -> Ownership:
     return Ownership(Counter(), 0, None, stop)
 
 
+def _collection_read(client: Discogs) -> Ownership:
+    """The collection `get owned @m...` answers from: the same read as
+    `--owned`, once per invocation, uncapped (`get owned` takes no
+    `--max-requests`)."""
+    meta = click.get_current_context().meta
+    if _OWNERSHIP not in meta:
+        meta[_OWNERSHIP] = _read_ownership(client, None, max_requests=None)
+    return meta[_OWNERSHIP]
+
+
 def _read_ownership(
     client: Discogs, listing_stop: ScanStop | None, *, max_requests: int | None
 ) -> Ownership:
@@ -287,6 +301,7 @@ def _read_ownership(
         len(result.items),
         result.total_items,
         result.stop,
+        tuple(result.items),
     )
 
 
@@ -318,6 +333,17 @@ def folder_name(names: dict[int, str], folder_id: int | None) -> str | None:
     return names.get(folder_id, f"folder {folder_id}")
 
 
+def _folders_of(names: dict[int, str], items: list[Any]) -> list[str]:
+    """The names of the folders the copies `items` are in, each once, in the
+    order the copies list them."""
+    found: list[str] = []
+    for item in items:
+        name = folder_name(names, item.folder_id)
+        if name is not None and name not in found:
+            found.append(name)
+    return found
+
+
 def copies(client: Discogs, release_id: int, *, folders: bool) -> Copies:
     """One request for the release's instances, plus, with `folders` and at
     least one copy, the folder list (once per invocation) to name them."""
@@ -327,10 +353,54 @@ def copies(client: Discogs, release_id: int, *, folders: bool) -> Copies:
     )
     names: list[str] = []
     if folders and page.items:
-        by_id = folder_names(user)
-        for item in page.items:
-            name = folder_name(by_id, item.folder_id)
-            if name is not None and name not in names:
-                names.append(name)
+        names = _folders_of(folder_names(user), page.items)
     # fetch_page always reports a total; it counts copies past the first 100.
     return Copies(page.total_items or len(page.items), page.items, names)
+
+
+@dataclass(frozen=True)
+class MasterCopies:
+    """The user's copies of a master's releases in the part of the collection
+    read: the matching `records` in collection order, `releases` as (release
+    id, copies, folder names), ordered by each release's first copy, and the
+    `ownership` read they come from."""
+
+    records: list[Any]
+    releases: list[tuple[int, int, list[str]]]
+    ownership: Ownership
+
+    @property
+    def owned(self) -> int | None:
+        """The copies found: 0 (not owned) only once the whole collection was
+        read, None when the part read holds none of them."""
+        if self.records or self.ownership.complete:
+            return len(self.records)
+        return None
+
+
+def _master_id(record: Any) -> int | None:
+    release = getattr(record, "basic_information", None)
+    return getattr(release, "master_id", None)
+
+
+def master_copies(client: Discogs, master_id: int, *, folders: bool) -> MasterCopies:
+    """The user's copies of any release of master `master_id`, from the
+    collection read once per invocation (a record with no master, `None` or
+    0, matches none), plus, with `folders` and at least one copy, the folder
+    list (once per invocation) to name their folders. A 429 on the folder
+    list keeps the answer, its folders named by id (`folder 5`): like a 429
+    in the read, it never fails a master ref."""
+    ownership = _collection_read(client)
+    found = [r for r in ownership.records if master_id and _master_id(r) == master_id]
+    by_release: dict[int, list[Any]] = {}
+    for record in found:
+        by_release.setdefault(record.id, []).append(record)
+    names: dict[int, str] = {}
+    if folders and found:
+        with contextlib.suppress(RateLimitError):
+            names = folder_names(account.user(client))
+    releases = [
+        (release_id, len(items), _folders_of(names, items) if folders else [])
+        for release_id, items in by_release.items()
+    ]
+    return MasterCopies(found, releases, ownership)

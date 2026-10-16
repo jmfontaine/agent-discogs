@@ -32,6 +32,7 @@ Bootlegs, counterfeits and pirate copies all carry the format description "Unoff
 | Compare pressings | `search master "<title>"` → `get versions @m...` |
 | Release → all its pressings | Copy `→ @m...` from any release row → `get versions @m...` |
 | Which pressings do I own or want? | `get versions @m... --owned --wanted` (each row carries the user's counts; no extra request) |
+| Do I own any pressing of it? | `get owned @m...`: only the releases you own, from one read of your collection, however many versions (needs a token or OAuth; `agent-discogs skills get collection`) |
 | Get original pressing | `search master "<title>"` → `get versions @m... --sort released` → `get release @r...` |
 | Pick among look-alike rows | Compare catalog number and `have N` in the row itself; `have` is how many Discogs users own it (popularity, not yours, not identification). Same catno on several rows means variants: see `get release @r...` |
 | Identify by catalog number | `search release --catno "INT-92346"` → `get release @r...` |

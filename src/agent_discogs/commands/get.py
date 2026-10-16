@@ -20,6 +20,7 @@ from agent_discogs.collection import (
     folder_names,
     mark_rows,
     mark_rows_with,
+    master_copies,
     ownership_of,
     record_filter,
     records,
@@ -44,6 +45,7 @@ from agent_discogs.formatting import (
     format_master,
     format_master_versions,
     format_owned,
+    format_owned_master,
     format_price_guide,
     format_release,
     format_tracklist,
@@ -102,6 +104,10 @@ NOUN_EXPECTED_TYPE = {
 }
 
 NOUN_ALIASES = {"ids": "identifiers"}
+
+# Nouns that take another entity type besides the one they expect, named in
+# the error for any other: `get owned @m...` checks any pressing of a master.
+NOUN_ALSO_ACCEPTS = {"owned": "master"}
 
 # Nouns whose ref is a bare Discogs id of something with no ref prefix.
 ID_NOUNS = ("list",)
@@ -171,7 +177,8 @@ def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
     if entity_type == "unknown" or expected is None:
         return entity_type, entity_id
 
-    if entity_type != expected:
+    also = NOUN_ALSO_ACCEPTS.get(noun)
+    if entity_type not in (expected, also):
         # Smart resolution: versions with a release ref
         if noun == "versions" and entity_type == "release":
             return entity_type, entity_id
@@ -182,9 +189,11 @@ def _resolve_ref(ref_string: str, noun: str) -> tuple[str, int]:
         def _a(word: str) -> str:
             return f"an {word}" if word[0] in "aeiou" else f"a {word}"
 
+        accepted = _a(expected) + ("" if also is None else f" or {_a(also)}")
+        kinds = expected + ("" if also is None else f" or {also}")
         raise ValueError(
-            f"{ref_string} is {_a(entity_type)}, not {_a(expected)}. "
-            f"Use {_a(expected)} ref or ID with 'get {noun}'."
+            f"{ref_string} is {_a(entity_type)}, not {accepted}. "
+            f"Use {_a(kinds)} ref or ID with 'get {noun}'."
         )
 
     return entity_type, entity_id
@@ -247,10 +256,12 @@ def _get_master(client: Discogs, entity_id: int, mode: Mode) -> Any:
     return format_master(master)
 
 
-def _get_owned(client: Discogs, entity_id: int, mode: Mode) -> Any:
-    """The user's copies of one release, with their folder names. `--full`
-    gives the collection instances, which name their folders by id, so it
-    never asks for the folder list."""
+def _get_owned(client: Discogs, entity_type: str, entity_id: int, mode: Mode) -> Any:
+    """The user's copies of one release, with their folder names, or of any
+    release of a master. `--full` gives the collection instances, which name
+    their folders by id, so it never asks for the folder list."""
+    if entity_type == "master":
+        return _get_owned_master(client, entity_id, mode)
     found = copies(client, entity_id, folders=not mode.full)
     if mode.full:
         return {"instances": [full_dump(i) for i in found.instances]}
@@ -263,6 +274,38 @@ def _get_owned(client: Discogs, entity_id: int, mode: Mode) -> Any:
             }
         )
     return format_owned(entity_id, found)
+
+
+def _get_owned_master(client: Discogs, master_id: int, mode: Mode) -> Any:
+    """The user's copies of any release of a master, from one read of the
+    whole collection; every document carries the read's `collection` object,
+    and `owned` stays `null` when the part read holds no copy."""
+    found = master_copies(client, master_id, folders=not mode.full)
+    collection = found.ownership.document()
+    if mode.full:
+        return {
+            "instances": [full_dump(r) for r in found.records],
+            "collection": collection,
+        }
+    if mode.json:
+        document: dict[str, Any] = {
+            "ref": make_ref("master", master_id),
+            "owned": found.owned,
+        }
+        if found.releases:
+            document["releases"] = [
+                drop_empty(
+                    {
+                        "ref": make_ref("release", release_id),
+                        "owned": count,
+                        "folders": folders,
+                    }
+                )
+                for release_id, count, folders in found.releases
+            ]
+        document["collection"] = collection
+        return document
+    return format_owned_master(master_id, found)
 
 
 def _get_list(client: Discogs, entity_id: int, mode: Mode) -> Any:
@@ -1369,7 +1412,7 @@ def _run_one(
     if noun == "list":
         return _get_list(client, entity_id, mode)
     if noun == "owned":
-        return _get_owned(client, entity_id, mode)
+        return _get_owned(client, entity_type, entity_id, mode)
     if noun == "price":
         return _get_price(client, entity_id, mode)
     if noun == "release":

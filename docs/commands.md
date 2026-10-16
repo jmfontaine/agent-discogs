@@ -90,7 +90,7 @@ agent-discogs get versions @m3719 --country US --owned
 agent-discogs get releases @a3857 --role Main --owned --max-requests 6
 ```
 
-- **Release rows only.** A collection holds releases and Discogs does not document a master id on its records, so master, artist and label rows (an untyped search, or an artist's discography, lists some) get no mark. `search artist|label|master ... --owned` and `--owned` with `--added-since` fail with `invalid_argument` before any request, as does `--owned` on any `get` noun but `releases`, `versions` and `inventory`. A page with no release row reads nothing. On `get inventory` a row is looked up by its listing's release id (never the listing's own id), and a listing with no release id reads `owned ?` (JSON `owned: null`).
+- **Release rows only.** A collection holds releases, and a master is not something you own, so master, artist and label rows (an untyped search, or an artist's discography, lists some) get no mark; to ask whether you own any pressing of a master, use [`get owned @m...`](#owned). `search artist|label|master ... --owned` and `--owned` with `--added-since` fail with `invalid_argument` before any request, as does `--owned` on any `get` noun but `releases`, `versions` and `inventory`. A page with no release row reads nothing. On `get inventory` a row is looked up by its listing's release id (never the listing's own id), and a listing with no release id reads `owned ?` (JSON `owned: null`).
 - **It needs a user.** A token or OAuth credentials name one; a consumer key/secret or no credentials do not, and the command fails with `auth_required` before any request (see [Errors](errors.md#--owned---in-wantlist-get-owned-get-collection-get-lists-and-get-wantlist-need-a-user)). It reads only the authenticated user's own collection: there is no `--user` flag.
 - **Where the count comes from.** On `get versions` and `get releases`, Discogs sends the authenticated user's own count on every row (`stats.user.in_collection` in `--json --full`), so `--owned` reads it from the row and sends nothing more: no username, no collection page, no `collection` object, whatever the number of refs. A release row that carries no count reads `· owned ?` (JSON `owned: null`), with no note and no request to decide it. On `search` and `get inventory`, whose rows carry no reliable count, `--owned` reads your whole collection (below).
 - **Cost.** Nothing on top of the listing on `get versions` and `get releases`: `get versions @m3719 --owned --json` is 1 request on a cold cache, 2 in text (the page and the master's title for the header). On `search` and `get inventory`, after the listing page, one request for the username, then your whole collection (the "All" folder) at 100 records per request, read once per command. Every response is cached for an hour, so a rerun costs nothing. See [What commands cost](caching-and-budget.md#what-commands-cost).
@@ -129,6 +129,7 @@ agent-discogs get releases @a3857 --limit 20
 agent-discogs get versions @m3719 --country US --format Vinyl
 agent-discogs get price @r352665
 agent-discogs get owned @r352665 @r847868
+agent-discogs get owned @m3719
 agent-discogs get versions @m3719 --country US --owned
 agent-discogs get collection --sort added --desc
 agent-discogs get collection --style Techno --format 12\" --max-requests 20
@@ -189,11 +190,30 @@ An opening tag Discogs never closes ends with the field, and a closing tag with 
 @r847868 not owned
 ```
 
-It asks about one release at a time (`GET /users/{username}/collection/releases/{id}`), so it is the cheap way to check a few refs; for a page of rows, use `--owned` instead. Several refs work as with the other nouns: blocks separated by a blank line, a failing ref as its `✗` block, exit 1 if any failed.
+It asks about one release at a time (`GET /users/{username}/collection/releases/{id}`), so it is the cheap way to check a few refs; for a page of rows, use `--owned` instead. Several refs work as with the other nouns: blocks separated by a blank line, a failing ref as its `✗` block, exit 1 if any failed. A raw id (`get owned 847868`) is a release; a ref of another type than a release or a master fails with `invalid_argument`.
 
 - **Cost:** one request for the username (once per command), one per ref, and one for the folder list when any ref is owned. A copy in a folder Discogs does not name adds no folder name: with no names at all the text is `@r352665 owned` (no colon) and JSON has no `folders`.
 - **`--json`:** `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}`, or `{"ref":"@r847868","owned":0}` when not owned; several refs give a list, with `{"ref","error"}` items for failures. `--json --full` is `{"instances":[...]}`, the collection records as the SDK normalizes them (each names its folder by id), and sends no folder-list request.
 - **Needs a token or OAuth**, like `--owned` (`auth_required` before any request otherwise). Only `--json` and `--full` apply.
+
+#### A master: any pressing
+
+`get owned @m...` tells whether you own any release of a master, and which:
+
+```
+@m3719 owned ×3 in 2 releases
+  @r847868 owned: Vinyl
+  @r352665 owned ×2: Vinyl, Uncategorized
+```
+
+The header counts the copies (from two, as for a release) and the releases (`owned in 1 release` for one copy); each indented line is what `get owned @r...` prints for that release. Releases come in the order of their first copy in the collection, and each one's folder names in the order its copies list them. Nothing owned reads `@m3719 not owned`.
+
+- **One read of the whole collection.** Discogs has no endpoint keyed by master, so the first master ref reads your whole collection (the "All" folder, 100 records a request, the pages `--owned` and a filtered `get collection` read) and every master ref of the command is answered from it, matched on each record's `basic_information.master_id` (a record with no master matches none). The read happens once per command, `--fresh` included. Release refs keep their own request.
+- **Cost:** one request for the username, then one per 100 records in your collection (1 when it is empty), whatever the number of master refs or the master's versions, plus one for the folder list when any copy is found (none under `--json --full`). Every response is cached for an hour, so a repeat, another master or a later `--owned` read of the same pages costs nothing.
+- **No master check.** No master request is sent: a master that does not exist reads `not owned`, as one you own nothing of.
+- **A 429 stops the read.** The answer is what the part read holds, and a note says how much was read: `Owned: the collection read was rate limited, retry in 30s (100 of 250 records read): "owned ?" rows are not in the part read, and a count may be short.` A master with no copy in that part reads `@m3719 owned ?` (JSON `owned: null`), never `not owned`. A 429 on the folder list keeps the answer too, its folders named by id (`folder 5`). The exit code stays 0. `get owned` takes no `--max-requests`.
+- **`--cached`:** the username or a collection page the cache does not hold fails each master ref with `cache_miss`, with nothing sent.
+- **`--json`:** `{"ref":"@m3719","owned":3,"releases":[{"ref":"@r847868","owned":1,"folders":["Vinyl"]},{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}],"collection":{"complete":true,"records_read":250,"total_records":250}}`, or `{"ref":"@m3719","owned":0,"collection":{...}}` when not owned (no `releases`). Every master document carries the read's `collection` object, as `--owned` documents do. `--json --full` is `{"instances":[...],"collection":{...}}`: the matching collection records as the SDK normalizes them, in collection order, folders by id, with no folder-list request. See [JSON output](json-output.md#owned-rows).
 
 ### collection
 

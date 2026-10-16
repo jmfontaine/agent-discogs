@@ -57,12 +57,19 @@ Get Nouns:     artist, credits, identifiers (ids), label, list, master, owned,
 Get Credits:   release, track, and sub-track credits by role; each person once
                per role with the tracks covered (none = whole release);
                --json --full adds track_credits
-Get Owned:     get owned <release ref>...: your own copies of each release, as
-               '@r352665 owned \u00d72: Vinyl, Uncategorized' ('owned: Vinyl'
-               for one copy) or '@r847868 not owned' (--json: owned, folders;
-               --json --full: instances). Needs DISCOGS_TOKEN or OAuth. 1
-               request for your username, 1 per ref, and 1 more for your
-               folder names when any is owned
+Get Owned:     get owned <release or master ref>...: your own copies of each
+               release, as '@r352665 owned \u00d72: Vinyl, Uncategorized'
+               ('owned: Vinyl' for one copy) or '@r847868 not owned'
+               (--json: owned, folders; --json --full: instances). Needs
+               DISCOGS_TOKEN or OAuth. 1 request for your username, 1 per
+               release ref, and 1 more for your folder names when any is
+               owned. A master ref checks every pressing of it from one read
+               of your whole collection, shared by all master refs (1
+               request per 100 records): '@m3719 owned \u00d73 in 2 releases'
+               then each release as above, or '@m3719 not owned' (--json:
+               owned, releases, collection; --json --full: instances,
+               collection). A 429 that cuts the read short leaves a master
+               with no copy found 'owned ?' (owned null), exit 0
 Get Collection:
                get collection: your own collection, one row per copy, 5 a
                page (--limit, --page), as '@r847868 "Nine Inch Nails - The
@@ -461,7 +468,7 @@ Examples:
   agent-discogs get releases @a3857 --role Main --limit 5
   agent-discogs search release --artist Wire --added-since 2026-07-08
   agent-discogs search release --artist Wire --limit 20 --owned
-  agent-discogs get owned @r847868 @r352665
+  agent-discogs get owned @r847868 @m3719
   agent-discogs get versions @m3719 --owned --wanted
   agent-discogs get collection --style Techno --format 12\\" --max-requests 20
   agent-discogs get collection --value

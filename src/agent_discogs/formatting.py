@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from discogs_sdk import AuthMode
 
-    from agent_discogs.collection import Copies, Ownership
+    from agent_discogs.collection import Copies, MasterCopies, Ownership
     from agent_discogs.inventory import Wants
     from agent_discogs.pagination import ScanStop
     from agent_discogs.wantlist import Market
@@ -574,15 +574,41 @@ def _wanted_note(wants: Wants | None) -> list[Line]:
     ]
 
 
+def _owned_line(release_id: int, count: int, folders: list[str]) -> list[Part]:
+    """`@r123 owned` (with the count for more than one copy) and the folder
+    names (`: Vinyl, Uncategorized`), or `@r123 not owned`."""
+    if not count:
+        return [_ref("release", release_id), " not owned"]
+    names = ", ".join(folders)
+    owned = f" {_copies(count)}" + (f": {names}" if names else "")
+    return [_ref("release", release_id), owned]
+
+
 def format_owned(release_id: int, copies: Copies) -> str:
     """`get owned`: `@r123 owned` (with the count for more than one copy) and
     the folder names (`: Vinyl, Uncategorized`), or `@r123 not owned`. A copy
     in no folder Discogs names adds no name."""
-    if not copies.count:
-        return _text([[_ref("release", release_id), " not owned"]])
-    folders = ", ".join(copies.folders)
-    owned = f" {_copies(copies.count)}" + (f": {folders}" if folders else "")
-    return _text([[_ref("release", release_id), owned]])
+    return _text([_owned_line(release_id, copies.count, copies.folders)])
+
+
+def format_owned_master(master_id: int, copies: MasterCopies) -> str:
+    """`get owned @m...`: `@m123 owned in 2 releases` (with the count of
+    copies from two, as for a release), then each release owned as `get
+    owned @r...` prints it, indented; `@m123 not owned`, or `@m123 owned ?`
+    when the part of the collection read holds no copy. A read that stopped
+    short ends with its note."""
+    master: Part = _ref("master", master_id)
+    owned = copies.owned
+    lines: list[Line]
+    if owned is None:
+        lines = [[master, " owned ?"]]
+    elif not owned:
+        lines = [[master, " not owned"]]
+    else:
+        n = len(copies.releases)
+        lines = [[master, f" {_copies(owned)} in {n} release{'' if n == 1 else 's'}"]]
+        lines.extend(["  ", *_owned_line(*release)] for release in copies.releases)
+    return _text(lines + _ownership_note(copies.ownership))
 
 
 def _market_tail(market: Market) -> list[Part]:
