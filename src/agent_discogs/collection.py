@@ -2,8 +2,9 @@
 own, how many copies, in which folders.
 
 `--owned` on `get versions` and `get releases` reads each row's own count
-(`user_stat()`): Discogs sends it on those listings. On `search` and `get
-inventory`, whose rows carry no reliable one, it reads the whole "All"
+(`user_stat()`, as `--wanted` reads its want count): Discogs sends it on
+those listings. On `search` and `get inventory`, whose rows carry no
+reliable one, it reads the whole "All"
 folder once per invocation through the filtered-scan machinery
 (`fetch_filtered_page`, keeping every row), so `--max-requests` and a 429
 stop it the way they stop any scan, and matches list rows against it. `get
@@ -26,7 +27,7 @@ import click
 from discogs_sdk import RateLimitError
 
 from agent_discogs import account, trace
-from agent_discogs.inventory import short_grade
+from agent_discogs.inventory import is_release_row, short_grade
 from agent_discogs.pagination import (
     MAX_LIMIT,
     Listing,
@@ -221,13 +222,6 @@ class Ownership:
         return doc
 
 
-def is_release_row(row: Any) -> bool:
-    """Whether a list row is a release, the only thing a collection holds.
-    Search and artist discography rows carry a `type`; version and label
-    catalogue rows have none and are all releases."""
-    return getattr(row, "type", "release") == "release"
-
-
 def _member(value: Any, name: str) -> Any:
     """`value.name`, or `value[name]` for a dict: the SDK models a version
     row's `stats`, but an artist or label row keeps the dict Discogs sent."""
@@ -283,6 +277,14 @@ def stat_copies(row: Any) -> int | None:
     """The user's copies of a `get versions` or `get releases` row's release,
     as the row's own stats count them; None when it carries no count."""
     return user_stat(row, "in_collection")
+
+
+def stat_wanted(row: Any) -> bool | None:
+    """Whether a `get versions` or `get releases` row's release is on the
+    user's wantlist, as the row's own stats count it (`--wanted`); None when
+    it carries no count."""
+    count = user_stat(row, "in_wantlist")
+    return None if count is None else count > 0
 
 
 def ownership_of(

@@ -45,8 +45,9 @@ Commands:
 Search Types:  artist, label, master, release
 Search Flags:  --anv, --artist, --barcode, --catno, --country, --credit,
                --format, --genre, --label, --owned, --style, --title, --track,
-               --year; --release-type official (default; a client-side scan
-               on release, master and untyped searches) | unofficial | all
+               --wanted, --year; --release-type official (default; a
+               client-side scan on release, master and untyped searches) |
+               unofficial | all
 Search --barcode:
                matches identifier text, not only a UPC/EAN: it finds pressings
                by matrix/runout etching; type a barcode without spaces; try
@@ -152,7 +153,7 @@ Get List:      get list <id>...: a list by its id, a plain number (a typed ref
 On a search, versions or releases row, 'have N · want N' are Discogs' community
 counts (how many Discogs users own the release and want it; --json: have,
 want), read from the listing page at no extra request; 'owned' is your own
-copies (--owned).
+copies (--owned), 'wanted' your wantlist (--wanted).
 
 get release's Format line (and --json formats) lists one entry per physical
 format, ';'-separated: the quantity when above 1, the name, then descriptions
@@ -214,16 +215,16 @@ Options:
                    wantlist --for-sale; get inventory with a filter)
   --max-requests N Cap the command's HTTP sends (header lookups included; cache
                    hits are free) for a client-side scan, --added-since, the
-                   --owned collection read or get wantlist --for-sale: search
-                   or get versions with --release-type official, or unofficial
-                   with --format; get releases --role / @l --year; get
-                   collection with a filter, not --folder alone (its username,
-                   folder list and --fields list count first); search and get
-                   inventory with --owned; get wantlist --for-sale; get
-                   inventory with a filter (--in-wantlist's wantlist read
-                   counts too; about 1 request per 100 listings, so a
-                   50,000-listing seller is 500: always pass it); one ref only.
-                   Default: no cap, the
+                   --owned and --wanted reads or get wantlist --for-sale:
+                   search or get versions with --release-type official, or
+                   unofficial with --format; get releases --role / @l --year;
+                   get collection with a filter, not --folder alone (its
+                   username, folder list and --fields list count first);
+                   search with --owned or --wanted; get inventory with
+                   --owned; get wantlist --for-sale; get inventory with a
+                   filter (--in-wantlist's wantlist read counts too; about 1
+                   request per 100 listings, so a 50,000-listing seller is 500:
+                   always pass it); one ref only. Default: no cap, the
                    scan runs until the page fills or the list ends (--for-sale:
                    about 1 request per want, 500 wants = ~9 minutes of the
                    60/min budget, so always pass it; 3 or more there: the
@@ -231,11 +232,12 @@ Options:
                    only while 2 sends remain). Pass it if your tool calls have
                    a time limit. Text get releases and get versions scans under
                    --fresh resend their header every run: 2 or more there.
-                   Under --owned the cap counts every send but stops only
-                   scans and the collection read: a server-side listing page
-                   is always sent, then the username and collection pages
-                   while the cap allows. get releases and get versions read
-                   no collection, so --owned alone takes no cap there
+                   Under --owned or --wanted the cap counts every send but
+                   stops only scans and the collection and wantlist reads: a
+                   server-side listing page is always sent, then the username
+                   and the pages while the cap allows. get releases and get
+                   versions read neither, so --owned or --wanted alone takes
+                   no cap there
   --release-type T get versions: all (the default, unlike search's official)
                    lists every version; unofficial keeps those whose format
                    lists "Unofficial Release", filtered by Discogs (exact
@@ -275,6 +277,21 @@ Options:
                    as old as the cached listing or collection (1h): --fresh
                    re-reads them. --cached fails (cache_miss) on any page not
                    cached. 'Next page:' repeats it
+  --wanted         Mark each release row with whether it is on your own
+                   wantlist: '· wanted', '· not wanted', or '· wanted ?'
+                   (undecided), after the --owned mark when both are given
+                   (--json: wanted true, false or null). search, get releases
+                   @a|@l and get versions; release rows only, so not search
+                   artist|label|master, not with --added-since, and not get
+                   inventory (use --in-wantlist there). Needs DISCOGS_TOKEN or
+                   OAuth. get releases and get versions rows carry your want
+                   count from Discogs: no extra request, and a row without it
+                   is 'wanted ?'. search reads your whole wantlist once: 1
+                   request for your username (shared with --owned), then 1
+                   per 100 wants, free for an hour; --max-requests or a 429
+                   stopping it leaves the rows it did not reach 'wanted ?'
+                   with a 'Wantlist:' note (--json: a wantlist object).
+                   'Next page:' repeats it
   --for-sale       get wantlist: keep the wants with copies for sale now. A
                    client-side scan of 100-want pages, 1 request per want (its
                    Marketplace stats, cached 1h; --fresh when current numbers
@@ -361,13 +378,13 @@ Options:
 
 Get flags by noun (any other get flag fails with invalid_argument):
   release          -v/--verbose, -c/--compact, --master-year
-  releases @a      --limit, --page, --role, --sort, --desc, --owned, --after
-                   and --max-requests (with --role)
-  releases @l      --limit, --page, --year, --owned, --after and --max-requests
-                   (with --year)
+  releases @a      --limit, --page, --role, --sort, --desc, --owned, --wanted,
+                   --after and --max-requests (with --role)
+  releases @l      --limit, --page, --year, --owned, --wanted, --after and
+                   --max-requests (with --year)
   versions         --limit, --page, --country, --format, --label, --year,
-                   --sort, --desc, --release-type, --owned, --after and
-                   --max-requests (with a --release-type scan)
+                   --sort, --desc, --release-type, --owned, --wanted, --after
+                   and --max-requests (with a --release-type scan)
   collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
                    --style, --year, --label, --artist, --title, --folder,
                    --fields, --after and --max-requests (with a filter, not
@@ -402,10 +419,10 @@ Environment:
 
 Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
-  it repeats --cached or --fresh, --max-requests, --owned, for get collection
-  and get inventory --limit, its filters (get collection also --folder, not a
-  filter, and --fields), --sort and --desc (inventory also --in-wantlist),
-  and, for get lists and get wantlist, --limit (and
+  it repeats --cached or --fresh, --max-requests, --owned, --wanted, for get
+  collection and get inventory --limit, its filters (get collection also
+  --folder, not a filter, and --fields), --sort and --desc (inventory also
+  --in-wantlist), and, for get lists and get wantlist, --limit (and
   --for-sale, --max-price and --currency), and puts a search's type and query
   after --, so a query such as -ambient survives (a seller's name starting
   with - too).
@@ -444,8 +461,8 @@ Errors:
   profile's currency code), retrying will not help: report it.
   auth_required names the credentials that were sent (DISCOGS_TOKEN, the
   consumer key/secret, or OAuth), or says none are set, as 'status' reports.
-  --owned, --in-wantlist, get owned, get collection, get lists and get
-  wantlist raise it before any request when 'status' shows consumer or none:
+  --owned, --wanted, --in-wantlist, get owned, get collection, get lists and
+  get wantlist raise it before any request when 'status' shows consumer or none:
   they read your own account, which an app key does not identify; the hint
   says to set a token or use OAuth. A 403 stays forbidden. get list needs no
   user: a public list reads without credentials, and someone else's private
@@ -493,6 +510,7 @@ Examples:
   agent-discogs search release --artist Wire --added-since 2026-07-08
   agent-discogs search release --artist Wire --limit 20 --owned
   agent-discogs get owned @r847868 @r352665
+  agent-discogs get versions @m3719 --owned --wanted
   agent-discogs get collection --style Techno --format 12\\" --max-requests 20
   agent-discogs get collection --value
   agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60

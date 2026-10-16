@@ -14,7 +14,7 @@ A master groups every version of one album; each version is a release, one produ
 
 ## Telling releases apart
 
-- **Versions** — `get versions @m...` lists one row per pressing, with Discogs' community counts (`have N · want N`); `--sort released` puts the earliest first, and `--country`, `--format`, `--label` and `--year` narrow it. Unlike `search`, its `--release-type` defaults to `all`, so unofficial versions are listed too: pass `--release-type official` to drop them.
+- **Versions** — `get versions @m...` lists one row per pressing, with Discogs' community counts (`have N · want N`); `--sort released` puts the earliest first, and `--country`, `--format`, `--label` and `--year` narrow it. Unlike `search`, its `--release-type` defaults to `all`, so unofficial versions are listed too: pass `--release-type official` to drop them. `--owned` and `--wanted` mark each row with the user's own copies and wantlist at no extra request (`· owned ×2 · not wanted`; needs a token or OAuth): see `agent-discogs skills get collection` and `skills get marketplace`.
 - **Catalog number and barcode** — `search release --catno ...` and `search release --barcode ...` are the most precise searches. Several rows with the same catalog number are variants of one pressing: compare them with `get release` and `get identifiers`.
 - **Identifiers** — `get identifiers @r...` prints barcodes, matrix/runout etchings, label codes and rights societies. The matrix and runout are what usually tells apart pressings that share a catalog number. To find a pressing from its runout etching, see "Find by barcode or runout" below.
 - **Several at once** — `get release @r... @r... -c` compares formats, labels, countries and dates without the tracklists; add `-v` for notes, credits and identifiers.
@@ -31,6 +31,7 @@ Bootlegs, counterfeits and pirate copies all carry the format description "Unoff
 |------|----------|
 | Compare pressings | `search master "<title>"` → `get versions @m...` |
 | Release → all its pressings | Copy `→ @m...` from any release row → `get versions @m...` |
+| Which pressings do I own or want? | `get versions @m... --owned --wanted` (each row carries the user's counts; no extra request) |
 | Get original pressing | `search master "<title>"` → `get versions @m... --sort released` → `get release @r...`. From a release, `get release @r... --master-year` first gives the work's year (`Master: @m3719 (1994)`, 1 more request) |
 | Pick among look-alike rows | Compare catalog number, `have N` and `want N` in the row itself; `have` is how many Discogs users own it and `want` how many want it (the community's, not yours, not identification). Many wants against few haves is a scarce pressing; few wants against many haves, a common one. Same catno on several rows means variants: see `get release @r...` |
 | Identify by catalog number | `search release --catno "INT-92346"` → `get release @r...` |

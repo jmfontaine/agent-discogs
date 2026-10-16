@@ -1,6 +1,6 @@
 ---
 name: marketplace
-description: Discogs Marketplace data. Load it when a task asks what a record is worth or sells for, whether anything on the user's wantlist is for sale and at what price, or what a seller has - price, get wantlist, --for-sale, get inventory and its filters, --in-wantlist.
+description: Discogs Marketplace data and the user's wantlist. Load it when a task asks what a record is worth or sells for, whether anything on the user's wantlist is for sale and at what price, which rows of a listing the user wants, or what a seller has - price, get wantlist, --for-sale, --wanted, get inventory and its filters, --in-wantlist.
 allowed-tools: Bash(agent-discogs:*)
 ---
 
@@ -12,6 +12,7 @@ This skill assumes you have read `agent-discogs skills get core` (setup, refs, b
 
 - **What is this release worth?** `price @r...` (or `get price @r...`): Discogs' suggested price per condition, and the copies for sale now with the lowest price, each amount with its ISO code. Needs a token or OAuth *and* seller settings on that account.
 - **What is on my wantlist?** `get wantlist`, 5 wants a page (`--limit` 1-100, `--page`). Needs a token or OAuth.
+- **Which of these rows are on my wantlist?** Add `--wanted` to a listing (`search`, `get versions`, `get releases @a...|@l...`): each release row ends `· wanted`, `· not wanted` or `· wanted ?` (undecided), after `owned` with `--owned`. `get versions` and `get releases` rows carry the answer (no extra request); `search` reads your whole wantlist once (1 request per 100 wants). Needs a token or OAuth. Not on `get inventory`: use `--in-wantlist` there.
 - **Is anything I want for sale, and under what price?** `get wantlist --for-sale`, optionally `--max-price X --currency EUR`: the wants with copies for sale now, each with the count and the lowest price. It costs 1 request per want checked: always pass `--max-requests N` and paste the printed `Continue scan:` for the rest.
 - **What does this seller have?** `get inventory <username>`: one seller's listings, with grades, price and origin; no credentials needed. `--condition` and `--sleeve` (minimum grades), `--ships-from`, `--max-price X --currency` (in the seller's currency) and `--in-wantlist` (needs a token or OAuth) keep the matching listings, scanning 100 listings a request: pass `--max-requests N`.
 
@@ -33,6 +34,7 @@ The output of each, line by line and in JSON, is in [references/commands.md](ref
 | Is anything on my wantlist for sale under X? | `get wantlist --for-sale --max-price X --currency EUR --max-requests 60` (1 request per want checked; paste the printed `Continue scan:` for the rest). Count and lowest price only: condition, sleeve condition, seller location and shipping cannot be filtered (the API lists no copies), so point the user at the release's Marketplace page on discogs.com for those. Needs a token or OAuth |
 | What does seller X have from my wantlist? | `get inventory <seller> --in-wantlist --condition VG+ --max-requests 60` (1 request per 100 wants, then 1 per 100 listings scanned; paste the printed `Continue scan:` for the rest). Other filters: `--sleeve`, `--ships-from`, `--max-price X --currency EUR`; for the seller's VG+-or-better stock, drop `--in-wantlist` (no credentials needed), and for everything, `get inventory <seller>` (server-side pages). `--in-wantlist` needs a token or OAuth |
 | What is on my wantlist? | `get wantlist` (5 a page; `--limit 100`, `--page N`) → `get release @r...` |
+| Which of these pressings do I want? | `get versions @m... --wanted` (no extra request), or `search release ... --wanted` (reads the wantlist once) |
 
 ## Budget
 
@@ -46,5 +48,7 @@ What these commands cost; the footer, `--cached` and the per-minute budget are i
 | `get inventory <username>` | 1 per page of up to 100 listings (`--limit`); no username request |
 | `get inventory` with `--condition`, `--sleeve`, `--ships-from` or `--max-price` | 1 per 100 listings scanned (50,000 listings = 500 requests). Pass `--max-requests` |
 | `get inventory --in-wantlist` | on top of that: 1 for the username + 1 per 100 wants, read before any listing; a cap or 429 that stops it scans nothing |
+| `--wanted` on `get versions`, `get releases` | 0: each row carries your want count |
+| `--wanted` on `search` | on top of the listing: 1 for the username (shared with `--owned`) + 1 per 100 wants, then free for an hour; nothing when the page has no release row |
 
 `get wantlist --for-sale` is the expensive one: 1 request per want, so cap it (`--max-requests 60` is a minute of budget) and continue with the printed `Continue scan:`. A `get inventory` filter over a big seller is nearly as bad (500 requests for 50,000 listings): cap it the same way.

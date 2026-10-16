@@ -47,6 +47,19 @@ Under `--owned` (`search`, `get versions`, `get releases`, `get inventory`; see 
 
 `get owned @r... --json` prints `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}`, or `{"ref":"@r847868","owned":0}` when not owned. Several refs give a list, with `{"ref","error"}` items for failures. `--full` prints `{"instances":[...]}`, your collection records for the release as the SDK normalizes them (their folders by id, not name).
 
+## Wanted rows
+
+Under `--wanted` (`search`, `get versions`, `get releases`; see [Marking rows with --wanted](commands.md#marking-rows-with---wanted)), each release row gets `wanted`, after `owned` when both flags are given. On `search`, which reads your wantlist to decide, the document also gets `wantlist`:
+
+```json
+{"pagination":{...},"results":[{"ref":"@r352665","title":"...","have":812,"wanted":true},{"ref":"@r847868","title":"...","have":40,"wanted":false}],"wantlist":{"complete":true,"wants_read":13,"total_wants":13}}
+```
+
+- `wanted` is `true`, `false`, or `null` when it is undecided. Like `owned`, it is an exception to omitted empty fields: `false` and `null` are always present. Only release rows carry it, and under `--full` it is added to each release record.
+- On `get versions` and `get releases`, `wanted` comes from the want count Discogs sends on the row itself for the authenticated user (1 or more is `true`), and is `null` on a row that carries none; no wantlist is read, so the document has no `wantlist` object.
+- On `search`, `false` is reported only when the whole wantlist was read; after a partial read, a release found in the part read is `true` and every other row is `null`.
+- `wantlist` (`search`) is the object `get inventory --in-wantlist` prints: `{"complete": bool, "wants_read": int, "total_wants": int|null}`, plus `stop_reason` (`"max_requests"` or `"rate_limited"`) and `retry_after` when the read stopped early. A page with no release row has neither `wanted` nor `wantlist`.
+
 ## Collection
 
 `get collection --json` is the paginated envelope (see [get collection](commands.md#collection)), one row per copy:

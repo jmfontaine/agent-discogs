@@ -27,6 +27,7 @@ from agent_discogs.collection import (
     record_filter,
     records,
     stat_copies,
+    stat_wanted,
     valuation,
 )
 from agent_discogs.config import RELEASE_TYPES, UNOFFICIAL
@@ -296,13 +297,16 @@ def _get_lists(client: Discogs, *, page: int | None, limit: int, mode: Mode) -> 
 
 
 def _page_json(
-    result: PageResult, project: Any, *, owned: bool, mode: Mode
+    result: PageResult, project: Any, *, owned: bool, wanted: bool, mode: Mode
 ) -> dict[str, Any]:
-    """A `get versions` or `get releases` JSON document, under `--owned` each
-    release row marked with the copies its own stats count."""
+    """A `get versions` or `get releases` JSON document, each release row
+    marked under `--owned` with the copies and under `--wanted` with the want
+    its own stats count."""
     document = mode.page(result, project)
     if owned:
         mark_rows_with(document, result.items, "owned", stat_copies)
+    if wanted:
+        mark_rows_with(document, result.items, "wanted", stat_wanted)
     return document
 
 
@@ -377,6 +381,7 @@ def _get_label_releases(
     year: str | None,
     max_requests: int | None,
     owned: bool,
+    wanted: bool,
     mode: Mode,
 ) -> Any:
     """A label's catalogue. The API has no filters or sorting here, so `--year`
@@ -406,7 +411,9 @@ def _get_label_releases(
         )
 
     if mode.json:
-        return _page_json(result, project_label_release, owned=owned, mode=mode)
+        return _page_json(
+            result, project_label_release, owned=owned, wanted=wanted, mode=mode
+        )
 
     footer_cmd = next_page_cmd(
         ["get", "releases", label_ref],
@@ -415,6 +422,7 @@ def _get_label_releases(
         year=year,
         max_requests=max_requests,
         owned=owned,
+        wanted=wanted,
     )
     return format_label_releases(
         result.items,
@@ -428,6 +436,7 @@ def _get_label_releases(
         dropped=result.duplicates_dropped,
         header_resent=_fresh(),
         owned=owned,
+        wanted=wanted,
     )
 
 
@@ -445,6 +454,7 @@ def _get_releases(
     desc: bool,
     max_requests: int | None,
     owned: bool,
+    wanted: bool,
     mode: Mode,
 ) -> Any:
     if entity_type == "label":
@@ -457,6 +467,7 @@ def _get_releases(
             year=year,
             max_requests=max_requests,
             owned=owned,
+            wanted=wanted,
             mode=mode,
         )
 
@@ -482,7 +493,9 @@ def _get_releases(
         result = fetch_page(listing, page=page or 1, per_page=limit)
 
     if mode.json:
-        return _page_json(result, project_artist_release, owned=owned, mode=mode)
+        return _page_json(
+            result, project_artist_release, owned=owned, wanted=wanted, mode=mode
+        )
 
     footer_cmd = next_page_cmd(
         ["get", "releases", artist_ref],
@@ -493,6 +506,7 @@ def _get_releases(
         desc=desc,
         max_requests=max_requests,
         owned=owned,
+        wanted=wanted,
     )
 
     return format_artist_releases(
@@ -506,6 +520,7 @@ def _get_releases(
         stop=result.stop,
         header_resent=_fresh(),
         owned=owned,
+        wanted=wanted,
     )
 
 
@@ -549,6 +564,7 @@ def _get_versions(
     release_type: str,
     after: str | None,
     owned: bool,
+    wanted: bool,
     max_requests: int | None,
     mode: Mode,
 ) -> Any:
@@ -603,7 +619,9 @@ def _get_versions(
         result = fetch_page(listing, page=page or 1, per_page=limit)
 
     if mode.json:
-        return _page_json(result, project_master_version, owned=owned, mode=mode)
+        return _page_json(
+            result, project_master_version, owned=owned, wanted=wanted, mode=mode
+        )
 
     footer_cmd = next_page_cmd(
         ["get", "versions", master_ref],
@@ -617,6 +635,7 @@ def _get_versions(
         sort=sort,
         desc=desc,
         owned=owned,
+        wanted=wanted,
         max_requests=max_requests,
     )
 
@@ -631,6 +650,7 @@ def _get_versions(
         stop=result.stop,
         header_resent=_fresh(),
         owned=owned,
+        wanted=wanted,
     )
 
 
@@ -1005,6 +1025,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "page",
             "role",
             "sort",
+            "wanted",
             "year",
         },
     ),
@@ -1021,6 +1042,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "page",
             "release_type",
             "sort",
+            "wanted",
             "year",
         },
     ),
@@ -1255,6 +1277,11 @@ def _flag_error(
             "get lists takes no ref: it lists your own lists. "
             "Open one with get list ID."
         )
+    if noun == "inventory" and "wanted" in explicit:
+        return (
+            "get inventory takes no --wanted: to keep only the listings whose "
+            "release is on your wantlist, use --in-wantlist."
+        )
     if noun == "inventory":
         inventory_error = _inventory_error(
             refs,
@@ -1316,8 +1343,8 @@ def _flag_error(
             "--after continues one listing, so it takes exactly one ref "
             f"({len(refs)} given)."
         )
-    # --owned reads no collection on these nouns (each row carries its own
-    # count), so only a scan is left to cap.
+    # --owned and --wanted read nothing on these nouns (each row carries the
+    # user's own counts), so only a scan is left to cap.
     if max_requests is not None and noun in ("releases", "versions") and not filtered:
         if noun == "versions":
             return (
@@ -1425,6 +1452,7 @@ def _run_one(
     role: str | None,
     max_requests: int | None,
     owned: bool,
+    wanted: bool,
     verbose: bool,
     compact: bool,
     master_year: bool,
@@ -1472,6 +1500,7 @@ def _run_one(
             desc=desc,
             max_requests=max_requests,
             owned=owned,
+            wanted=wanted,
             mode=mode,
         )
     if noun == "tracklist":
@@ -1492,6 +1521,7 @@ def _run_one(
         release_type=release_type,
         after=after,
         owned=owned,
+        wanted=wanted,
         max_requests=max_requests,
         mode=mode,
     )
@@ -1516,6 +1546,7 @@ def _dispatch(
     role: str | None,
     max_requests: int | None,
     owned: bool,
+    wanted: bool,
     for_sale: bool,
     max_price: float | None,
     currency: str | None,
@@ -1602,6 +1633,8 @@ def _dispatch(
         feature = "--in-wantlist"
     elif feature is None and owned:
         feature = "--owned"
+    elif feature is None and wanted:
+        feature = "--wanted"
     if feature:
         try:
             require_user(feature)
@@ -1713,6 +1746,7 @@ def _dispatch(
                     role=role,
                     max_requests=max_requests,
                     owned=owned,
+                    wanted=wanted,
                     verbose=verbose,
                     compact=compact,
                     master_year=master_year,
@@ -1936,6 +1970,14 @@ def _json_options(command: Any) -> Any:
     "instead of the listing",
 )
 @click.option(
+    "--wanted",
+    is_flag=True,
+    default=False,
+    help="releases / versions: mark each release row with whether it is on your "
+    "own wantlist, from the want count the row carries (needs DISCOGS_TOKEN or "
+    "OAuth)",
+)
+@click.option(
     "--year",
     help="versions: filter by release year; releases @l, collection: keep that "
     "year (client-side scan, continues via --after)",
@@ -1974,6 +2016,7 @@ def get(
     folder: str | None,
     fields: bool,
     verbose: bool,
+    wanted: bool,
     year: str | None,
 ) -> None:
     """Get entity details for one or more refs.
@@ -2008,6 +2051,7 @@ def get(
         role=role,
         max_requests=max_requests,
         owned=owned,
+        wanted=wanted,
         for_sale=for_sale,
         max_price=max_price,
         currency=currency,
@@ -2046,6 +2090,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         role=None,
         max_requests=None,
         owned=False,
+        wanted=False,
         for_sale=False,
         max_price=None,
         currency=None,
