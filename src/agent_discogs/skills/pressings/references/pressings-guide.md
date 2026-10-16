@@ -33,10 +33,10 @@ A **version** is simply a release that belongs to a master. When you list versio
 
 ## Finding the Original Pressing
 
-1. Search for the master: `agent-discogs search master "The Downward Spiral"`
-2. List versions: `agent-discogs get versions @m3719`
+1. Search for the master: `search master "The Downward Spiral"`
+2. List versions: `get versions @m3719`
 3. Look for the earliest year and original country
-4. Get details: `agent-discogs get release @r847868`
+4. Get details: `get release @r847868`
 
 ## Common Pressing Attributes
 

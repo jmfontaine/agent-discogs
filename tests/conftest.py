@@ -34,6 +34,9 @@ ISOLATED_ENV = (
     "DISCOGS_ACCESS_TOKEN_SECRET",
 )
 
+# The skills bundled under src/agent_discogs/skills, in the order `skills` lists them.
+SKILLS = ("collection", "core", "marketplace", "pressings")
+
 
 @pytest.fixture(autouse=True)
 def _isolate_env(

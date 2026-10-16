@@ -7,6 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from agent_discogs import cli, client
+from tests.conftest import SKILLS
 
 _NOUNS = [
     "artist",
@@ -101,8 +102,9 @@ class TestCompletion:
             ("agent-discogs --color a", ["auto", "always"]),
             ("agent-discogs cache ", ["clear"]),
             ("agent-discogs skills ", ["get", "list", "path"]),
-            ("agent-discogs skills get ", ["core"]),
-            ("agent-discogs skills path ", ["core"]),
+            ("agent-discogs skills get ", list(SKILLS)),
+            ("agent-discogs skills path ", list(SKILLS)),
+            ("agent-discogs skills get m", ["marketplace"]),
             ("agent-discogs completion ", ["bash", "zsh", "fish"]),
             (
                 "agent-discogs get wantlist --currency ",

@@ -33,7 +33,7 @@ agent-discogs get versions @m3719
 agent-discogs search release --artist "Nine Inch Nails" --sort date_added --desc
 ```
 
-`date_added` is undocumented: Discogs lists no sort keys for search and has only been seen honoring it on release searches, so `--sort` on artist, label, master, or untyped searches is rejected before any request. If Discogs ever drops the parameter, results most likely come back in relevance order with no error, so check the dates before trusting the order.
+`date_added` is undocumented (Discogs lists no sort keys for search): the `--sort` row under [search](commands.md#search) says which searches take it and what happens if Discogs drops it. Check the dates before trusting the order.
 
 ### Releases (or unofficial releases) added since a date
 ```bash
@@ -43,9 +43,9 @@ agent-discogs search release --artist "Nine Inch Nails" --release-type all --add
 agent-discogs search release --artist "Nine Inch Nails" --release-type unofficial --added-since 2025-10-09
 ```
 
-`--added-since` is experimental. Search results carry no added date, so it walks the undocumented `date_added` order and looks up each release the search matches (one request per release in the window, before `--release-type` filtering, plus one per 100 search results and one to end the scan). It returns the whole window, each row with `· added YYYY-MM-DD` (the UTC day; the cutoff is midnight UTC), and is complete only while Discogs keeps the order; a broken order fails with `bad_response`, cached, so retry it with `--fresh`. A repeat within the hour is free. Under a tool-call time limit, pass `--max-requests N`: a capped run says it may be incomplete (`complete: false`), and rerunning with a higher cap reuses every cached lookup. The CLI never waits out the rate limit: a 429 partway fails with `rate_limited`, and the rerun after `retry_after` resends nothing already looked up. It misses releases where the artist has only track-level or secondary credits (`artist=` does not match them) and, under `--release-type unofficial`, unofficial releases not tagged "Unofficial Release".
+`--added-since` is experimental; its cost, the `--max-requests` cap and its failures are under [`--added-since`](commands.md#search). It is complete only while Discogs keeps the order it walks, and rerunning with a higher cap, or after a `rate_limited` failure, reuses every cached lookup. It misses releases where the artist has only track-level or secondary credits (`artist=` does not match them) and, under `--release-type unofficial`, unofficial releases not tagged "Unofficial Release".
 
-`--release-type unofficial` returns every unofficial release: bootlegs, counterfeits and pirates alike, since Discogs tags all three the same way. For bootlegs only, check each row's `→ @m...` master as [Unofficial Releases](discogs-domain.md#unofficial-releases-bootlegs-counterfeits-pirates) describes, and drop the rows whose master has official versions.
+`--release-type unofficial` returns every unofficial release: bootlegs, counterfeits and pirates alike, since Discogs tags all three the same way. For bootlegs only, check each row's `→ @m...` master as Unofficial Releases in the pressings skill describes (`agent-discogs skills get pressings --full`), and drop the rows whose master has official versions.
 
 ## Filter Combinations
 
@@ -89,6 +89,4 @@ When a search returns many similar results (common for popular albums with hundr
 - Always prefer adding filters over paginating through hundreds of results
 - Discogs does not paginate beyond 10,000 results. If a query is that broad, add filters to narrow it.
 - Paste the `Next page:` / `Continue scan:` command shown under the results to continue; do not compute `--page` values for the default filtered search. `--page N` works with `--release-type all`, `--release-type unofficial` (unless combined with `--format`), and artist/label searches. The printed command keeps `--cached`/`--fresh` and `--max-requests`, and puts the type and query after `--`, so a query such as `-ambient` survives.
-- A `≤N` total means the count is the unfiltered upper bound of a client-side scan (`--release-type official`, or `unofficial` with `--format`). The scan reads 100-row pages until the page fills or the results end, one request per 100 rows, with no cap by default. `--release-type unofficial` on its own is filtered by Discogs, so its total is exact and it never shows `Continue scan:`.
-- With a tool-call time limit, cap the scan: `--max-requests N` stops it after N HTTP sends (cache hits are free) and ends in `Continue scan:`, with `scan stopped at --max-requests N` in the header. A rare filter over a broad query can otherwise take tens of requests; narrowing the query beats both.
-- `Continue scan:` with `scan stopped: rate limited` means Discogs answered 429 partway: the rows read so far are shown (`stop_reason: "rate_limited"`, `retry_after` in JSON). Wait before pasting the command.
+- A `≤N` total is the unfiltered upper bound of a client-side scan (`--release-type official`, or `unofficial` with `--format`); `--release-type unofficial` on its own is filtered by Discogs, so its total is exact and it never shows `Continue scan:`. How a scan reads 100-row pages, stops at `--max-requests N` (cap it under a tool-call time limit) or on a 429, and continues: [Client-side scans](commands.md#client-side-scans). A rare filter over a broad query can take tens of requests; narrowing the query beats capping it.

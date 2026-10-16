@@ -35,7 +35,7 @@ To continue, paste the `Next page:` command printed under the results: the defau
 
 `--release-type unofficial` is filtered by Discogs itself (`format=Unofficial Release`), so it shows an exact total and pages with `--page`; combined with `--format` it falls back to the client-side scan, because Discogs cannot reliably combine two format filters. `--page` (from 1) works with those server-side pages, `--release-type all`, and artist/label searches.
 
-Discogs' "Unofficial Release" covers bootlegs, counterfeits and pirate copies alike, and no field tells them apart, so `--release-type unofficial` returns all three. To keep bootlegs only, check each row's master: the bundled guide (`agent-discogs skills get core --full`, section "Unofficial Releases: Bootlegs, Counterfeits, Pirates") describes how.
+Discogs' "Unofficial Release" covers bootlegs, counterfeits and pirate copies alike, and no field tells them apart, so `--release-type unofficial` returns all three. To keep bootlegs only, check each row's master: the bundled pressings guide (`agent-discogs skills get pressings --full`, section "Unofficial Releases: Bootlegs, Counterfeits, Pirates") describes how.
 
 A search needs a query or at least one non-blank filter; an out-of-range `--limit`/`--page` or an empty search fails with `invalid_argument` before any request.
 
@@ -436,18 +436,23 @@ The hint says whether to retry, fix permissions, or delete the file by hand; the
 
 ## skills
 
-Print the bundled agent guide. The content ships in the package, so it always matches the installed version:
+Print the bundled agent guide. The content ships in the package, so it always matches the installed version. It is split into four skills: `core`, which every task needs, and three that a task loads when it needs them:
 
 ```bash
-agent-discogs skills                   # list bundled skills with the installed version (same as skills list)
-agent-discogs skills get core          # workflows, output format, common patterns, troubleshooting
-agent-discogs skills get core --full   # plus references: command reference, search patterns, pressings guide, Discogs data model
-agent-discogs skills path [core]       # directory holding the bundled skill files
+agent-discogs skills                     # list bundled skills with the installed version (same as skills list)
+agent-discogs skills get core            # setup, refs, search and navigation, output, budget, troubleshooting
+agent-discogs skills get core --full     # plus references: command reference, errors, JSON output, search patterns, Discogs data model
+agent-discogs skills get collection      # your collection, lists and ownership marks (--owned, get owned, get collection, get lists, get list)
+agent-discogs skills get marketplace     # price, get wantlist and --for-sale, get inventory
+agent-discogs skills get pressings       # telling pressings apart: versions, identifiers, unofficial releases
+agent-discogs skills path [name]         # directory holding the bundled skill files
 ```
+
+`--full` appends only that skill's own references. An unknown name exits 1 and lists the available ones.
 
 ## Shell completion
 
-`agent-discogs completion bash|zsh|fish` prints click's completion script for that shell, for a person typing in an interactive shell (agents get the same lists from `--help` and `skills get core`). It makes no API call and never opens the cache. Any other shell is a usage error (exit 2) naming the supported ones. Set it up once:
+`agent-discogs completion bash|zsh|fish` prints click's completion script for that shell, for a person typing in an interactive shell (agents get the same lists from `--help` and the bundled skills). It makes no API call and never opens the cache. Any other shell is a usage error (exit 2) naming the supported ones. Set it up once:
 
 ```bash
 eval "$(agent-discogs completion bash)"   # in ~/.bashrc (bash 4.4 or later)
