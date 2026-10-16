@@ -44,7 +44,27 @@ A query starting with `-` goes after `--` (`agent-discogs search --release-type 
 
 ### Filters
 
-Filters: `--artist`, `--barcode`, `--catno`, `--country`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--year`. Use `--json` for JSON output (see [JSON output](json-output.md)).
+Filters: `--anv`, `--artist`, `--barcode`, `--catno`, `--country`, `--credit`, `--format`, `--genre`, `--label`, `--release-type {official,unofficial,all}` (default: official), `--style`, `--title`, `--track`, `--year`. Use `--json` for JSON output (see [JSON output](json-output.md)).
+
+Four filters search fields the query alone mixes together. Each works with or without a query and with every other filter, and costs what the same search costs without it:
+
+| Flag | Matches |
+|---|---|
+| `--credit` | a person credited on a release or master (an engineer, producer, mixer, ...) |
+| `--track` | track titles |
+| `--title` | release titles; on `search artist` and `search label`, the artist's or label's own name. Sent to Discogs as `release_title`; the header and the `Next page:` command keep `title` |
+| `--anv` | artist name variations (the name as credited on a release) |
+
+```bash
+agent-discogs search release --artist "Horace Silver" --credit "Rudy Van Gelder" --format Vinyl
+agent-discogs search release --track "So What" --artist "Miles Davis"
+agent-discogs search release --title "Kind of Blue"
+agent-discogs search artist --anv "Trane"
+```
+
+Discogs answers a filter it cannot match on a search type with an empty page, which reads as "nothing found", so the CLI refuses these before any request with `invalid_argument`: `--credit` and `--track` on `search artist` or `search label`, and `--anv` on `search release`, `search master` or `search label`. An untyped search takes all four.
+
+`--credit` is a broad match: `"Van Gelder"` finds about as many releases as `"Rudy Van Gelder"`, quoting the name does not make it an exact-phrase match, and the first rows of `--credit "Rudy Van Gelder"` alone were a Debussy and a Bach album. Narrow it with `--artist`, `--genre`, `--format` or `--year`. Adding a role word (`"Rudy Van Gelder Engineer"`) returns nothing. `get releases @a... --role` cannot replace it: for one engineer, 300 discography rows held only the roles Appearance, Mixed by, Remix and Producer, so `--role Engineer` matched nothing. To see what a person did on a given release, use `get credits @r...`.
 
 `--barcode` is matched against a release's identifier text, not only as a UPC/EAN: it also finds pressings by their matrix/runout etching, the one search that does. Other identifier types (label codes, for instance) have not been checked, so do not rely on them. For example, this finds the UK LP pressings whose runout contains `A3 TOWNHOUSE`:
 

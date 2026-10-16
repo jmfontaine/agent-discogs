@@ -43,10 +43,10 @@ Commands:
                               shell, e.g. eval "$(agent-discogs completion zsh)"
 
 Search Types:  artist, label, master, release
-Search Flags:  --artist, --barcode, --catno, --country, --format, --genre,
-               --label, --owned, --style, --year; --release-type official
-               (default; a client-side scan on release, master and untyped
-               searches) | unofficial | all
+Search Flags:  --anv, --artist, --barcode, --catno, --country, --credit,
+               --format, --genre, --label, --owned, --style, --title, --track,
+               --year; --release-type official (default; a client-side scan
+               on release, master and untyped searches) | unofficial | all
 Search --barcode:
                matches identifier text, not only a UPC/EAN: it finds pressings
                by matrix/runout etching; type a barcode without spaces; try
@@ -316,6 +316,12 @@ Options:
                    description, label name, genre or style (any case)
   --value          get collection: its value (min, median, max) in your
                    currency instead of the listing; takes no other flag
+  --credit, --track, --title, --anv
+                   search: match a person credited on a release or master, a
+                   track title, the release title (sent as release_title; on
+                   search artist|label, the name), an artist name variation.
+                   --credit and --track are refused on search artist|label,
+                   --anv on search release|master|label (invalid_argument)
   --version        Show version and exit
   --help           Show this message and exit
 
