@@ -130,8 +130,10 @@ Get List:      get list <id>...: a list by its id, a plain number (a typed ref
                description, public, url, items (ref, title, comment);
                --json --full: the list records
 
-On a row, 'have N' is Discogs' community count (how many Discogs users own the
-release); 'owned' is your own copies (--owned).
+On a search, versions or releases row, 'have N · want N' are Discogs' community
+counts (how many Discogs users own the release and want it; --json: have,
+want), read from the listing page at no extra request; 'owned' is your own
+copies (--owned).
 
 get release's Format line (and --json formats) lists one entry per physical
 format, ';'-separated: the quantity when above 1, the name, then descriptions

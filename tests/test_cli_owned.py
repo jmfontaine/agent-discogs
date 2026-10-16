@@ -79,6 +79,8 @@ class _Account:
             for row in rows:
                 unofficial = row["id"] in (2, 3)
                 row["format"] = "CD, Unofficial Release" if unofficial else "CD"
+            # The community's counts, which the row shows before the mark.
+            rows[1]["stats"] = {"community": {"in_collection": 41, "in_wantlist": 284}}
             if "format" in params:
                 rows = [r for r in rows if params["format"] in r["format"].split(", ")]
             return {"pagination": _one_page(len(rows)), "versions": rows}
@@ -383,6 +385,15 @@ class TestOwnedRows:
         # A master row has no ownership mark: the collection holds releases.
         if "@m4" in text.stdout:
             assert _marks(text)["@m4"] == "none"
+
+    def test_the_mark_ends_the_row_after_the_community_counts(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, _Account())
+        result, _ = h.run("get", "versions", "@m1", "--owned")
+        assert result.exit_code == 0, result.output
+        row = "@r2 · CD, Unofficial Release · have 41 · want 284 · owned"
+        assert row in result.stdout.splitlines()
 
     def test_label_repeats_are_dropped_before_marking(
         self, monkeypatch: pytest.MonkeyPatch

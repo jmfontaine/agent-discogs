@@ -30,6 +30,8 @@ agent-discogs search release --artist "Nine Inch Nails" --year 1994 --release-ty
 
 Prefix a type (`release`, `master`, `artist`, `label`) to narrow results. Use `--limit` (1-100, default: 5) for page size.
 
+A release or master row shows its title, year, country, first label and catalog number, formats, Discogs' community counts and, for a release, its master: `@r847868 "Nine Inch Nails - The Downward Spiral" 1994 US · Nothing Records 92346-2 · CD, Album · have 7,544 · want 1,113 → @m3719`. `have` is how many Discogs users own the release and `want` how many want it, both from the search page itself, so they cost no request (`--json`: `have`, `want`). A count Discogs did not send is left out; `0` is shown.
+
 Discogs occasionally returns a result whose type is not one of those four, or has none. Such a row has no ref, because nothing says what its ID refers to: it reads `id 9001 [playlist] "..."` in text (`[no type]` when Discogs sends none) and carries `id` instead of `ref` under `--json`. The rest of the page prints as usual.
 
 To continue, paste the `Next page:` command printed under the results: the default `--release-type official` filter is applied client-side, so continuation is a cursor (`--after`), not a page number, and the total is an upper bound (`≤N`).
@@ -82,7 +84,7 @@ It is complete only while Discogs keeps that order; when a looked-up date breaks
 
 `--owned` marks every release row with the copies in your own Discogs collection, on `search`, `get versions`, `get releases` (artist and label) and `get inventory`. A row ends in `· owned` (one copy), `· owned ×2` (two or more), `· not owned`, or `· owned ?` when the read did not reach it (below). In `--json`, each row gets `owned`, the count, and the document gets a `collection` object (see [JSON output](json-output.md#owned-rows)).
 
-It is not the `have 1,234` on a row, which is Discogs' community count: how many Discogs users own that release. `owned` is the authenticated user's own copies.
+It is not the `have 1,234 · want 56` on a row, which are Discogs' community counts: how many Discogs users own that release and how many want it. `owned` is the authenticated user's own copies.
 
 ```bash
 agent-discogs search release --artist "Nine Inch Nails" --year 1994 --release-type unofficial --limit 100 --owned
@@ -361,6 +363,14 @@ Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) a
 `releases` takes an artist ref (discography, with `--role` and `--sort year|title|format`) or a label ref (catalogue; the API offers no filters or sorting there, so `--year` on a label is a client-side scan that continues via the printed `--after` cursor).
 
 `versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`. All of them are sent to Discogs.
+
+Each row of `versions` and of both `releases` listings ends in Discogs' community counts, `· have N · want N` (how many Discogs users own the release and how many want it), before the `--owned` mark. They come with the listing page, so they cost no request and need no credentials (`--json`: `have`, `want`). A count Discogs did not send is left out; `0` is shown.
+
+```
+@r847868 1994 US · Nothing Records 92346-2 · CD, Album · have 7,544 · want 1,113
+```
+
+On an artist's discography a master row shows the counts Discogs sends for the master; Discogs does not document how it derives them, and the CLI shows them as sent.
 
 #### Repeated rows in a label catalogue
 
