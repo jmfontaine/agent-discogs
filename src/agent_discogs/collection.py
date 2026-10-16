@@ -1,12 +1,15 @@
 """The authenticated user's collection: its records, which releases they
 own, how many copies, in which folders.
 
-`--owned` reads the whole "All" folder once per invocation through the
-filtered-scan machinery (`fetch_filtered_page`, keeping every row), so
-`--max-requests` and a 429 stop it the way they stop any scan, and matches
-list rows against it. `get owned` asks about one release at a time. `get
-collection` lists the same folder (`records()`), a page at a time or, with
-a filter (`record_filter()`), through a scan.
+`--owned` on `get versions` and `get releases` reads each row's own count
+(`user_stat()`): Discogs sends it on those listings. On `search` and `get
+inventory`, whose rows carry no reliable one, it reads the whole "All"
+folder once per invocation through the filtered-scan machinery
+(`fetch_filtered_page`, keeping every row), so `--max-requests` and a 429
+stop it the way they stop any scan, and matches list rows against it. `get
+owned` asks about one release at a time. `get collection` lists the same
+folder (`records()`), a page at a time or, with a filter
+(`record_filter()`), through a scan.
 """
 
 from __future__ import annotations
@@ -168,10 +171,39 @@ def is_release_row(row: Any) -> bool:
     return getattr(row, "type", "release") == "release"
 
 
+def _member(value: Any, name: str) -> Any:
+    """`value.name`, or `value[name]` for a dict: the SDK models a version
+    row's `stats`, but an artist or label row keeps the dict Discogs sent."""
+    if isinstance(value, dict):
+        return value.get(name)
+    return getattr(value, name, None)
+
+
+def user_stat(row: Any, name: str) -> int | None:
+    """The authenticated user's own `stats.user.<name>` on a list row
+    (`in_collection`, `in_wantlist`), which `get versions` and `get releases`
+    rows carry; None when the row has no such integer (no user, or Discogs
+    sent none)."""
+    value = _member(_member(_member(row, "stats"), "user"), name)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def _row_id(row: Any) -> int | None:
     """The release a list row is: the row itself, so its own `id`. An
     inventory row is a listing, whose release is `inventory.release_id()`."""
     return row.id
+
+
+def mark_rows_with(
+    document: dict[str, Any], items: list[Any], key: str, value: Callable[[Any], Any]
+) -> None:
+    """Give each release row of a page document (`results`, projected or
+    `--full`, in `items` order) `key`: `value` of its item."""
+    for row, item in zip(document["results"], items, strict=True):
+        if is_release_row(item):
+            row[key] = value(item)
 
 
 def mark_rows(
@@ -181,14 +213,19 @@ def mark_rows(
     *,
     release_id: Callable[[Any], int | None] = _row_id,
 ) -> None:
-    """Give each release row of a page document (`results`, projected or
-    `--full`, in `items` order) the `owned` count of its release (by
-    `release_id`), null when undecided, and the document its `collection`
-    object."""
-    for row, item in zip(document["results"], items, strict=True):
-        if is_release_row(item):
-            row["owned"] = ownership.owned(release_id(item))
+    """Give each release row of a page document the `owned` count of its
+    release (by `release_id`) in the collection read, null when undecided,
+    and the document its `collection` object."""
+    mark_rows_with(
+        document, items, "owned", lambda item: ownership.owned(release_id(item))
+    )
     document["collection"] = ownership.document()
+
+
+def stat_copies(row: Any) -> int | None:
+    """The user's copies of a `get versions` or `get releases` row's release,
+    as the row's own stats count them; None when it carries no count."""
+    return user_stat(row, "in_collection")
 
 
 def ownership_of(

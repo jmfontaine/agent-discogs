@@ -195,9 +195,9 @@ Options:
                    or get versions with --release-type official, or unofficial
                    with --format; get releases --role / @l --year; get
                    collection with a filter (its username and folder list
-                   count first); get releases, get versions and get inventory
-                   with --owned; get wantlist --for-sale; get inventory with a
-                   filter (--in-wantlist's wantlist read counts too; about 1
+                   count first); search and get inventory with --owned; get
+                   wantlist --for-sale; get inventory with a filter
+                   (--in-wantlist's wantlist read counts too; about 1
                    request per 100 listings, so a 50,000-listing seller is 500:
                    always pass it); one ref only. Default: no cap, the
                    scan runs until the page fills or the list ends (--for-sale:
@@ -208,9 +208,10 @@ Options:
                    a time limit. Text get releases and get versions scans under
                    --fresh resend their header every run: 2 or more there.
                    Under --owned the cap counts every send but stops only
-                   scans and the collection read: the text header and a
-                   server-side listing page are always sent, then the
-                   username and collection pages while the cap allows
+                   scans and the collection read: a server-side listing page
+                   is always sent, then the username and collection pages
+                   while the cap allows. get releases and get versions read
+                   no collection, so --owned alone takes no cap there
   --release-type T get versions: all (the default, unlike search's official)
                    lists every version; unofficial keeps those whose format
                    lists "Unofficial Release", filtered by Discogs (exact
@@ -230,23 +231,25 @@ Options:
                    looked-up formats (unofficial asks Discogs, unless --format)
   --owned          Mark each release row with the copies in your own
                    collection: '· owned' (one copy), '· owned \u00d72' (two or
-                   more), '· not owned', or '· owned ?' (not in the part
-                   read). search, get releases @a|@l, get versions and get
-                   inventory (a listing with no release id is 'owned ?');
-                   release rows only (a master, artist or label row
-                   has no mark), so not search artist|label|master, and not
-                   with --added-since. Needs DISCOGS_TOKEN or OAuth (see
-                   auth_required below). Reads your whole collection once per
-                   command: 1 request for your username, then 1 per 100
-                   records, free for an hour. --max-requests stops the
-                   collection read (see there); when it or a 429 stops the
-                   read, a note says how much was read and the rows it did not
-                   reach are 'owned ?' (--json: owned null, plus a collection
-                   object). A 429 on the username or the first page, or after
-                   the listing's own scan stopped on one, reads nothing: every
-                   release row is 'owned ?', exit 0. A record added in the
-                   last hour can show as not owned: --fresh re-reads the
-                   collection. --cached fails (cache_miss) on any page not
+                   more), '· not owned', or '· owned ?' (undecided). search,
+                   get releases @a|@l, get versions and get inventory (a
+                   listing with no release id is 'owned ?'); release rows only
+                   (a master, artist or label row has no mark), so not search
+                   artist|label|master, and not with --added-since. Needs
+                   DISCOGS_TOKEN or OAuth (see auth_required below). get
+                   releases and get versions rows carry your count from
+                   Discogs: no extra request, no collection object, and a row
+                   without it is 'owned ?'. search and get inventory read your
+                   whole collection once per command: 1 request for your
+                   username, then 1 per 100 records, free for an hour.
+                   --max-requests stops that read (see there); when it or a
+                   429 stops it, a note says how much was read and the rows it
+                   did not reach are 'owned ?' (--json: owned null, plus a
+                   collection object). A 429 on the username or the first
+                   page, or after the listing's own scan stopped on one, reads
+                   nothing: every release row is 'owned ?', exit 0. Marks are
+                   as old as the cached listing or collection (1h): --fresh
+                   re-reads them. --cached fails (cache_miss) on any page not
                    cached. 'Next page:' repeats it
   --for-sale       get wantlist: keep the wants with copies for sale now. A
                    client-side scan of 100-want pages, 1 request per want (its
@@ -318,13 +321,12 @@ Options:
 Get flags by noun (any other get flag fails with invalid_argument):
   release          -v/--verbose, -c/--compact
   releases @a      --limit, --page, --role, --sort, --desc, --owned, --after
-                   and --max-requests (with --role or --owned)
+                   and --max-requests (with --role)
   releases @l      --limit, --page, --year, --owned, --after and --max-requests
-                   (with --year or --owned)
+                   (with --year)
   versions         --limit, --page, --country, --format, --label, --year,
-                   --sort, --desc, --release-type, --owned, --after (with a
-                   --release-type scan) and --max-requests (with a scan or
-                   --owned)
+                   --sort, --desc, --release-type, --owned, --after and
+                   --max-requests (with a --release-type scan)
   collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
                    --style, --year, --label, --after and --max-requests (with a
                    filter); or --value alone

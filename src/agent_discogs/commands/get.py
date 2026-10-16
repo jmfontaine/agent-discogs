@@ -16,13 +16,14 @@ from agent_discogs import account, style, trace
 from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import (
-    Ownership,
     copies,
     folder_names,
     mark_rows,
+    mark_rows_with,
     ownership_of,
     record_filter,
     records,
+    stat_copies,
     valuation,
 )
 from agent_discogs.config import RELEASE_TYPES, UNOFFICIAL
@@ -287,22 +288,14 @@ def _get_lists(client: Discogs, *, page: int | None, limit: int, mode: Mode) -> 
     )
 
 
-def _ownership(
-    client: Discogs, result: PageResult, *, owned: bool, max_requests: int | None
-) -> Ownership | None:
-    """Under `--owned`, the collection to mark the page's release rows with."""
-    if not owned:
-        return None
-    return ownership_of(client, result, max_requests=max_requests)
-
-
 def _page_json(
-    result: PageResult, project: Any, ownership: Ownership | None, mode: Mode
+    result: PageResult, project: Any, *, owned: bool, mode: Mode
 ) -> dict[str, Any]:
-    """A listing's JSON document, its release rows marked under `--owned`."""
+    """A `get versions` or `get releases` JSON document, under `--owned` each
+    release row marked with the copies its own stats count."""
     document = mode.page(result, project)
-    if ownership is not None:
-        mark_rows(document, result.items, ownership)
+    if owned:
+        mark_rows_with(document, result.items, "owned", stat_copies)
     return document
 
 
@@ -363,9 +356,8 @@ def _get_label_releases(
     else:
         result = fetch_page(label.releases.list, page=page or 1, per_page=limit)
 
-    ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
     if mode.json:
-        return _page_json(result, project_label_release, ownership, mode)
+        return _page_json(result, project_label_release, owned=owned, mode=mode)
 
     footer_cmd = next_page_cmd(
         ["get", "releases", label_ref],
@@ -385,7 +377,7 @@ def _get_label_releases(
         filtered=result.filtered,
         stop=result.stop,
         header_resent=_fresh(),
-        ownership=ownership,
+        owned=owned,
     )
 
 
@@ -439,9 +431,8 @@ def _get_releases(
     else:
         result = fetch_page(listing, page=page or 1, per_page=limit)
 
-    ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
     if mode.json:
-        return _page_json(result, project_artist_release, ownership, mode)
+        return _page_json(result, project_artist_release, owned=owned, mode=mode)
 
     footer_cmd = next_page_cmd(
         ["get", "releases", artist_ref],
@@ -464,7 +455,7 @@ def _get_releases(
         filtered=result.filtered,
         stop=result.stop,
         header_resent=_fresh(),
-        ownership=ownership,
+        owned=owned,
     )
 
 
@@ -532,10 +523,10 @@ def _get_versions(
 
     master_ref = make_ref("master", master_id)
     scan = _versions_scan(release_type, format)
-    # Under --owned or a scan the header goes before the listing, so
-    # --max-requests counts it first; otherwise it stays lazy, read only once
-    # the listing succeeded, so a listing that fails costs its one request.
-    early_title = titled.title if (owned or scan) and not mode.json else None
+    # Before a scan the header goes first, so --max-requests counts it first;
+    # otherwise it stays lazy, read only once the listing succeeded, so a
+    # listing that fails costs its one request.
+    early_title = titled.title if scan and not mode.json else None
 
     # The SDK drops the filters left unset; `released` is the API's year filter.
     # Discogs filters `unofficial` itself, on the whole description, so it
@@ -561,9 +552,8 @@ def _get_versions(
     else:
         result = fetch_page(listing, page=page or 1, per_page=limit)
 
-    ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
     if mode.json:
-        return _page_json(result, project_master_version, ownership, mode)
+        return _page_json(result, project_master_version, owned=owned, mode=mode)
 
     footer_cmd = next_page_cmd(
         ["get", "versions", master_ref],
@@ -590,7 +580,7 @@ def _get_versions(
         filtered=result.filtered,
         stop=result.stop,
         header_resent=_fresh(),
-        ownership=ownership,
+        owned=owned,
     )
 
 
@@ -798,7 +788,9 @@ def _get_inventory(
     else:
         result = fetch_page(listing, page=page or 1, per_page=limit)
 
-    ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
+    ownership = (
+        ownership_of(client, result, max_requests=max_requests) if owned else None
+    )
     if mode.json:
         document = mode.page(result, project_listing)
         if max_price is not None:
@@ -1221,23 +1213,19 @@ def _flag_error(
             "--after continues one listing, so it takes exactly one ref "
             f"({len(refs)} given)."
         )
-    if (
-        max_requests is not None
-        and noun in ("releases", "versions")
-        and not (owned or filtered)
-    ):
+    # --owned reads no collection on these nouns (each row carries its own
+    # count), so only a scan is left to cap.
+    if max_requests is not None and noun in ("releases", "versions") and not filtered:
         if noun == "versions":
             return (
                 "--max-requests caps a client-side filtered scan (get versions "
-                "--release-type official, or unofficial with --format) or the "
-                "--owned collection read. This listing pages server-side and "
-                "sends one request per page."
+                "--release-type official, or unofficial with --format). This "
+                "listing pages server-side and sends one request per page."
             )
         return (
             "--max-requests caps a client-side filtered scan (get releases "
-            "--role, or get releases @l... --year) or the --owned collection "
-            "read. This listing pages server-side and sends one request per "
-            "page."
+            "--role, or get releases @l... --year). This listing pages "
+            "server-side and sends one request per page."
         )
     if max_requests is not None and noun == "inventory" and not (filtered or owned):
         return (
@@ -1721,16 +1709,17 @@ def _json_options(command: Any) -> Any:
 @click.option(
     "--max-requests",
     type=int,
-    help="releases --role / @l --year, versions --release-type official, --owned, "
-    "a collection filter, wantlist --for-sale, or an inventory filter: cap the "
-    "command's HTTP sends (default: no cap)",
+    help="releases --role / @l --year, versions --release-type official, a "
+    "collection filter, wantlist --for-sale, or an inventory filter or --owned: "
+    "cap the command's HTTP sends (default: no cap)",
 )
 @click.option(
     "--owned",
     is_flag=True,
     default=False,
     help="releases / versions / inventory: mark each release row with the copies "
-    "in your own collection (needs DISCOGS_TOKEN or OAuth)",
+    "in your own collection (needs DISCOGS_TOKEN or OAuth; releases and versions "
+    "rows carry the count, inventory reads your collection)",
 )
 @click.option("--page", type=int, help="Page number, from 1 (server-side pages only)")
 @click.option(
