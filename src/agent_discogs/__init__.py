@@ -82,15 +82,30 @@ Get Collection:
                folder Vinyl · added 2024-01-04 · rating 4'. No ref. Needs
                DISCOGS_TOKEN or OAuth. --sort label|artist|title|catno|format|
                rating|added|year and --desc are sent to Discogs. --format,
-               --genre, --style, --year, --label keep records where one value
-               (format name or description, genre, style, year, label name)
-               equals it, any case; a filter makes it a client-side scan
-               (--after, --max-requests; no --page, no --country). 1 request
-               for your username, 1 for your folder names (not with --json
-               --full), then 1 per page or per 100 records scanned; without
-               --sort a scan reuses the pages --owned cached. --json: ref,
-               title, year, label, catno, format, folder, added, rating;
-               --json --full: the collection records (folder_id).
+               --genre, --style, --year, --label, --artist (a credited
+               artist), --title (the release title) keep records where one
+               value matches the pattern: the whole value, any case, * for
+               any run of characters, \\ before * or \\ for a literal one
+               (--artist '\\*NSYNC': single-quote it in a shell); a filter
+               makes it a client-side scan (--after, --max-requests; no
+               --page, no --country). --folder NAME lists only that folder
+               (as rows print it, any case; All, Uncategorized; no pattern):
+               not a filter, it pages server-side (--page; no --after or
+               --max-requests) and, with a filter, scans only that folder.
+               1 request for your username, 1 for your folder names (not
+               with --json --full, except with --folder, which needs them),
+               1 more for your field names with --fields, then 1 per page or
+               per 100 records scanned; an unknown or ambiguous --folder fails
+               after the folder names and lists the folders. Without --sort or
+               --folder a scan reuses the pages --owned cached. --fields shows
+               each copy's notes and custom fields by name after the rating,
+               as '· Media Condition: VG+ · Notes: Shelf A3' (--json: a fields
+               object after rating; a Discogs grade name in a dropdown field
+               is shortened to VG+; not with --json --full). --json: ref,
+               title, artists, year, label, catno, format, genres, styles,
+               master, folder, added, rating (artists, genres, styles and
+               master are not in the text row); --json --full: the collection
+               records (folder_id, notes by field id).
                get collection --value instead prints its value from Discogs'
                Marketplace sales in your profile's currency, as 'Collection
                value (EUR): min 75.50 · median 100.25 · max 250.00' (--json:
@@ -142,9 +157,10 @@ Get List:      get list <id>...: a list by its id, a plain number (a typed ref
                description, public, url, items (ref, title, comment);
                --json --full: the list records
 
-On a row, 'have N' is Discogs' community count (how many Discogs users own the
-release); 'owned' is your own copies (--owned), 'wanted' your wantlist
-(--wanted).
+On a search, versions or releases row, 'have N · want N' are Discogs' community
+counts (how many Discogs users own the release and want it; --json: have,
+want), read from the listing page at no extra request; 'owned' is your own
+copies (--owned), 'wanted' your wantlist (--wanted).
 
 get release's Format line (and --json formats) lists one entry per physical
 format, ';'-separated: the quantity when above 1, the name, then descriptions
@@ -209,11 +225,11 @@ Options:
                    --owned and --wanted reads or get wantlist --for-sale:
                    search or get versions with --release-type official, or
                    unofficial with --format; get releases --role / @l --year;
-                   get collection with a filter (its username and folder list
-                   count first); search with --owned or --wanted; get
-                   inventory with --owned; get wantlist --for-sale; get
-                   inventory with a filter
-                   (--in-wantlist's wantlist read counts too; about 1
+                   get collection with a filter, not --folder alone (its
+                   username, folder list and --fields list count first);
+                   search with --owned or --wanted; get inventory with
+                   --owned; get wantlist --for-sale; get inventory with a
+                   filter (--in-wantlist's wantlist read counts too; about 1
                    request per 100 listings, so a 50,000-listing seller is 500:
                    always pass it); one ref only. Default: no cap, the
                    scan runs until the page fills or the list ends (--for-sale:
@@ -347,9 +363,15 @@ Options:
                    filter by year (server-side); get releases @l and get
                    collection: keep that year (client-side scan, continues via
                    --after)
-  --format, --label, --genre, --style
-                   get collection: keep records with that format name or
-                   description, label name, genre or style (any case)
+  --format, --label, --genre, --style, --artist, --title
+                   get collection: keep records matching the pattern: format
+                   name or description, label name, genre, style, credited
+                   artist, release title; * is any run of characters
+  --folder NAME    get collection: list only that folder, by name as rows print
+                   it (any case; not a pattern); pages server-side on its own
+  --fields         get collection: each copy's notes and custom fields by name
+                   (Media Condition: VG+); 1 more request; not with --json
+                   --full
   --value          get collection: its value (min, median, max) in your
                    currency instead of the listing; takes no other flag
   --credit, --track, --title, --anv
@@ -371,8 +393,9 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --sort, --desc, --release-type, --owned, --wanted, --after
                    and --max-requests (with a --release-type scan)
   collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
-                   --style, --year, --label, --after and --max-requests (with a
-                   filter); or --value alone
+                   --style, --year, --label, --artist, --title, --folder,
+                   --fields, --after and --max-requests (with a filter, not
+                   --folder alone); or --value alone
   lists            no ref; --limit, --page
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
                    --currency (both with --for-sale), --after and
@@ -404,11 +427,12 @@ Environment:
 Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
   it repeats --cached or --fresh, --max-requests, --owned, --wanted, for get
-  collection and get inventory --limit, its filters, --sort and --desc
-  (inventory also --in-wantlist), and, for get lists and get wantlist, --limit
-  (and --for-sale, --max-price and --currency), and puts a search's type and
-  query after --, so a query such as -ambient survives (a seller's name
-  starting with - too).
+  collection and get inventory --limit, its filters (get collection also
+  --folder, not a filter, and --fields), --sort and --desc (inventory also
+  --in-wantlist), and, for get lists and get wantlist, --limit (and
+  --for-sale, --max-price and --currency), and puts a search's type and query
+  after --, so a query such as -ambient survives (a seller's name starting
+  with - too).
   Filtered lists scan Discogs' 100-row pages until --limit rows match or the
   list ends. 'Continue scan:' means the scan stopped early: --max-requests ran
   out (the header says so; before the scan started, it shows no counts and JSON
@@ -419,6 +443,10 @@ Paging:
   total_items is the unfiltered total (the ≤N in the header) and total_pages
   counts Discogs' 100-row pages, so neither tells how many pages of matches
   remain. Continue until no command is printed (JSON: next_cursor null).
+  A label catalogue (get releases @l...) drops a row equal to the row Discogs
+  sent just before it, so a page without --year can be shorter than --limit:
+  the header says 'N repeated rows dropped' (JSON:
+  pagination.duplicates_dropped).
 
 Budget:
   After any command that talks to the API, stderr ends with a budget line, e.g.

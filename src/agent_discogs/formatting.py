@@ -8,12 +8,17 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from agent_discogs import markup, sanitize, style
-from agent_discogs.collection import is_release_row, stat_copies, stat_wanted
+from agent_discogs.collection import (
+    CustomField,
+    field_values,
+    stat_copies,
+    stat_wanted,
+)
 from agent_discogs.config import CACHE_TTL_LABEL
-from agent_discogs.inventory import GRADES, release_id, short_grade
+from agent_discogs.inventory import GRADES, is_release_row, release_id, short_grade
 from agent_discogs.markup import Part, plain
 from agent_discogs.refs import TYPE_TO_PREFIX, make_ref
 from agent_discogs.style import Span
@@ -387,18 +392,33 @@ def _ref_type(entity: Any) -> str | None:
     return entity.type if entity.type in TYPE_TO_PREFIX else None
 
 
-def _community_have(obj: Any) -> int | None:
-    """Community 'have' count from a search result or master version, if present."""
-    community = getattr(obj, "community", None)
-    if community is None:
-        stats = getattr(obj, "stats", None)
-        community = getattr(stats, "community", None)
-    if community is None:
-        return None
-    have = getattr(community, "have", None)
-    if have is None:
-        have = getattr(community, "in_collection", None)
-    return have if isinstance(have, int) else None
+class _Community(TypedDict):
+    """A row's community counts, as `_release_row` and the projectors take them."""
+
+    have: int | None
+    want: int | None
+
+
+def _community_counts(row: Any) -> _Community:
+    """Discogs' community counts on a list row, `{"have": N, "want": N}`, each
+    None when not sent: a search result's `community.have`/`want`, or the
+    `stats.community.in_collection`/`in_wantlist` of a version or of an
+    artist or label release row (modeled on versions, a raw dict on the
+    others, whose stats the SDK does not model). No request is sent."""
+    community = field(row, "community")
+    if community is not None:
+        have, want = field(community, "have"), field(community, "want")
+    else:
+        community = field(field(row, "stats"), "community")
+        have = field(community, "in_collection")
+        want = field(community, "in_wantlist")
+    return {"have": _count(have), "want": _count(want)}
+
+
+def _count(value: object) -> int | None:
+    """A count Discogs sent as an integer; anything else (a raw dict may hold
+    any JSON, `true` included) is not shown."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def known_year(year: int | str | None) -> int | str | None:
@@ -434,6 +454,7 @@ def _release_row(
     fmt: str | None = None,
     role: str | None = None,
     have: int | None = None,
+    want: int | None = None,
     folder: str | None = None,
     added: str | None = None,
     rating: int | None = None,
@@ -467,6 +488,8 @@ def _release_row(
         words.append([f"· {role}"])
     if have is not None:
         words.append([f"· have {have:,}"])
+    if want is not None:
+        words.append([f"· want {want:,}"])
     if folder:
         words.append([f"· folder {folder}"])
     if added:
@@ -772,14 +795,17 @@ def format_collection(
     next_page_cmd: str | None,
     *,
     folders: dict[int, str],
+    fields: dict[int, CustomField] | None = None,
     filters: dict[str, str] | None = None,
     filtered: bool = False,
     stop: ScanStop | None = None,
     header_resent: bool = False,
 ) -> str:
     """`get collection`: one row per copy, the release titled like a search
-    result, then the copy's folder by name (`folders`), the day it was added
-    and its rating when set. A filter makes it a scan (`filtered`)."""
+    result, then the copy's folder by name (`folders`), the day it was added,
+    its rating when set and, with the user's custom `fields` (`--fields`),
+    `· Name: value` for each of its notes. A filter makes it a scan
+    (`filtered`)."""
     counts = _page_counts(
         page,
         len(records),
@@ -795,6 +821,7 @@ def format_collection(
         "",
     ]
     for record in records:
+        values = {} if fields is None else field_values(record, fields)
         release = getattr(record, "basic_information", None)
         labels = getattr(release, "labels", None) or []
         first = labels[0] if labels else None
@@ -816,6 +843,9 @@ def format_collection(
                 # the JSON `added` beside it give it.
                 added=added.date().isoformat() if added else None,
                 rating=getattr(record, "rating", None),
+                tail=[" ".join(f"· {k}: {v}" for k, v in values.items())]
+                if values
+                else None,
             )
         )
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
@@ -1062,11 +1092,14 @@ def format_label_releases(
     *,
     filtered: bool = False,
     stop: ScanStop | None = None,
+    dropped: int = 0,
     header_resent: bool = False,
     owned: bool = False,
     wanted: bool = False,
 ) -> str:
-    """Format a label's catalogue (client-side `--year` scans are `filtered`)."""
+    """Format a label's catalogue (client-side `--year` scans are `filtered`),
+    noting the `dropped` rows that repeated the row before them."""
+    noun = "row" if dropped == 1 else "rows"
     counts = _page_counts(
         page,
         len(releases),
@@ -1075,6 +1108,7 @@ def format_label_releases(
         filtered=filtered,
         stop=stop,
         header_resent=header_resent,
+        note=f"{dropped:,} repeated {noun} dropped" if dropped else None,
     )
     lines: list[Line] = [
         [
@@ -1093,6 +1127,7 @@ def format_label_releases(
             year=getattr(rel, "year", None),
             catno=getattr(rel, "catalog_number", None),
             fmt=getattr(rel, "format", None),
+            **_community_counts(rel),
             owned=_stat_owned(owned, rel),
             wanted=_stat_wanted(wanted, rel),
         )
@@ -1145,6 +1180,7 @@ def format_artist_releases(
             label=getattr(rel, "label", None),
             fmt=getattr(rel, "format", None),
             role=getattr(rel, "role", None),
+            **_community_counts(rel),
             owned=_stat_owned(owned, rel),
             wanted=_stat_wanted(wanted, rel),
         )
@@ -1259,7 +1295,7 @@ def format_master_versions(
             label=getattr(ver, "label", None),
             catno=getattr(ver, "catalog_number", None),
             fmt=getattr(ver, "format", None),
-            have=_community_have(ver),
+            **_community_counts(ver),
             owned=_stat_owned(owned, ver),
             wanted=_stat_wanted(wanted, ver),
         )
@@ -1507,9 +1543,9 @@ def format_search_results(
 
     The `[type]` tag is shown only for untyped searches; with a type filter the
     ref prefix already carries it. Release rows carry country, catalog number,
-    community have-count, and the master ref so an agent can pick and navigate
-    without a detail call. A result of an unknown or missing type has no ref:
-    its row starts with `id N` and always shows its tag.
+    community have and want counts, and the master ref so an agent can pick
+    and navigate without a detail call. A result of an unknown or missing type
+    has no ref: its row starts with `id N` and always shows its tag.
     """
     head = _search_head(query, type_filter, filters)
     counts = _page_counts(
@@ -1550,7 +1586,7 @@ def format_search_results(
                     label=label_list[0] if label_list else None,
                     catno=getattr(result, "catalog_number", None),
                     fmt=", ".join(fmt_list) if fmt_list else None,
-                    have=_community_have(result),
+                    **_community_counts(result),
                     master_ref=master_ref,
                     owned=_owned(ownership, result),
                     wanted=_wants_mark(wants, result),

@@ -6,6 +6,7 @@ from __future__ import annotations
 import functools
 import json
 import re
+import shlex
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,11 +14,11 @@ from typing import Any
 
 import httpx2
 import pytest
-from click.testing import Result
+from click.testing import CliRunner, Result
 from discogs_sdk import Discogs
 
 import agent_discogs.client as client_module
-from agent_discogs import trace
+from agent_discogs import cli, trace
 from agent_discogs.pagination import PageResult
 
 pytest_plugins = ["pytester"]
@@ -295,3 +296,211 @@ def _tracks_fake(recorder: Callable[[], None]) -> SimpleNamespace:
 
 
 _ROW = re.compile(r"Row(\d+)e(\d+)")
+
+# The `get collection` API (`_Collection`), its harness and result readers,
+# shared by test_cli_collection.py and test_cli_collection_filters.py.
+_USER = "/users/me"
+_RECORDS = f"{_USER}/collection/folders/0/releases"
+_FOLDER_LIST = f"{_USER}/collection/folders"
+_FIELDS = f"{_USER}/collection/fields"
+# The user's custom fields, by position: two grade dropdowns and the notes.
+_FIELD_LIST = [
+    {"id": 1, "name": "Media Condition", "type": "dropdown", "position": 1},
+    {"id": 2, "name": "Sleeve Condition", "type": "dropdown", "position": 2},
+    {"id": 3, "name": "Notes", "type": "textarea", "position": 3, "lines": 3},
+]
+_SEARCH = "/database/search"
+# Folder 5 is "Vinyl", 1 is "Uncategorized"; 0 ("All") is never a record's.
+# "To Sell" holds the records a test moves there through `odd`.
+_FOLDERS = [
+    {"id": 0, "name": "All", "count": 250},
+    {"id": 1, "name": "Uncategorized", "count": 249},
+    {"id": 5, "name": "Vinyl", "count": 1},
+    {"id": 7, "name": "To Sell", "count": 0},
+]
+
+
+def _folder(folder_id: int) -> str:
+    """The path of one folder's records."""
+    return f"{_USER}/collection/folders/{folder_id}/releases"
+
+
+# The Techno records: 12 of 250, on each of the three 100-record pages.
+_TECHNO = (5, 17, 40, 99, 100, 130, 160, 199, 200, 210, 230, 249)
+# The masters of the releases that have one: release 7 (records 3 and 120)
+# is master 60, as release 1050 is when a test gives it one through `odd`;
+# releases 1011 and 1012 are master 61. No other record has a `master_id`.
+_MASTERS = {7: 60, 1011: 61, 1012: 61}
+
+_VALUE_PATH = f"{_USER}/collection/value"
+# The collection value as Discogs writes it, in the profile's currency.
+_VALUE = {"minimum": "€75.50", "median": "€100.25", "maximum": "€1,250.00"}
+
+
+def _too_many() -> httpx2.Response:
+    return httpx2.Response(429, json={}, headers={"Retry-After": "30"})
+
+
+class _Collection:
+    """The token's user `me` owns `size` records, in collection order. Record
+    `n` is release `1000 + n`, `Record <n>` by Artist (artist 4242) on Label
+    (`CAT<n>`), an Electronic, House LP from 2001 in Uncategorized, added on
+    2024-01-(n % 28 + 1), except that the `_TECHNO` records are Techno 12"
+    singles from 1992 on Tresor, record 3 is release 7, rated 4, in Vinyl,
+    record 120 is release 7 again, in Uncategorized, the releases in
+    `_MASTERS` name their master, record 3 has a Media Condition and a Notes
+    value, and `odd` replaces records by number. Each folder of `folders`
+    (by default `_FOLDERS`) lists the records whose `folder_id` is its id,
+    and folder 0 every record; the custom fields are `fields` (by default
+    `_FIELD_LIST`). The profile adds `profile` (by default `curr_abbr: EUR`)
+    and the collection value is `value` (by default `_VALUE`). `throttle`
+    answers with a 429: `"identity"` the username, `"folders"` the folder
+    list, `"fields"` the fields list, `"page:N"` page N of any folder. A
+    search lists releases 1 and 2."""
+
+    def __init__(
+        self,
+        size: int = 250,
+        *,
+        throttle: tuple[str, ...] = (),
+        odd: dict[int, dict[str, Any]] | None = None,
+        profile: dict[str, Any] | None = None,
+        value: dict[str, Any] | None = None,
+        folders: list[dict[str, Any]] | None = None,
+        fields: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self.size, self.throttle, self.odd = size, throttle, odd or {}
+        self.profile = {"curr_abbr": "EUR"} if profile is None else profile
+        self.value = _VALUE if value is None else value
+        self.folders = _FOLDERS if folders is None else folders
+        self.fields = _FIELD_LIST if fields is None else fields
+
+    def __call__(self, path: str, params: dict[str, str]) -> object:
+        if path == "/oauth/identity":
+            if "identity" in self.throttle:
+                return _too_many()
+            return {"id": 7, "username": "me"}
+        if path == _FIELDS:
+            if "fields" in self.throttle:
+                return _too_many()
+            return {"fields": self.fields}
+        if path == _FOLDER_LIST:
+            if "folders" in self.throttle:
+                return _too_many()
+            return {"folders": self.folders}
+        folder = re.fullmatch(rf"{_USER}/collection/folders/(\d+)/releases", path)
+        if folder:
+            page = int(params["page"])
+            if f"page:{page}" in self.throttle:
+                return _too_many()
+            return self._page(int(folder[1]), page, int(params["per_page"]))
+        if path == _USER:
+            return {"id": 7, "username": "me", **self.profile}
+        if path == _VALUE_PATH:
+            return self.value
+        if path == _SEARCH:
+            rows = [{"id": i, "title": f"Title {i}", "type": "release"} for i in (1, 2)]
+            pages = {"page": 1, "pages": 1, "items": 2, "per_page": 100}
+            return {"pagination": pages, "results": rows}
+        raise AssertionError(path)
+
+    def _page(self, folder: int, page: int, per: int) -> object:
+        """Page `page` of folder `folder`: every record for folder 0, else
+        the records whose `folder_id` is `folder`."""
+        records = [self.odd.get(n) or self.record(n) for n in range(self.size)]
+        if folder:
+            records = [r for r in records if r.get("folder_id") == folder]
+        items = records[(page - 1) * per : page * per]
+        pages = {"page": page, "pages": -(-len(records) // per), "items": len(records)}
+        return {"pagination": {**pages, "per_page": per}, "releases": items}
+
+    @staticmethod
+    def record(n: int) -> dict[str, Any]:
+        techno = n in _TECHNO
+        release = {3: 7, 120: 7}.get(n, 1000 + n)
+        return {
+            "id": release,
+            "instance_id": 10_000 + n,
+            "folder_id": 5 if n == 3 else 1,
+            "rating": 4 if n == 3 else 0,
+            "date_added": f"2024-01-{n % 28 + 1:02d}T10:00:00-08:00",
+            "basic_information": {
+                "id": release,
+                "title": f"Record {n}",
+                "year": 1992 if techno else 2001,
+                "artists": [{"id": 4242, "name": "Artist", "join": ""}],
+                "labels": [
+                    {"name": "Tresor" if techno else "Label", "catno": f"CAT{n}"}
+                ],
+                "formats": [
+                    {
+                        "name": "Vinyl",
+                        "qty": "1",
+                        "descriptions": ['12"', "33 ⅓ RPM"] if techno else ["LP"],
+                    }
+                ],
+                "genres": ["Electronic"],
+                "styles": ["Techno"] if techno else ["House"],
+            }
+            | ({"master_id": _MASTERS[release]} if release in _MASTERS else {}),
+        } | (
+            {
+                "notes": [
+                    {"field_id": 1, "value": "Very Good Plus (VG+)"},
+                    {"field_id": 3, "value": "Shelf A3"},
+                ]
+            }
+            if n == 3
+            else {}
+        )
+
+
+class _Harness:
+    """`_FakeAPI` over `collection`. With `token`, the environment holds the
+    credentials of a user, as `get collection` needs."""
+
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        collection: _Collection | None = None,
+        *,
+        token: bool = True,
+    ) -> None:
+        if token:
+            monkeypatch.setenv("DISCOGS_TOKEN", "test-token")
+        self.api = _FakeAPI(monkeypatch, collection or _Collection())
+
+    def run(self, *args: str) -> tuple[Result, list[tuple[str, dict[str, str]]]]:
+        start = len(self.api.sends)
+        result = CliRunner().invoke(cli, list(args))
+        return result, list(self.api.sends[start:])
+
+
+def _paths(sent: list[tuple[str, dict[str, str]]]) -> list[str]:
+    return [path for path, _ in sent]
+
+
+def _pages(sent: list[tuple[str, dict[str, str]]]) -> list[int]:
+    return [int(params["page"]) for path, params in sent if path == _RECORDS]
+
+
+def _document(result: Result) -> dict[str, Any]:
+    assert result.exit_code == 0, result.output
+    return json.loads(result.stdout)
+
+
+def _refs(result: Result) -> list[str]:
+    return [row["ref"] for row in _document(result)["results"]]
+
+
+def _continuation(result: Result) -> list[str]:
+    """The argv of the `Continue scan:` or `Next page:` footer."""
+    line = next(
+        line
+        for line in result.stdout.splitlines()
+        if line.startswith(("Continue scan:", "Next page:"))
+    )
+    return shlex.split(line.split(":", 1)[1])[1:]  # drop "agent-discogs"
+
+
+_TECHNO_REFS = [f"@r{1000 + n}" for n in _TECHNO]

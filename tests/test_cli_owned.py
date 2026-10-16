@@ -44,7 +44,9 @@ class _Account:
     the row of release `unstated`, whose `stats.user` is null. `throttle`
     answers with a 429: `"identity"` the username, `"collection:N"`
     collection page N, `"folders"` the folder list, `"wants:N"` wants page
-    N, and `"search:2"` a second search page (the search then has two)."""
+    N, and `"search:2"` a second search page (the search then has two). With
+    `label_repeats`, a label catalogue sends releases 2 and 3 twice in a row
+    each."""
 
     def __init__(
         self,
@@ -53,8 +55,10 @@ class _Account:
         wants: int = 250,
         throttle: tuple[str, ...] = (),
         unstated: int | None = None,
+        label_repeats: bool = False,
     ) -> None:
         self.size, self.throttle, self.unstated = size, throttle, unstated
+        self.label_repeats = label_repeats
         # record: (release id, folder id)
         self.copies = {10: (2, 1), 20: (3, 5), 30: (6, None), 150: (3, 1)}
         self.masters = {2: 77, 3: 77, 6: 0}
@@ -109,11 +113,18 @@ class _Account:
             for row in rows:
                 unofficial = row["id"] in (2, 3)
                 row["format"] = "CD, Unofficial Release" if unofficial else "CD"
+            # The community's counts, which the row shows before the mark.
+            rows[1]["stats"]["community"] = {"in_collection": 41, "in_wantlist": 284}
             if "format" in params:
                 rows = [r for r in rows if params["format"] in r["format"].split(", ")]
             return {"pagination": _one_page(len(rows)), "versions": rows}
         if key == "releases" and path.startswith("/labels/"):
-            return {"pagination": _one_page(5), "releases": rows}
+            if self.label_repeats:
+                twice = (2, 3)
+                rows = [
+                    r for row in rows for r in [row] * (2 if row["id"] in twice else 1)
+                ]
+            return {"pagination": _one_page(len(rows)), "releases": rows}
         for row in rows:
             row["type"] = "release"
         if key == "releases":  # an artist's: release 4 is a master
@@ -470,6 +481,34 @@ class TestOwnedFromStats:
         marks = {ref: "not owned" if n == 0 else "none" for ref, n in owned.items()}
         assert _marks(text) == {**marks, "@r2": "owned", "@r3": "owned x2"}
         assert "Owned:" not in text.stdout
+
+    def test_the_mark_ends_the_row_after_the_community_counts(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, _Account())
+        result, _ = h.run("get", "versions", "@m1", "--owned")
+        assert result.exit_code == 0, result.output
+        row = "@r2 · CD, Unofficial Release · have 41 · want 284 · owned"
+        assert row in result.stdout.splitlines()
+
+    def test_label_repeats_are_dropped_before_marking(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, _Account(label_repeats=True))
+        result, _ = h.run("get", "releases", "@l1", "--owned", "--json", "--limit", "7")
+        assert result.exit_code == 0, result.output
+        document = json.loads(result.stdout)
+        assert document["pagination"]["duplicates_dropped"] == 2
+        assert [(row["ref"], row["owned"]) for row in document["results"]] == [
+            *(("@r1", 0), ("@r2", 1), ("@r3", 2), ("@r4", 0), ("@r5", 0))
+        ]
+        text, _ = h.run("get", "releases", "@l1", "--owned", "--limit", "7")
+        assert "(page 1, 5 of 7 results; 2 repeated rows dropped)" in text.stdout
+        assert list(_marks(text).items()) == [
+            *(("@r1", "not owned"), ("@r2", "owned"), ("@r3", "owned x2")),
+            *(("@r4", "not owned"), ("@r5", "not owned")),
+        ]
+        assert sum(line.startswith("@r") for line in text.stdout.splitlines()) == 5
 
     @pytest.mark.parametrize("argv", list(_LISTINGS))
     def test_a_row_without_user_stats_is_undecided(
