@@ -17,7 +17,9 @@ from agent_discogs.account import UserRequiredError, require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import (
     ALL_FOLDER,
+    COUNT_KEYS,
     copies,
+    count_records,
     custom_fields,
     folder_id,
     folder_names,
@@ -25,10 +27,12 @@ from agent_discogs.collection import (
     mark_rows_with,
     master_copies,
     ownership_of,
+    read_whole,
     record_filter,
     records,
     stat_copies,
     stat_wanted,
+    unread,
     valuation,
 )
 from agent_discogs.config import RELEASE_TYPES, UNOFFICIAL
@@ -37,6 +41,7 @@ from agent_discogs.formatting import (
     format_artist,
     format_artist_releases,
     format_collection,
+    format_collection_counts,
     format_collection_value,
     format_credits,
     format_identifiers,
@@ -786,6 +791,29 @@ def _get_collection_value(client: Discogs, mode: Mode) -> Any:
     return format_collection_value(found.currency, amounts)
 
 
+def _cap_spent(max_requests: int | None) -> bool:
+    """Whether the command's sends have reached `--max-requests`."""
+    return max_requests is not None and trace.sends() >= max_requests
+
+
+def _collection_folder(
+    client: Discogs, *, folder: str | None, names: bool, max_requests: int | None
+) -> tuple[Any, dict[int, str], int | None]:
+    """The user, the folder list and the id of the folder to read.
+
+    The username and the folder list go before the listing, the way a
+    header does, so --max-requests counts them first. The list is read to
+    name each copy's folder (`names`) or to resolve `folder`. Once the cap
+    is spent after the username, neither: there is no row to name and no
+    folder to resolve, and the folder id is None, as nothing will be read.
+    """
+    user = account.user(client)
+    if _cap_spent(max_requests):
+        return user, {}, None
+    found = folder_names(user) if names or folder is not None else {}
+    return user, found, ALL_FOLDER if folder is None else folder_id(found, folder)
+
+
 def _get_collection(
     client: Discogs,
     *,
@@ -803,31 +831,19 @@ def _get_collection(
     """The user's collection, or with `folder` one folder of it, one row
     per copy: server-side pages, or with a filter a client-side scan of
     100-record pages. With `fields`, each row names the copy's notes."""
-
-    def cap_spent() -> bool:
-        return max_requests is not None and trace.sends() >= max_requests
-
-    # The username, the folder list and the fields list go before the
-    # listing, the way a header does, so --max-requests counts them first.
     # --full names folders by id, so it reads the list only to resolve
-    # --folder; once the cap is spent the scan reads no row to name and no
-    # folder to resolve.
-    user = account.user(client)
-    spent = cap_spent()
-    names = {} if spent or (mode.full and folder is None) else folder_names(user)
+    # --folder; the fields list follows it, also counted by --max-requests.
+    user, names, read_folder = _collection_folder(
+        client, folder=folder, names=not mode.full, max_requests=max_requests
+    )
     keep = record_filter(filters)
     custom = None
-    if spent:
+    if read_folder is None:
         # Only a scan takes --max-requests; it continues where it was asked.
         result = unscanned(after, ScanStop("max_requests", max_requests=max_requests))
     else:
-        listing = records(
-            user,
-            folder=ALL_FOLDER if folder is None else folder_id(names, folder),
-            sort=sort,
-            desc=desc,
-        )
-        if fields and not cap_spent():
+        listing = records(user, folder=read_folder, sort=sort, desc=desc)
+        if fields and not _cap_spent(max_requests):
             custom = custom_fields(user)
         if keep:
             result = fetch_filtered_page(
@@ -869,6 +885,51 @@ def _get_collection(
         filtered=result.filtered,
         stop=result.stop,
         header_resent=_fresh(),
+    )
+
+
+def _get_collection_counts(
+    client: Discogs,
+    *,
+    key: str,
+    top: int | None,
+    filters: dict[str, str],
+    folder: str | None,
+    max_requests: int | None,
+    mode: Mode,
+) -> Any:
+    """`get collection --count-by`: how many records have each value of
+    `key`, from one read of the whole collection, or of `folder`, 100
+    records a request, unsorted (the pages `--owned` reads). Only the records
+    the filters keep are counted; a read `--max-requests` or a 429 stopped
+    gives the counts of the part read, flagged incomplete."""
+    # Nothing printed names a folder: the list is read only for --folder.
+    user, _, read_folder = _collection_folder(
+        client, folder=folder, names=False, max_requests=max_requests
+    )
+    if read_folder is None:
+        read = unread(ScanStop("max_requests", max_requests=max_requests))
+    else:
+        read = read_whole(records(user, folder=read_folder), max_requests=max_requests)
+    keep = record_filter(filters)
+    counts = count_records(
+        [record for record in read.records if keep is None or keep(record)], key
+    )
+    if mode.json:
+        return {
+            "count_by": key,
+            "records": counts.records,
+            "without_value": counts.without_value,
+            "distinct": len(counts.groups),
+            "counts": [
+                drop_empty({"value": g.value, "ref": g.ref, "count": g.count})
+                for g in counts.groups[:top]
+            ],
+            "collection": read.document(),
+        }
+    shown = {"folder": folder, **filters} if folder is not None else filters
+    return format_collection_counts(
+        account.username(client), key, counts, read, filters=shown, top=top
     )
 
 
@@ -1085,6 +1146,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
         {
             "after",
             "artist",
+            "count_by",
             "desc",
             "fields",
             "folder",
@@ -1097,6 +1159,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "sort",
             "style_",
             "title",
+            "top",
             "value",
             "year",
         },
@@ -1296,6 +1359,10 @@ def _wantlist_error(
     return None
 
 
+# The flags of a listing page, which a view of the whole collection lacks.
+_PAGE_FLAGS = frozenset({"limit", "page", "after", "sort", "desc"})
+
+
 def _collection_error(
     refs: tuple[str, ...],
     *,
@@ -1303,12 +1370,16 @@ def _collection_error(
     filters: dict[str, str],
     folder: str | None,
     max_requests: int | None,
+    count_by: str | None,
+    top: int | None,
     full: bool,
 ) -> str | None:
     """What `get collection` cannot take: a ref, any other flag with
-    --value, --fields with --json --full, an empty filter (it would match
-    nothing) or folder name, or --max-requests without a filter, which
-    leaves no scan to cap (`--folder` alone pages server-side)."""
+    --value, a page flag, --fields or --json --full with --count-by, --top
+    without it or below 1, --fields with --json --full, an empty filter (it
+    would match nothing) or folder name, or --max-requests without a filter
+    or --count-by, which leaves no scan to cap (`--folder` alone pages
+    server-side)."""
     if refs:
         return "get collection takes no ref: it lists your own collection."
     others = sorted(_option_flag(name) for name in explicit - {"value"})
@@ -1317,6 +1388,19 @@ def _collection_error(
             f"--value takes no other get collection flag ({', '.join(others)} "
             "given): it prints your collection's value, not a listing."
         )
+    if count_by is None and "top" in explicit:
+        return "--top needs --count-by KEY: it keeps the N largest counts."
+    paging = sorted(_option_flag(name) for name in explicit & _PAGE_FLAGS)
+    if count_by is not None and paging:
+        return (
+            "--count-by reads the whole collection, so it takes no --limit, "
+            f"--page, --after, --sort or --desc ({', '.join(paging)} given)."
+        )
+    if count_by is not None and (full or "fields" in explicit):
+        flag = "--fields" if "fields" in explicit else "--full"
+        return f"--count-by prints counts, not records, so it takes no {flag}."
+    if top is not None and top < 1:
+        return f"--top must be 1 or more ({top} given)."
     if full and "fields" in explicit:
         return (
             "--fields does not apply with --json --full: --full prints each "
@@ -1334,12 +1418,12 @@ def _collection_error(
         return (
             "--folder needs a folder name, as get collection prints it (· folder Jazz)."
         )
-    if max_requests is not None and not filters:
+    if max_requests is not None and not filters and count_by is None:
         return (
             "--max-requests caps a filtered get collection scan (--format, "
-            "--genre, --style, --year, --label, --artist or --title); get "
-            "collection alone, or with --folder alone, pages server-side and "
-            "sends one request per page."
+            "--genre, --style, --year, --label, --artist or --title) or a "
+            "--count-by read; get collection alone, or with --folder alone, "
+            "pages server-side and sends one request per page."
         )
     return None
 
@@ -1370,6 +1454,8 @@ def _flag_error(
     ships_from: str | None,
     in_wantlist: bool,
     folder: str | None,
+    count_by: str | None,
+    top: int | None,
     full: bool,
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
@@ -1425,6 +1511,8 @@ def _flag_error(
             filters=collection_filters,
             folder=folder,
             max_requests=max_requests,
+            count_by=count_by,
+            top=top,
             full=full,
         )
         if collection_error:
@@ -1687,6 +1775,8 @@ def _dispatch(
     title: str | None,
     folder: str | None,
     fields: bool,
+    count_by: str | None,
+    top: int | None,
     verbose: bool,
     compact: bool,
     master_year: bool,
@@ -1740,6 +1830,8 @@ def _dispatch(
         currency=currency,
         collection_filters=collection_filters,
         folder=folder,
+        count_by=count_by,
+        top=top,
         condition=condition,
         sleeve=sleeve,
         ships_from=ships_from,
@@ -1782,6 +1874,17 @@ def _dispatch(
         try:
             if noun == "collection" and value:
                 output, failed = _get_collection_value(client, mode), False
+            elif noun == "collection" and count_by:
+                output = _get_collection_counts(
+                    client,
+                    key=count_by,
+                    top=top,
+                    filters=collection_filters,
+                    folder=folder,
+                    max_requests=max_requests,
+                    mode=mode,
+                )
+                failed = False
             elif noun == "collection":
                 output, failed = (
                     _get_collection(
@@ -1957,6 +2060,13 @@ def _json_options(command: Any) -> Any:
 )
 @click.option("--country", help="Filter versions by country")
 @click.option(
+    "--count-by",
+    type=click.Choice(COUNT_KEYS),
+    help="collection: print how many records you own per value of KEY instead "
+    "of the listing, largest first (reads the whole collection, 100 records a "
+    "request; filters narrow what is counted)",
+)
+@click.option(
     "--currency",
     metavar="CODE",
     shell_complete=_complete_currency,
@@ -2036,8 +2146,9 @@ def _json_options(command: Any) -> Any:
     "--max-requests",
     type=int,
     help="releases --role / @l --year, versions --release-type official or "
-    "--market, a collection filter (not --folder alone), wantlist --for-sale, or "
-    "an inventory filter or --owned: cap the command's HTTP sends (default: no cap)",
+    "--market, a collection filter (not --folder alone) or --count-by, wantlist "
+    "--for-sale, or an inventory filter or --owned: cap the command's HTTP sends "
+    "(default: no cap)",
 )
 @click.option(
     "--owned",
@@ -2088,6 +2199,12 @@ def _json_options(command: Any) -> Any:
     "--style",
     "style_",
     help="collection: keep records with this style (a pattern, as --artist)",
+)
+@click.option(
+    "--top",
+    type=int,
+    metavar="N",
+    help="With --count-by: print only the N largest counts",
 )
 @click.option(
     "--title",
@@ -2156,6 +2273,8 @@ def get(
     title: str | None,
     folder: str | None,
     fields: bool,
+    count_by: str | None,
+    top: int | None,
     verbose: bool,
     wanted: bool,
     year: str | None,
@@ -2202,6 +2321,8 @@ def get(
         title=title,
         folder=folder,
         fields=fields,
+        count_by=count_by,
+        top=top,
         condition=condition,
         sleeve=sleeve,
         ships_from=ships_from,
@@ -2242,6 +2363,8 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         title=None,
         folder=None,
         fields=False,
+        count_by=None,
+        top=None,
         condition=None,
         sleeve=None,
         ships_from=None,

@@ -41,6 +41,7 @@ from agent_discogs.pagination import (
     rate_limited_stop,
     sort_params,
 )
+from agent_discogs.refs import make_ref
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -186,6 +187,82 @@ def record_filter(filters: dict[str, str]) -> Callable[[Any], bool] | None:
     return keep
 
 
+# What `get collection --count-by` counts a record by.
+COUNT_KEYS = ("label", "year", "decade", "format", "genre", "style", "artist")
+
+
+@dataclass(frozen=True)
+class Group:
+    """One value of a `--count-by` key: as spelled in the first record that
+    has it, its ref for a label or artist with an id, and its records."""
+
+    value: str
+    ref: str | None
+    count: int
+
+
+@dataclass(frozen=True)
+class Counts:
+    """`--count-by`: the records counted, those with no value for the key,
+    and the groups, largest first, ties by value ascending."""
+
+    records: int
+    without_value: int
+    groups: list[Group]
+
+
+def _count_values(record: Any, key: str) -> dict[Any, tuple[str, str | None]]:
+    """A record's distinct values for `key`, each under what groups it
+    (an id for a label or artist that has one, else the value casefolded)
+    with its spelling here and its ref."""
+    release = getattr(record, "basic_information", None)
+    if key in ("label", "artist"):
+        entries = getattr(release, f"{key}s", None) or []
+        found: dict[Any, tuple[str, str | None]] = {}
+        for credit in entries:
+            if credit.id:
+                ref = make_ref(key, credit.id)
+                found.setdefault(("id", credit.id), (credit.name or ref, ref))
+            elif credit.name:
+                found.setdefault(credit.name.casefold(), (credit.name, None))
+        return found
+    if key in ("year", "decade"):
+        year = getattr(release, "year", None)
+        if not year:
+            return {}
+        value = str(year) if key == "year" else f"{year // 10 * 10}s"
+        return {value: (value, None)}
+    if key == "format":
+        names = [f.name for f in getattr(release, "formats", None) or []]
+    else:
+        names = getattr(release, f"{key}s", None) or []
+    found = {}
+    for name in names:
+        if name:
+            found.setdefault(name.casefold(), (name, None))
+    return found
+
+
+def count_records(records: list[Any], key: str) -> Counts:
+    """How many of `records` have each value of `key` (`COUNT_KEYS`): one
+    count per record and distinct value, so a record with two genres counts
+    in both. Values that differ only by case are one group, spelled as in the
+    first record."""
+    counts: Counter[Any] = Counter()
+    spelling: dict[Any, tuple[str, str | None]] = {}
+    without = 0
+    for record in records:
+        values = _count_values(record, key)
+        if not values:
+            without += 1
+        for group, spelled in values.items():
+            counts[group] += 1
+            spelling.setdefault(group, spelled)
+    groups = [Group(*spelling[group], count) for group, count in counts.items()]
+    groups.sort(key=lambda g: (-g.count, g.value.casefold(), g.value))
+    return Counts(len(records), without, groups)
+
+
 @dataclass(frozen=True)
 class Ownership:
     """Copies per release id in the part of the collection read, the records
@@ -307,7 +384,8 @@ def ownership_of(
     return meta[_OWNERSHIP]
 
 
-def _unread(stop: ScanStop) -> Ownership:
+def unread(stop: ScanStop) -> Ownership:
+    """A collection read that `stop` ended before it read a record."""
     return Ownership(Counter(), 0, None, stop)
 
 
@@ -333,19 +411,23 @@ def _read_ownership(
     page; after a listing scan stopped by one, nothing is asked at all.
     """
     if listing_stop is not None and listing_stop.reason == "rate_limited":
-        return _unread(listing_stop)
+        return unread(listing_stop)
     if max_requests is not None and trace.sends() >= max_requests:
-        return _unread(ScanStop("max_requests", max_requests=max_requests))
+        return unread(ScanStop("max_requests", max_requests=max_requests))
     try:
-        user = account.user(client)
-        result = fetch_filtered_page(
-            records(user),
-            limit=None,
-            keep=keep_all,
-            max_requests=max_requests,
-        )
+        return read_whole(records(account.user(client)), max_requests=max_requests)
     except RateLimitError as exc:
-        return _unread(rate_limited_stop(exc))
+        return unread(rate_limited_stop(exc))
+
+
+def read_whole(listing: Listing, *, max_requests: int | None) -> Ownership:
+    """Every record of a folder's `listing`, 100 a request, unsorted, through
+    the filtered-scan machinery: `max_requests` and a 429 after the first
+    page stop it (the records read so far kept), and a 429 on the first page
+    propagates."""
+    result = fetch_filtered_page(
+        listing, limit=None, keep=keep_all, max_requests=max_requests
+    )
     return Ownership(
         Counter(item.id for item in result.items),
         len(result.items),

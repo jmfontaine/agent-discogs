@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from discogs_sdk import AuthMode
 
-    from agent_discogs.collection import Copies, MasterCopies, Ownership
+    from agent_discogs.collection import Copies, Counts, MasterCopies, Ownership
     from agent_discogs.inventory import Wants
     from agent_discogs.pagination import ScanStop
     from agent_discogs.wantlist import Market, MarketRead
@@ -893,6 +893,71 @@ def format_collection_value(currency: str, amounts: dict[str, float]) -> str:
     words = {"minimum": "min", "median": "median", "maximum": "max"}
     values = " · ".join(f"{words[name]} {value:.2f}" for name, value in amounts.items())
     return _text([[Span("Collection value", "label"), f" ({currency}): {values}"]])
+
+
+def _records(count: int) -> str:
+    return f"{count:,} record{'' if count == 1 else 's'}"
+
+
+def _whole_read(counted: int, read: Ownership) -> str:
+    """The header counts of a view of the whole collection: `(250 records)`,
+    `(12 of 250 records)` when filters kept 12 or the read stopped short,
+    then why it stopped and after how many records; or that `--max-requests`
+    ran out before the first page."""
+    total = read.total_records
+    if total is None:
+        cap = "" if read.stop is None else f" {read.stop.max_requests}"
+        return f"(--max-requests{cap} ran out before the scan started)"
+    shown = _records(total) if counted == total else f"{counted:,} of {_records(total)}"
+    if read.stop is None:
+        return f"({shown})"
+    # `scan stopped: rate limited, retry in 30s, after ...`
+    sep = "," if read.stop.reason == "rate_limited" else ""
+    return (
+        f"({shown}; {_scan_note(read.stop)}{sep} after {_records(read.records_read)})"
+    )
+
+
+def format_collection_counts(
+    username: str,
+    key: str,
+    counts: Counts,
+    read: Ownership,
+    *,
+    filters: dict[str, str],
+    top: int | None,
+) -> str:
+    """`get collection --count-by`: `value: count` per value, largest first
+    (the `top` largest with `top`, then how many more there are), a label or
+    artist with its ref, then the records with no value for `key`."""
+    subject = " ".join(
+        p for p in (username, _format_filters(filters), f"by {key}") if p
+    )
+    lines: list[Line] = [
+        [
+            _label("Collection"),
+            f" {subject} ",
+            Span(_whole_read(counts.records, read), "dim"),
+        ],
+    ]
+    shown = counts.groups[:top]
+    if shown:
+        lines.append("")
+    for group in shown:
+        if group.ref is None or group.value == group.ref:
+            name: list[Part] = [Span(group.ref, "ref") if group.ref else group.value]
+        else:
+            name = [group.value, " [", Span(group.ref, "ref"), "]"]
+        lines.append([*name, f": {group.count:,}"])
+    more = len(counts.groups) - len(shown)
+    if more:
+        lines.append([Span(f"… {more:,} more value{'' if more == 1 else 's'}", "dim")])
+    missing = counts.without_value
+    if missing:
+        verb = "has" if missing == 1 else "have"
+        noun = "year" if key == "decade" else key
+        lines += ["", f"{_records(missing)} {verb} no {noun}"]
+    return _text(lines)
 
 
 def listing_title(release: Any) -> str | None:

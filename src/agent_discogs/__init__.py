@@ -119,6 +119,25 @@ Get Collection:
                master, folder, added, rating (artists, genres, styles and
                master are not in the text row); --json --full: the collection
                records (folder_id, notes by field id).
+               get collection --count-by label|year|decade|format|genre|
+               style|artist instead counts your records per value, largest
+               first, ties by value, as 'Collection: me by genre (250
+               records)' then 'Electronic: 250'; a label or artist with an
+               id groups by it and shows its ref ('Nothing Records [@l647]:
+               12'), other values group ignoring case. A record counts once
+               per distinct value (two genres: in both; 2xVinyl: once):
+               format is the format name, year the pressing's, decade
+               '1990s'; records with no value are counted apart ('3 records
+               have no genre'). --top N keeps the N largest ('… 38 more
+               values'). The filters and --folder narrow what is counted
+               ('(12 of 250 records)'). It reads the whole collection, 100
+               records a request, the pages --owned reads: 1 request for
+               your username, 1 per 100 records (--folder: 1 more for the
+               folder names, then that folder's pages). --max-requests stops
+               it with partial counts, the header saying where; no --limit,
+               --page, --after, --sort, --desc, --fields or --full (--json:
+               count_by, records, without_value, distinct, counts of value,
+               ref, count, and the collection object of --owned).
                get collection --value instead prints its value from Discogs'
                Marketplace sales in your profile's currency, as 'Collection
                value (EUR): min 75.50 · median 100.25 · max 250.00' (--json:
@@ -238,9 +257,9 @@ Options:
                    --owned and --wanted reads or get wantlist --for-sale:
                    search or get versions with --release-type official, or
                    unofficial with --format; get releases --role / @l --year;
-                   get collection with a filter, not --folder alone (its
-                   username, folder list and --fields list count first);
-                   search with --owned or --wanted; get inventory with
+                   get collection with a filter or --count-by, not --folder
+                   alone (its username, folder list and --fields list count
+                   first); search with --owned or --wanted; get inventory with
                    --owned; get wantlist --for-sale; get inventory with a
                    filter (--in-wantlist's wantlist read counts too; about 1
                    request per 100 listings, so a 50,000-listing seller is 500:
@@ -405,6 +424,10 @@ Options:
                    --full
   --value          get collection: its value (min, median, max) in your
                    currency instead of the listing; takes no other flag
+  --count-by KEY   get collection: records per label, year, decade, format,
+                   genre, style or artist instead of the listing, largest
+                   first; reads the whole collection (see Get Collection)
+  --top N          get collection --count-by: only the N largest counts
   --credit, --track, --title, --anv
                    search: match a person credited on a release or master, a
                    track title, the release title (sent as release_title; on
@@ -428,7 +451,8 @@ Get flags by noun (any other get flag fails with invalid_argument):
   collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
                    --style, --year, --label, --artist, --title, --folder,
                    --fields, --after and --max-requests (with a filter, not
-                   --folder alone); or --value alone
+                   --folder alone); or --count-by with --top, the filters,
+                   --folder and --max-requests; or --value alone
   lists            no ref; --limit, --page
   stats            --currency
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
@@ -557,6 +581,7 @@ Examples:
   agent-discogs get versions @m3719 --owned --wanted
   agent-discogs get versions @m3719 --market --currency EUR --limit 10
   agent-discogs get collection --style Techno --format 12\\" --max-requests 20
+  agent-discogs get collection --count-by genre --top 10
   agent-discogs get collection --value
   agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
   agent-discogs get inventory <seller> --in-wantlist --condition VG+ --max-requests 60
