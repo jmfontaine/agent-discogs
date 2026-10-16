@@ -17,7 +17,7 @@ Global flags precede the command (`agent-discogs --cached price @r847868`).
 
 After any command that talks to the API, stderr ends with a budget line such as `api: 3 requests · 43/60 left this minute` (`⚠` when 10 or fewer remain). See the Budget section of SKILL.md (`agent-discogs skills get core`).
 
-The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and repeats `--max-requests` and `--owned` when they were given (and, for `get collection` and `get inventory`, `--limit`, its filters, `--sort` and `--desc`, plus `--in-wantlist` for the inventory; for `get lists` and `get wantlist`, `--limit`, plus `--for-sale`, `--max-price` and `--currency` for the wantlist). An inventory username starting with `-` is put after `--`.
+The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` when the list was read under one, so the next page follows the same cache policy, and repeats `--max-requests` and `--owned` when they were given (and, for `get collection` and `get inventory`, `--limit`, its filters, `--sort` and `--desc`, plus `--folder` for the collection (not a filter) and `--in-wantlist` for the inventory; for `get lists` and `get wantlist`, `--limit`, plus `--for-sale`, `--max-price` and `--currency` for the wantlist). An inventory username starting with `-` is put after `--`.
 
 ### Client-side scans
 
@@ -206,7 +206,7 @@ Each flag applies only to the nouns below. Any other flag fails with `invalid_ar
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort`, `--desc`, `--owned`, `--after` and `--max-requests` (with `--role` or `--owned`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--after` and `--max-requests` (with `--year` or `--owned`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort`, `--desc`, `--release-type`, `--owned`, `--after` (with a `--release-type` scan) and `--max-requests` (with a `--release-type` scan or `--owned`) |
-| `collection` | no ref; `--limit`, `--page`, `--sort`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--after` and `--max-requests` (with a filter); or `--value` alone |
+| `collection` | no ref; `--limit`, `--page`, `--sort`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--artist`, `--title`, `--folder`, `--after` and `--max-requests` (with a filter, not `--folder` alone); or `--value` alone |
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
 | `inventory` | one username, not a ref; `--limit`, `--page`, `--sort`, `--desc`, `--owned`, `--condition`, `--sleeve`, `--ships-from`, `--in-wantlist`, `--max-price` and `--currency` (each needs the other), `--after` (with a filter) and `--max-requests` (with a filter or `--owned`) |

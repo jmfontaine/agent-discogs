@@ -4,6 +4,7 @@ transport."""
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from typing import Any
 
@@ -19,11 +20,20 @@ _RECORDS = f"{_USER}/collection/folders/0/releases"
 _FOLDER_LIST = f"{_USER}/collection/folders"
 _SEARCH = "/database/search"
 # Folder 5 is "Vinyl", 1 is "Uncategorized"; 0 ("All") is never a record's.
+# "To Sell" holds the records a test moves there through `odd`.
 _FOLDERS = [
     {"id": 0, "name": "All", "count": 250},
     {"id": 1, "name": "Uncategorized", "count": 249},
     {"id": 5, "name": "Vinyl", "count": 1},
+    {"id": 7, "name": "To Sell", "count": 0},
 ]
+
+
+def _folder(folder_id: int) -> str:
+    """The path of one folder's records."""
+    return f"{_USER}/collection/folders/{folder_id}/releases"
+
+
 # The Techno records: 12 of 250, on each of the three 100-record pages.
 _TECHNO = (5, 17, 40, 99, 100, 130, 160, 199, 200, 210, 230, 249)
 # The masters of the releases that have one: release 7 (records 3 and 120)
@@ -47,11 +57,13 @@ class _Collection:
     2024-01-(n % 28 + 1), except that the `_TECHNO` records are Techno 12"
     singles from 1992 on Tresor, record 3 is release 7, rated 4, in Vinyl,
     record 120 is release 7 again, in Uncategorized, the releases in
-    `_MASTERS` name their master, and `odd` replaces records by number. The
-    profile adds `profile` (by default `curr_abbr: EUR`) and the collection
-    value is `value` (by default `_VALUE`). `throttle` answers with a 429:
-    `"identity"` the username, `"folders"` the folder list, `"page:N"`
-    collection page N. A search lists releases 1 and 2."""
+    `_MASTERS` name their master, and `odd` replaces records by number. Each
+    folder of `folders` (by default `_FOLDERS`) lists the records whose
+    `folder_id` is its id, and folder 0 every record. The profile adds
+    `profile` (by default `curr_abbr: EUR`) and the collection value is
+    `value` (by default `_VALUE`). `throttle` answers with a 429:
+    `"identity"` the username, `"folders"` the folder list, `"page:N"` page
+    N of any folder. A search lists releases 1 and 2."""
 
     def __init__(
         self,
@@ -61,10 +73,12 @@ class _Collection:
         odd: dict[int, dict[str, Any]] | None = None,
         profile: dict[str, Any] | None = None,
         value: dict[str, Any] | None = None,
+        folders: list[dict[str, Any]] | None = None,
     ) -> None:
         self.size, self.throttle, self.odd = size, throttle, odd or {}
         self.profile = {"curr_abbr": "EUR"} if profile is None else profile
         self.value = _VALUE if value is None else value
+        self.folders = _FOLDERS if folders is None else folders
 
     def __call__(self, path: str, params: dict[str, str]) -> object:
         if path == "/oauth/identity":
@@ -74,12 +88,13 @@ class _Collection:
         if path == _FOLDER_LIST:
             if "folders" in self.throttle:
                 return _too_many()
-            return {"folders": _FOLDERS}
-        if path == _RECORDS:
+            return {"folders": self.folders}
+        folder = re.fullmatch(rf"{_USER}/collection/folders/(\d+)/releases", path)
+        if folder:
             page = int(params["page"])
             if f"page:{page}" in self.throttle:
                 return _too_many()
-            return self._page(page, int(params["per_page"]))
+            return self._page(int(folder[1]), page, int(params["per_page"]))
         if path == _USER:
             return {"id": 7, "username": "me", **self.profile}
         if path == _VALUE_PATH:
@@ -90,12 +105,14 @@ class _Collection:
             return {"pagination": pages, "results": rows}
         raise AssertionError(path)
 
-    def _page(self, page: int, per: int) -> object:
-        items = [
-            self.odd.get(n) or self.record(n)
-            for n in range((page - 1) * per, min(page * per, self.size))
-        ]
-        pages = {"page": page, "pages": -(-self.size // per), "items": self.size}
+    def _page(self, folder: int, page: int, per: int) -> object:
+        """Page `page` of folder `folder`: every record for folder 0, else
+        the records whose `folder_id` is `folder`."""
+        records = [self.odd.get(n) or self.record(n) for n in range(self.size)]
+        if folder:
+            records = [r for r in records if r.get("folder_id") == folder]
+        items = records[(page - 1) * per : page * per]
+        pages = {"page": page, "pages": -(-len(records) // per), "items": len(records)}
         return {"pagination": {**pages, "per_page": per}, "releases": items}
 
     @staticmethod
@@ -395,14 +412,22 @@ class TestListing:
         result, _ = h.run("get", "collection", "--style", "Techno", "--json")
         assert _document(result)["results"] == []
 
-    @pytest.mark.parametrize("throttle", ["identity", "folders"])
+    @pytest.mark.parametrize(
+        ("throttle", "flags"),
+        [
+            ("identity", ["--style", "Techno"]),
+            ("folders", ["--style", "Techno"]),
+            ("folders", ["--folder", "Vinyl"]),
+            ("folders", ["--folder", "Vinyl", "--json", "--full"]),
+        ],
+    )
     def test_a_429_before_the_listing_fails(
-        self, monkeypatch: pytest.MonkeyPatch, throttle: str
+        self, monkeypatch: pytest.MonkeyPatch, throttle: str, flags: list[str]
     ) -> None:
         h = _Harness(monkeypatch, _Collection(throttle=(throttle,)))
-        result, sent = h.run("get", "collection", "--style", "Techno", "--json")
+        result, sent = h.run("get", "collection", *flags, "--json")
         assert json_error(result)["code"] == "rate_limited"
-        assert _RECORDS not in _paths(sent)
+        assert not [path for path in _paths(sent) if path.endswith("/releases")]
 
 
 class TestFilters:
@@ -568,6 +593,258 @@ class TestFilters:
         assert len(_document(result)["results"]) == 12
 
 
+def _numbered(*numbers: int) -> list[str]:
+    """The refs of records `numbers` (record 3 and 120 are release 7)."""
+    return [f"@r{_Collection.record(n)['id']}" for n in numbers]
+
+
+def _moved(n: int, folder_id: int, **information: Any) -> dict[str, Any]:
+    """Record `n` in folder `folder_id`, with `information` replacing parts
+    of its `basic_information`."""
+    record = _Collection.record(n)
+    basic = {**record["basic_information"], **information}
+    return {**record, "folder_id": folder_id, "basic_information": basic}
+
+
+class TestPatterns:
+    def test_title_and_artist_match_a_whole_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "collection", "--limit", "100", "--json"]
+        result, sent = h.run(*argv, "--title", "record 12")
+        assert _refs(result) == _numbered(12)  # not 120-129
+        assert _pages(sent) == [1, 2, 3]
+        assert _document(result)["pagination"]["filtered"] is True
+        result, _ = h.run(*argv, "--title", "*record 12*")
+        assert _refs(result) == _numbered(12, *range(120, 130))
+        assert len(_refs(h.run(*argv, "--artist", "*rtis*")[0])) == 100
+        assert _refs(h.run(*argv, "--artist", "artist")[0])[:3] == _numbered(0, 1, 2)
+        # --title never matches the artist, --artist never the title.
+        assert _refs(h.run(*argv, "--title", "Artist")[0]) == []
+        assert _refs(h.run(*argv, "--artist", "Record 1")[0]) == []
+        assert _refs(h.run(*argv, "--artist", "*record*")[0]) == []
+
+    def test_a_split_release_matches_any_artist(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        split = [
+            {"id": 1, "name": "Miles Davis", "join": "&"},
+            {"id": 2, "name": "John Coltrane", "join": ""},
+        ]
+        odd = {4: _moved(4, 1, artists=split)}
+        h = _Harness(monkeypatch, _Collection(odd=odd))
+        argv = ["get", "collection", "--json"]
+        for artist in ("miles davis", "John Coltrane", "*coltrane", "miles*"):
+            assert _refs(h.run(*argv, "--artist", artist)[0]) == _numbered(4)
+        assert _refs(h.run(*argv, "--artist", "miles")[0]) == []
+
+    def test_every_filter_must_match(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "collection", "--limit", "100"]
+        filters = ["--style", "Techno", "--artist", "artist", "--title", "*1*"]
+        result, _ = h.run(*argv, *filters, "--json")
+        assert _refs(result) == _numbered(17, 100, 130, 160, 199, 210)
+        result, _ = h.run(*argv, *filters, "--format", "LP", "--json")
+        assert _refs(result) == []
+        text, _ = h.run(*argv, *filters)
+        assert text.stdout.splitlines()[0] == (
+            "Collection: me style=Techno artist=artist title=*1* "
+            "(page 1, 6 of ≤250 records)"
+        )
+
+    def test_the_continuation_keeps_the_patterns(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        filters = ["--artist", "\\Art*", "--title", "Record 1*"]
+        result, _ = h.run("get", "collection", *filters, "--limit", "2")
+        assert result.exit_code == 0, result.output
+        assert result.stdout.splitlines()[0] == (
+            'Collection: me artist=\\Art* title="Record 1*" (page 1, 2 of ≤250 records)'
+        )
+        continuation = _continuation(result)
+        assert continuation == [
+            *("get", "collection", *filters),
+            *("--limit", "2", "--after", "2:11"),
+        ]
+        more, _ = h.run(*continuation, "--json")
+        assert _refs(more) == _numbered(11, 12)
+
+    @pytest.mark.parametrize(
+        ("flags", "numbers"),
+        [
+            (["--style", "techno"], _TECHNO),
+            (["--style", "*tech*"], _TECHNO),
+            (["--style", "*o*"], _TECHNO + tuple(n for n in range(250))),
+            (["--year", "19*"], _TECHNO),
+            (["--year", "199?"], ()),  # `?` is literal
+            (["--label", "tres*"], _TECHNO),
+            (["--genre", "Elec*"], tuple(range(250))),
+        ],
+    )
+    def test_existing_filters_take_patterns(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        flags: list[str],
+        numbers: tuple[int, ...],
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, _ = h.run("get", "collection", *flags, "--limit", "100", "--json")
+        assert _refs(result) == _numbered(*sorted(set(numbers)))[:100]
+
+    def test_a_record_with_no_year_never_matches_a_year(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        odd = {1: _moved(1, 1, year=0), 2: _moved(2, 1, year=None)}
+        h = _Harness(monkeypatch, _Collection(4, odd=odd))
+        result, _ = h.run("get", "collection", "--year", "*", "--json")
+        assert _refs(result) == _numbered(0, 3)
+
+
+class TestFolder:
+    def test_lists_one_folder_server_side(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for name in ("Vinyl", "vinyl"):
+            h = _Harness(monkeypatch)
+            result, sent = h.run("get", "collection", "--folder", name, "--json")
+            assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, _folder(5)]
+            document = _document(result)
+            assert _refs(result) == ["@r7"]
+            assert document["pagination"] == {
+                "page": 1,
+                "total_items": 1,
+                "total_pages": 1,
+            }
+        text, sent = h.run("get", "collection", "--folder", "vinyl")
+        assert sent == []
+        assert text.stdout.splitlines()[0] == (
+            "Collection: me folder=vinyl (page 1, 1 of 1 records)"
+        )
+        assert "Next page:" not in text.stdout
+
+    def test_a_folder_name_with_a_space(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        odd = {10: _moved(10, 7), 11: _moved(11, 7)}
+        h = _Harness(monkeypatch, _Collection(odd=odd))
+        argv = ["get", "collection", "--folder", "To Sell", "--limit", "1"]
+        result, sent = h.run(*argv)
+        assert result.exit_code == 0, result.output
+        assert _paths(sent)[-1] == _folder(7)
+        lines = result.stdout.splitlines()
+        assert lines[0] == 'Collection: me folder="To Sell" (page 1, 1 of 2 records)'
+        assert lines[-1] == (
+            "Next page: agent-discogs get collection --folder 'To Sell' "
+            "--limit 1 --page 2"
+        )
+        again, sent = h.run(*argv)
+        assert sent == []
+        assert again.stdout == result.stdout
+        more, sent = h.run(*_continuation(result), "--json")
+        assert _refs(more) == _numbered(11)
+        assert _paths(sent) == [_folder(7)]
+
+    def test_pages_a_folder(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "collection", "--folder", "Uncategorized", "--limit", "2"]
+        result, sent = h.run(*argv, "--page", "2", "--sort", "year")
+        assert result.exit_code == 0, result.output
+        assert sent[-1] == (
+            _folder(1),
+            {"sort": "year", "sort_order": "asc", "page": "2", "per_page": "2"},
+        )
+        assert result.stdout.splitlines()[-1] == (
+            "Next page: agent-discogs get collection --folder Uncategorized "
+            "--sort year --limit 2 --page 3"
+        )
+
+    def test_all_is_folder_0(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", "collection", "--folder", "All", "--json")
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, _RECORDS]
+        plain, sent = h.run("get", "collection", "--json")
+        assert sent == []
+        assert plain.stdout == result.stdout
+
+    def test_scans_only_the_folder(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "collection", "--folder", "Uncategorized", "--style", "Techno"]
+        result, sent = h.run(*argv, "--limit", "100")
+        assert result.exit_code == 0, result.output
+        assert _paths(sent)[2:] == [_folder(1)] * 3
+        lines = result.stdout.splitlines()
+        assert lines[0] == (
+            "Collection: me folder=Uncategorized style=Techno "
+            "(page 1, 12 of ≤249 records)"
+        )
+        assert [line.split()[0] for line in lines[2:]] == _TECHNO_REFS
+
+        h = _Harness(monkeypatch)
+        result, sent = h.run(*argv, "--limit", "100", "--max-requests", "4")
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, *[_folder(1)] * 2]
+        continuation = _continuation(result)
+        assert continuation[:6] == argv
+        assert continuation[-2:] == ["--after", "2:200"]
+        more, sent = h.run(*continuation)
+        assert _paths(sent) == [_folder(1)]
+        assert more.exit_code == 0, more.output
+
+    def test_a_cap_spent_by_the_username_resolves_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "collection", "--folder", "Vinyl", "--style", "Techno"]
+        result, sent = h.run(*argv, "--max-requests", "1", "--json")
+        assert _paths(sent) == ["/oauth/identity"]
+        pagination = _document(result)["pagination"]
+        assert pagination["capped"] is True
+        assert pagination["next_cursor"] == "1:0"
+        text, _ = h.run(*argv, "--max-requests", "1")
+        assert _continuation(text) == [
+            *argv,
+            *("--max-requests", "1", "--after", "1:0"),
+        ]
+
+    def test_full_reads_the_folder_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run(
+            "get", "collection", "--folder", "Vinyl", "--json", "--full"
+        )
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, _folder(5)]
+        assert _document(result)["results"][0]["folder_id"] == 5
+
+    def test_an_unknown_folder(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", "collection", "--folder", "Jazzz", "--json")
+        error = json_error(result)
+        assert error["code"] == "invalid_argument"
+        assert error["message"] == (
+            '--folder "Jazzz" matches no folder. '
+            "Your folders: All, Uncategorized, Vinyl, To Sell."
+        )
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST]
+        text, sent = h.run("get", "collection", "--folder", "Jazzz")
+        assert sent == []
+        assert text_error(text).startswith('✗ --folder "Jazzz" matches no folder.')
+
+    def test_an_ambiguous_folder(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        folders = [*_FOLDERS, {"id": 8, "name": "Jazz"}, {"id": 9, "name": "jazz"}]
+        h = _Harness(monkeypatch, _Collection(folders=folders))
+        result, sent = h.run("get", "collection", "--folder", "JAZZ", "--json")
+        error = json_error(result)
+        assert error["code"] == "invalid_argument"
+        assert error["message"].startswith(
+            '--folder "JAZZ" matches more than one folder: Jazz (id 8), jazz (id 9).'
+        )
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST]
+
+    def test_cached_misses_fail(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("--cached", "get", "collection", "--folder", "Vinyl")
+        assert "Not cached" in text_error(result)
+        assert sent == []
+
+
 class TestArguments:
     @pytest.mark.parametrize(
         "argv",
@@ -586,6 +863,16 @@ class TestArguments:
             "get collection --role Main",
             "get release @r1 --genre Rock",
             "get versions @m1 --style Techno",
+            "get collection --folder Vinyl --max-requests 5",
+            "get collection --folder Vinyl --after 1:0",
+            "get collection --artist x --page 2",
+            "get collection --title x --page 2",
+            "get collection --folder Vinyl --value",
+            "get collection --artist x --value",
+            "get collection --title x --value",
+            "get release @r1 --artist x",
+            "get versions @m1 --folder Vinyl",
+            "get wantlist --title x",
         ],
     )
     def test_misplaced_flags_fail_before_any_request(
@@ -604,15 +891,28 @@ class TestArguments:
         )
         assert sent == []
 
+    @pytest.mark.parametrize("flag", ["--style", "--artist", "--title"])
     @pytest.mark.parametrize("value", ["", "  "])
     def test_an_empty_filter_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, flag: str, value: str
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", "collection", flag, value)
+        assert text_error(result).startswith(
+            f"✗ {flag} needs a value: a filter matches a whole value, ignoring "
+            "case, with * for any run of characters."
+        )
+        assert sent == []
+
+    @pytest.mark.parametrize("value", ["", "  "])
+    def test_an_empty_folder_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch, value: str
     ) -> None:
         h = _Harness(monkeypatch)
-        result, sent = h.run("get", "collection", "--style", value)
-        assert text_error(result).startswith(
-            "✗ --style needs a value: a filter matches one value exactly."
-        )
+        result, sent = h.run("get", "collection", "--folder", value, "--json")
+        error = json_error(result)
+        assert error["code"] == "invalid_argument"
+        assert error["message"].startswith("--folder needs a folder name")
         assert sent == []
 
 

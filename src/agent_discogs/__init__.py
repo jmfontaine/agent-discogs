@@ -70,17 +70,25 @@ Get Collection:
                folder Vinyl · added 2024-01-04 · rating 4'. No ref. Needs
                DISCOGS_TOKEN or OAuth. --sort label|artist|title|catno|format|
                rating|added|year and --desc are sent to Discogs. --format,
-               --genre, --style, --year, --label keep records where one value
-               (format name or description, genre, style, year, label name)
-               equals it, any case; a filter makes it a client-side scan
-               (--after, --max-requests; no --page, no --country). 1 request
-               for your username, 1 for your folder names (not with --json
-               --full), then 1 per page or per 100 records scanned; without
-               --sort a scan reuses the pages --owned cached. --json: ref,
-               title, artists, year, label, catno, format, genres, styles,
-               master, folder, added, rating (artists, genres, styles and
-               master are not in the text row); --json --full: the
-               collection records (folder_id).
+               --genre, --style, --year, --label, --artist (a credited
+               artist), --title (the release title) keep records where one
+               value matches the pattern: the whole value, any case, * for
+               any run of characters, \\ before * or \\ for a literal one
+               (--artist '\\*NSYNC': single-quote it in a shell); a filter
+               makes it a client-side scan (--after, --max-requests; no
+               --page, no --country). --folder NAME lists only that folder
+               (as rows print it, any case; All, Uncategorized; no pattern):
+               not a filter, it pages server-side (--page; no --after or
+               --max-requests) and, with a filter, scans only that folder.
+               1 request for your username, 1 for your folder names (not
+               with --json --full, except with --folder, which needs them),
+               then 1 per page or per 100 records scanned; an unknown or
+               ambiguous --folder fails after those 2 and lists the
+               folders. Without --sort or --folder a scan reuses the pages
+               --owned cached. --json: ref, title, artists, year, label,
+               catno, format, genres, styles, master, folder, added, rating
+               (artists, genres, styles and master are not in the text row);
+               --json --full: the collection records (folder_id).
                get collection --value instead prints its value from Discogs'
                Marketplace sales in your profile's currency, as 'Collection
                value (EUR): min 75.50 · median 100.25 · max 250.00' (--json:
@@ -196,12 +204,13 @@ Options:
                    --owned collection read or get wantlist --for-sale: search
                    or get versions with --release-type official, or unofficial
                    with --format; get releases --role / @l --year; get
-                   collection with a filter (its username and folder list
-                   count first); get releases, get versions and get inventory
-                   with --owned; get wantlist --for-sale; get inventory with a
-                   filter (--in-wantlist's wantlist read counts too; about 1
-                   request per 100 listings, so a 50,000-listing seller is 500:
-                   always pass it); one ref only. Default: no cap, the
+                   collection with a filter, not --folder alone (its username
+                   and folder list count first); get releases, get versions and
+                   get inventory with --owned; get wantlist --for-sale; get
+                   inventory with a filter (--in-wantlist's wantlist read
+                   counts too; about 1 request per 100 listings, so a
+                   50,000-listing seller is 500: always pass it); one ref only.
+                   Default: no cap, the
                    scan runs until the page fills or the list ends (--for-sale:
                    about 1 request per want, 500 wants = ~9 minutes of the
                    60/min budget, so always pass it; 3 or more there: the
@@ -309,9 +318,12 @@ Options:
                    filter by year (server-side); get releases @l and get
                    collection: keep that year (client-side scan, continues via
                    --after)
-  --format, --label, --genre, --style
-                   get collection: keep records with that format name or
-                   description, label name, genre or style (any case)
+  --format, --label, --genre, --style, --artist, --title
+                   get collection: keep records matching the pattern: format
+                   name or description, label name, genre, style, credited
+                   artist, release title; * is any run of characters
+  --folder NAME    get collection: list only that folder, by name as rows print
+                   it (any case; not a pattern); pages server-side on its own
   --value          get collection: its value (min, median, max) in your
                    currency instead of the listing; takes no other flag
   --version        Show version and exit
@@ -328,8 +340,9 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --release-type scan) and --max-requests (with a scan or
                    --owned)
   collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
-                   --style, --year, --label, --after and --max-requests (with a
-                   filter); or --value alone
+                   --style, --year, --label, --artist, --title, --folder,
+                   --after and --max-requests (with a filter, not --folder
+                   alone); or --value alone
   lists            no ref; --limit, --page
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
                    --currency (both with --for-sale), --after and
@@ -361,8 +374,9 @@ Environment:
 Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
   it repeats --cached or --fresh, --max-requests, --owned, for get collection
-  and get inventory --limit, its filters, --sort and --desc (inventory also
-  --in-wantlist), and, for get lists and get wantlist, --limit (and
+  and get inventory --limit, its filters (get collection also --folder, not a
+  filter), --sort and --desc (inventory also --in-wantlist), and, for get
+  lists and get wantlist, --limit (and
   --for-sale, --max-price and --currency), and puts a search's type and query
   after --, so a query such as -ambient survives (a seller's name starting
   with - too).
