@@ -19,6 +19,7 @@ from agent_discogs.collection import (
     ALL_FOLDER,
     Ownership,
     copies,
+    custom_fields,
     folder_id,
     folder_names,
     mark_rows,
@@ -671,6 +672,7 @@ def _get_collection(
     after: str | None,
     filters: dict[str, str],
     folder: str | None,
+    fields: bool,
     sort: str | None,
     desc: bool,
     max_requests: int | None,
@@ -678,15 +680,21 @@ def _get_collection(
 ) -> Any:
     """The user's collection, or with `folder` one folder of it, one row
     per copy: server-side pages, or with a filter a client-side scan of
-    100-record pages."""
-    # The username and the folder list go before the listing, the way a
-    # header does, so --max-requests counts them first. --full names folders
-    # by id, so it reads the list only to resolve --folder; once the cap is
-    # spent the scan reads no row to name and no folder to resolve.
+    100-record pages. With `fields`, each row names the copy's notes."""
+
+    def cap_spent() -> bool:
+        return max_requests is not None and trace.sends() >= max_requests
+
+    # The username, the folder list and the fields list go before the
+    # listing, the way a header does, so --max-requests counts them first.
+    # --full names folders by id, so it reads the list only to resolve
+    # --folder; once the cap is spent the scan reads no row to name and no
+    # folder to resolve.
     user = account.user(client)
-    spent = max_requests is not None and trace.sends() >= max_requests
+    spent = cap_spent()
     names = {} if spent or (mode.full and folder is None) else folder_names(user)
     keep = record_filter(filters)
+    custom = None
     if spent:
         # Only a scan takes --max-requests; it continues where it was asked.
         result = unscanned(after, ScanStop("max_requests", max_requests=max_requests))
@@ -697,6 +705,8 @@ def _get_collection(
             sort=sort,
             desc=desc,
         )
+        if fields and not cap_spent():
+            custom = custom_fields(user)
         if keep:
             result = fetch_filtered_page(
                 listing, limit=limit, keep=keep, cursor=after, max_requests=max_requests
@@ -705,13 +715,14 @@ def _get_collection(
             result = fetch_page(listing, page=page or 1, per_page=limit)
 
     if mode.json:
-        return mode.page(result, lambda record: project_record(record, names))
+        return mode.page(result, lambda record: project_record(record, names, custom))
 
     footer_cmd = next_page_cmd(
         ["get", "collection"],
         result,
         limit=limit,
         folder=folder,
+        fields=fields,
         format=filters.get("format"),
         genre=filters.get("genre"),
         style=filters.get("style"),
@@ -731,6 +742,7 @@ def _get_collection(
         result.total_items,
         footer_cmd,
         folders=names,
+        fields=custom,
         filters=shown,
         filtered=result.filtered,
         stop=result.stop,
@@ -957,6 +969,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "after",
             "artist",
             "desc",
+            "fields",
             "folder",
             "format_",
             "genre",
@@ -1168,11 +1181,12 @@ def _collection_error(
     filters: dict[str, str],
     folder: str | None,
     max_requests: int | None,
+    full: bool,
 ) -> str | None:
     """What `get collection` cannot take: a ref, any other flag with
-    --value, an empty filter (it would match nothing) or folder name, or
-    --max-requests without a filter, which leaves no scan to cap
-    (`--folder` alone pages server-side)."""
+    --value, --fields with --json --full, an empty filter (it would match
+    nothing) or folder name, or --max-requests without a filter, which
+    leaves no scan to cap (`--folder` alone pages server-side)."""
     if refs:
         return "get collection takes no ref: it lists your own collection."
     others = sorted(_option_flag(name) for name in explicit - {"value"})
@@ -1180,6 +1194,12 @@ def _collection_error(
         return (
             f"--value takes no other get collection flag ({', '.join(others)} "
             "given): it prints your collection's value, not a listing."
+        )
+    if full and "fields" in explicit:
+        return (
+            "--fields does not apply with --json --full: --full prints each "
+            "record's notes as Discogs sends them, by field id. Drop --full, "
+            "or --fields."
         )
     empty = [f"--{key}" for key, value in filters.items() if not value.strip()]
     if empty:
@@ -1227,6 +1247,7 @@ def _flag_error(
     ships_from: str | None,
     in_wantlist: bool,
     folder: str | None,
+    full: bool,
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
@@ -1270,6 +1291,7 @@ def _flag_error(
             filters=collection_filters,
             folder=folder,
             max_requests=max_requests,
+            full=full,
         )
         if collection_error:
             return collection_error
@@ -1517,6 +1539,7 @@ def _dispatch(
     artist: str | None,
     title: str | None,
     folder: str | None,
+    fields: bool,
     verbose: bool,
     compact: bool,
     master_year: bool,
@@ -1572,6 +1595,7 @@ def _dispatch(
         sleeve=sleeve,
         ships_from=ships_from,
         in_wantlist=in_wantlist,
+        full=mode.full,
     )
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
@@ -1616,6 +1640,7 @@ def _dispatch(
                         after=after,
                         filters=collection_filters,
                         folder=folder,
+                        fields=fields,
                         sort=sort,
                         desc=desc,
                         max_requests=max_requests,
@@ -1801,6 +1826,13 @@ def _json_options(command: Any) -> Any:
     help="wantlist: keep the wants with copies for sale (one stats request each)",
 )
 @click.option(
+    "--fields",
+    is_flag=True,
+    default=False,
+    help="collection: show each copy's notes and custom fields by name "
+    "(Media Condition: VG+); one more request (not with --json --full)",
+)
+@click.option(
     "--folder",
     metavar="NAME",
     help="collection: list only this folder, by name as rows print it (any "
@@ -1951,6 +1983,7 @@ def get(
     artist: str | None,
     title: str | None,
     folder: str | None,
+    fields: bool,
     verbose: bool,
     year: str | None,
 ) -> None:
@@ -1993,6 +2026,7 @@ def get(
         artist=artist,
         title=title,
         folder=folder,
+        fields=fields,
         condition=condition,
         sleeve=sleeve,
         ships_from=ships_from,
@@ -2030,6 +2064,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         artist=None,
         title=None,
         folder=None,
+        fields=False,
         condition=None,
         sleeve=None,
         ships_from=None,

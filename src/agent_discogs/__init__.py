@@ -86,13 +86,18 @@ Get Collection:
                --max-requests) and, with a filter, scans only that folder.
                1 request for your username, 1 for your folder names (not
                with --json --full, except with --folder, which needs them),
-               then 1 per page or per 100 records scanned; an unknown or
-               ambiguous --folder fails after those 2 and lists the
-               folders. Without --sort or --folder a scan reuses the pages
-               --owned cached. --json: ref, title, artists, year, label,
-               catno, format, genres, styles, master, folder, added, rating
-               (artists, genres, styles and master are not in the text row);
-               --json --full: the collection records (folder_id).
+               1 more for your field names with --fields, then 1 per page or
+               per 100 records scanned; an unknown or ambiguous --folder fails
+               after the folder names and lists the folders. Without --sort or
+               --folder a scan reuses the pages --owned cached. --fields shows
+               each copy's notes and custom fields by name after the rating,
+               as '· Media Condition: VG+ · Notes: Shelf A3' (--json: a fields
+               object after rating; a Discogs grade name in a dropdown field
+               is shortened to VG+; not with --json --full). --json: ref,
+               title, artists, year, label, catno, format, genres, styles,
+               master, folder, added, rating (artists, genres, styles and
+               master are not in the text row); --json --full: the collection
+               records (folder_id, notes by field id).
                get collection --value instead prints its value from Discogs'
                Marketplace sales in your profile's currency, as 'Collection
                value (EUR): min 75.50 · median 100.25 · max 250.00' (--json:
@@ -212,9 +217,10 @@ Options:
                    --owned collection read or get wantlist --for-sale: search
                    or get versions with --release-type official, or unofficial
                    with --format; get releases --role / @l --year; get
-                   collection with a filter, not --folder alone (its username
-                   and folder list count first); get releases, get versions and
-                   get inventory with --owned; get wantlist --for-sale; get
+                   collection with a filter, not --folder alone (its username,
+                   folder list and --fields list count first); get releases,
+                   get versions and get inventory with --owned; get wantlist
+                   --for-sale; get
                    inventory with a filter (--in-wantlist's wantlist read
                    counts too; about 1 request per 100 listings, so a
                    50,000-listing seller is 500: always pass it); one ref only.
@@ -337,6 +343,9 @@ Options:
                    artist, release title; * is any run of characters
   --folder NAME    get collection: list only that folder, by name as rows print
                    it (any case; not a pattern); pages server-side on its own
+  --fields         get collection: each copy's notes and custom fields by name
+                   (Media Condition: VG+); 1 more request; not with --json
+                   --full
   --value          get collection: its value (min, median, max) in your
                    currency instead of the listing; takes no other flag
   --credit, --track, --title, --anv
@@ -360,8 +369,8 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --owned)
   collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
                    --style, --year, --label, --artist, --title, --folder,
-                   --after and --max-requests (with a filter, not --folder
-                   alone); or --value alone
+                   --fields, --after and --max-requests (with a filter, not
+                   --folder alone); or --value alone
   lists            no ref; --limit, --page
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
                    --currency (both with --for-sale), --after and
@@ -394,8 +403,8 @@ Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
   it repeats --cached or --fresh, --max-requests, --owned, for get collection
   and get inventory --limit, its filters (get collection also --folder, not a
-  filter), --sort and --desc (inventory also --in-wantlist), and, for get
-  lists and get wantlist, --limit (and
+  filter, and --fields), --sort and --desc (inventory also --in-wantlist),
+  and, for get lists and get wantlist, --limit (and
   --for-sale, --max-price and --currency), and puts a search's type and query
   after --, so a query such as -ambient survives (a seller's name starting
   with - too).

@@ -7,7 +7,8 @@ filtered-scan machinery (`fetch_filtered_page`, keeping every row), so
 list rows against it. `get owned` asks about one release at a time. `get
 collection` lists the same folder, or with `--folder` another one
 (`records()`), a page at a time or, with a filter (`record_filter()`),
-through a scan.
+through a scan; with `--fields` it names each copy's notes and custom
+fields (`custom_fields()`, `field_values()`).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import click
 from discogs_sdk import RateLimitError
 
 from agent_discogs import account, trace
+from agent_discogs.inventory import short_grade
 from agent_discogs.pagination import (
     MAX_LIMIT,
     Listing,
@@ -47,6 +49,7 @@ ALL_FOLDER = 0
 # for several refs under --fresh.
 _OWNERSHIP = "agent_discogs.ownership"
 _FOLDER_NAMES = "agent_discogs.folder_names"
+_CUSTOM_FIELDS = "agent_discogs.custom_fields"
 
 # The collection value's amounts, in the order every view gives them.
 _AMOUNTS = ("minimum", "median", "maximum")
@@ -325,6 +328,71 @@ def folder_name(names: dict[int, str], folder_id: int | None) -> str | None:
     if folder_id is None:
         return None
     return names.get(folder_id, f"folder {folder_id}")
+
+
+@dataclass(frozen=True)
+class CustomField:
+    """One of the user's collection fields: the `name` a row prints it under
+    and whether it is a dropdown, whose grade values print as short codes."""
+
+    name: str
+    dropdown: bool
+
+
+def custom_fields(user: Any) -> dict[int, CustomField]:
+    """The user's notes and custom fields by id, in the order Discogs shows
+    them (`position`, then id; a field with no position last): one request
+    (`GET .../collection/fields`), at most once per invocation. A name
+    another field also prints under becomes `Name (field N)`, so every key
+    of a row is unique."""
+    meta = click.get_current_context().meta
+    if _CUSTOM_FIELDS not in meta:
+        listed = sorted(
+            user.collection.fields.list(),
+            key=lambda f: (f.position is None, f.position or 0, f.id),
+        )
+        keys = {f.id: f.name for f in listed}
+        # Suffixing a shared name can produce another field's own name
+        # (`Box (field 7)`), so repeat until no two keys clash. No two
+        # suffixed keys can clash (each ends in its own id), so every pass
+        # suffixes a plain name, and it ends.
+        while True:
+            counts = Counter(keys.values())
+            clashing = [f for f in listed if counts[keys[f.id]] > 1]
+            if not clashing:
+                break
+            for f in clashing:
+                keys[f.id] = f"{f.name} (field {f.id})"
+        meta[_CUSTOM_FIELDS] = {
+            f.id: CustomField(keys[f.id], f.type == "dropdown") for f in listed
+        }
+    return meta[_CUSTOM_FIELDS]
+
+
+def field_values(record: Any, fields: dict[int, CustomField]) -> dict[str, str]:
+    """A copy's non-empty notes by field name, in the fields' order: a grade
+    in a dropdown as its short code (`VG+`), anything else as sent. A note
+    whose field the list lacks comes last, as `field N` (`field N (field N)`
+    when a field of the list is named `field N`); one with no field id is
+    dropped."""
+    sent: dict[int, str] = {}
+    for note in getattr(record, "notes", None) or []:
+        if note.field_id is not None and note.value:
+            sent.setdefault(note.field_id, note.value)
+    values: dict[str, str] = {}
+    for field_id, field in fields.items():
+        if field_id in sent:
+            value = sent[field_id]
+            values[field.name] = (
+                (short_grade(value) or value) if field.dropdown else value
+            )
+    names = {field.name for field in fields.values()}
+    for field_id in sorted(sent.keys() - fields.keys()):
+        key = f"field {field_id}"
+        while key in names:
+            key = f"{key} (field {field_id})"
+        values[key] = sent[field_id]
+    return values
 
 
 def copies(client: Discogs, release_id: int, *, folders: bool) -> Copies:
