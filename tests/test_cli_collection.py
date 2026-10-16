@@ -304,6 +304,16 @@ class TestArguments:
             "get collection --count-by genre --top 0",
             "get release @r1 --count-by genre",
             "get versions @m1 --top 3",
+            "get collection --duplicates release --limit 5",
+            "get collection --duplicates release --page 2",
+            "get collection --duplicates release --after 1:0",
+            "get collection --duplicates release --sort year",
+            "get collection --duplicates release --desc",
+            "get collection --duplicates release --value",
+            "get collection --duplicates release --count-by genre",
+            "get collection --duplicates release --top 3",
+            "get collection --duplicates release --fields --full",
+            "get release @r1 --duplicates release",
         ],
     )
     def test_misplaced_flags_fail_before_any_request(
@@ -624,7 +634,12 @@ class TestNeedsAUser:
         assert "get collection" in error["message"]
         assert sent == []
 
-        for argv in (["--style", "Techno"], ["--value"], ["--count-by", "genre"]):
+        for argv in (
+            ["--style", "Techno"],
+            ["--value"],
+            ["--count-by", "genre"],
+            ["--duplicates", "release"],
+        ):
             result, sent = h.run("get", "collection", *argv)
             assert "DISCOGS_TOKEN" in text_error(result)
             assert sent == []

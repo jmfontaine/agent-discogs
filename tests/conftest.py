@@ -298,7 +298,8 @@ def _tracks_fake(recorder: Callable[[], None]) -> SimpleNamespace:
 _ROW = re.compile(r"Row(\d+)e(\d+)")
 
 # The `get collection` API (`_Collection`), its harness and result readers,
-# shared by test_cli_collection.py and test_cli_collection_filters.py.
+# shared by test_cli_collection.py, test_cli_collection_filters.py and
+# test_cli_collection_views.py.
 _USER = "/users/me"
 _RECORDS = f"{_USER}/collection/folders/0/releases"
 _FOLDER_LIST = f"{_USER}/collection/folders"

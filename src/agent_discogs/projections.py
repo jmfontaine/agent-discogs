@@ -16,7 +16,13 @@ from typing import Any
 from pydantic import TypeAdapter
 
 from agent_discogs import markup
-from agent_discogs.collection import CustomField, field_values, folder_name
+from agent_discogs.collection import (
+    CustomField,
+    Duplicate,
+    field_values,
+    folder_name,
+    folders_of,
+)
 from agent_discogs.formatting import (
     _community_counts,
     _format_string,
@@ -499,6 +505,37 @@ def project_record(
             "fields": None if fields is None else field_values(record, fields),
         }
     )
+
+
+def _project_copies(
+    copies: list[Any], folders: dict[int, str], fields: dict[int, CustomField] | None
+) -> dict[str, Any]:
+    """A `--duplicates` release: the `get collection` row of its first copy
+    without the copy's own `folder`, `added` and `rating`, then how many
+    `copies` and the `folders` they are in."""
+    row = project_record(copies[0], folders, fields)
+    for key in ("folder", "added", "rating"):
+        row.pop(key, None)
+    return drop_empty(
+        {**row, "copies": len(copies), "folders": folders_of(folders, copies)}
+    )
+
+
+def project_duplicate(
+    group: Duplicate,
+    kind: str,
+    folders: dict[int, str],
+    fields: dict[int, CustomField] | None,
+) -> dict[str, Any]:
+    """A `--duplicates` group: a release as its copies' entry, or a master
+    as its ref, its copies and an entry per release."""
+    if kind == "release":
+        return _project_copies(group.records, folders, fields)
+    return {
+        "ref": make_ref("master", group.id),
+        "copies": len(group.records),
+        "releases": [_project_copies(c, folders, fields) for c in group.releases],
+    }
 
 
 def project_listing(listing: Any) -> dict[str, Any]:

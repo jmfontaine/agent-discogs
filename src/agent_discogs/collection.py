@@ -465,7 +465,7 @@ def folder_name(names: dict[int, str], folder_id: int | None) -> str | None:
     return names.get(folder_id, f"folder {folder_id}")
 
 
-def _folders_of(names: dict[int, str], items: list[Any]) -> list[str]:
+def folders_of(names: dict[int, str], items: list[Any]) -> list[str]:
     """The names of the folders the copies `items` are in, each once, in the
     order the copies list them."""
     found: list[str] = []
@@ -550,7 +550,7 @@ def copies(client: Discogs, release_id: int, *, folders: bool) -> Copies:
     )
     names: list[str] = []
     if folders and page.items:
-        names = _folders_of(folder_names(user), page.items)
+        names = folders_of(folder_names(user), page.items)
     # fetch_page always reports a total; it counts copies past the first 100.
     return Copies(page.total_items or len(page.items), page.items, names)
 
@@ -600,7 +600,56 @@ def master_copies(client: Discogs, master_id: int, *, folders: bool) -> MasterCo
         except RateLimitError:
             click.get_current_context().meta[_FOLDER_NAMES] = names
     releases = [
-        (release_id, len(items), _folders_of(names, items) if folders else [])
+        (release_id, len(items), folders_of(names, items) if folders else [])
         for release_id, items in by_release.items()
     ]
     return MasterCopies(found, releases, ownership)
+
+
+# What `get collection --duplicates` groups copies by.
+DUPLICATE_KINDS = ("release", "master")
+
+
+@dataclass(frozen=True)
+class Duplicate:
+    """A release or master (`id`) owned more than once: its copies in
+    collection order (`records`) and by release (`releases`, each release's
+    copies, in the order of its first copy)."""
+
+    id: int
+    records: list[Any]
+    releases: list[list[Any]]
+
+
+@dataclass(frozen=True)
+class Duplicates:
+    """`--duplicates`: the records checked, those with no master (`master`
+    only), and the groups, most copies first, then by first copy."""
+
+    records: int
+    without_master: int
+    groups: list[Duplicate]
+
+
+def find_duplicates(records: list[Any], kind: str) -> Duplicates:
+    """The releases, or masters (`kind`), of which `records` hold at least two
+    copies. A record with no master (`None` or 0) is in no master group."""
+    by_key: dict[int, list[Any]] = {}
+    without = 0
+    for record in records:
+        key = record.id if kind == "release" else _master_id(record)
+        if not key:
+            without += 1
+            continue
+        by_key.setdefault(key, []).append(record)
+    groups = []
+    for key, copies in by_key.items():
+        if len(copies) == 1:
+            continue
+        by_release: dict[int, list[Any]] = {}
+        for record in copies:
+            by_release.setdefault(record.id, []).append(record)
+        groups.append(Duplicate(key, copies, list(by_release.values())))
+    # A stable sort keeps groups of as many copies in first-copy order.
+    groups.sort(key=lambda group: -len(group.records))
+    return Duplicates(len(records), without if kind == "master" else 0, groups)
