@@ -167,6 +167,7 @@ agent-discogs get collection --style Techno --format 12\" --max-requests 20
 agent-discogs get collection --value
 agent-discogs get collection --count-by genre --top 10
 agent-discogs get collection --duplicates master --format Vinyl
+agent-discogs get collection --random 3 --genre Jazz
 agent-discogs get wantlist
 agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
 agent-discogs get inventory redscroll --sort price
@@ -348,6 +349,30 @@ Duplicates: me by master (1 master owned more than once, 3 copies, in 250 record
 - **`--max-requests N`** caps the sends of the command, the username and the folder list first (as in the listing), and is accepted with or without a filter. A read it stops, or a 429 after the first page, gives the groups found in the part read: a group shown is real, but it may have more copies, and a release or master not shown may still be owned twice. The header says where it stopped (`(none found so far in 100 of 250 records; scan stopped at --max-requests 3 after 100 records)`, or `(--max-requests 2 ran out before the scan started)`) and the last line is `Copies and groups may be missing: only part of the collection was read.` There is no `Continue scan:` line: rerun, and the pages already read come from the cache. A 429 on the username, the folder list or the first page is the usual `rate_limited` error.
 - **What it takes.** No `--limit`, `--page`, `--after`, `--sort`, `--desc`, `--count-by` or `--value`: each fails with `invalid_argument` before any request.
 - **`--json`:** `{"duplicates":"release","groups":[{"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral",...,"copies":2,"folders":["Vinyl","To Sell"]}],"records":250,"collection":{"complete":true,"records_read":250,"total_records":250}}`. A release entry is the `get collection --json` row of its first copy without `folder`, `added` and `rating`, plus `copies` and `folders`. A master group is `{"ref":"@m3719","copies":3,"releases":[...]}`, one release entry each, and the document adds `without_master`. `--json --full` gives each group as `{"ref","instances":[...]}`, its collection records as the SDK normalizes them. See [JSON output](json-output.md#collection).
+
+#### --random
+
+`get collection --random [N]` prints N records drawn at random from your collection, in place of the listing. `N` is 1 to 100 and optional (`--random` alone is 1; `--random --json` is one record as JSON):
+
+```bash
+agent-discogs get collection --random
+agent-discogs get collection --random 3 --genre Jazz --format Vinyl
+```
+
+```
+Collection: me random 3 (3 of 250 records)
+
+@r847868 "Nine Inch Nails - The Downward Spiral" 1994 · Nothing Records 92346-2 · CD (Album) · folder Vinyl · added 2024-01-04 · rating 4
+...
+```
+
+- **The draw.** N distinct records, one per copy as in the listing (a release owned twice has twice the chance), drawn uniformly and printed in collection order, as `get collection` rows. When fewer than N records qualify, all of them print (`(10 of 10 records)`). Nothing is stored between runs, so a rerun draws again; there is no seed.
+- **Unfiltered**, it reads only the pages it needs: the username, the folder list (not under `--json --full`), page 1 at 100 records (which gives the total), then each other page that holds a pick, once, in ascending order. On a cold cache that is `3 + d` requests (`2 + d` under `--json --full`), `d` being the pages other than page 1 that hold a pick: at most `3 + min(N, P - 1)` for a collection of P pages. These are the pages `--owned` and the filtered scans read, so a draw after them costs only the folder list. A 429 on any page fails the command with `rate_limited` and prints nothing: a draw from part of the collection would not be uniform. Under `--cached`, a page the draw needs and the cache lacks fails with `cache_miss`.
+- **Filtered** (`--format`, `--genre`, `--style`, `--year`, `--label`, `--artist`, `--title`): the matches are known only after the whole collection is read, so it reads it all, as [`--count-by`](#--count-by) does (`2 + max(1, ceil(N/100))` cold for N records), and draws from the records kept: `Collection: me style=Techno random 2 (2 of 12 matching records)`, or `(0 of 0 matching records)` and no row when nothing matches.
+- **`--max-requests N`** is accepted with a filter only (an unfiltered draw has nothing to cap). It counts the username and the folder list first. A scan it stops, or a 429 after the first page, draws from the records kept so far, and the header says so: `(1 of 4 matching records; scan stopped at --max-requests 3 after 100 records)`. A cap spent before the first page draws nothing: `(--max-requests 2 ran out before the scan started)`.
+- **`--folder NAME`** draws from that folder only, reading the folder list to resolve the name (also under `--json --full`) and then the folder's own pages; alone it is the unfiltered draw. **`--fields`** adds each row's notes and custom fields, for one more request after the folder list.
+- **What it takes.** No `--limit` (N is the count), `--page`, `--after`, `--sort`, `--desc`, `--count-by`, `--duplicates` or `--value`: each fails with `invalid_argument` before any request, as does N outside 1-100 (`--random must be between 1 and 100 (0 given).`). A ref after `--random` is read as N: `get collection --random @r847868` is a usage error (exit 2).
+- **`--json`:** `{"random":{"requested":3,"population":250},"results":[...]}`, `results` holding the `get collection --json` rows (`--json --full`: the records as the SDK normalizes them) and `population` the records drawn from (the collection's size, or the matches). A filtered draw adds the `collection` object of `--count-by`. There is no `pagination`. See [JSON output](json-output.md#collection).
 
 ### wantlist
 
@@ -548,7 +573,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | `releases @a...` | `--limit`, `--page`, `--role`, `--sort year\|title\|format`, `--desc`, `--owned`, `--wanted`, `--after` and `--max-requests` (with `--role`) |
 | `releases @l...` | `--limit`, `--page`, `--year`, `--owned`, `--wanted`, `--after` and `--max-requests` (with `--year`) |
 | `versions` | `--limit`, `--page`, `--country`, `--format`, `--label`, `--year`, `--sort released\|title\|format\|label\|catno\|country`, `--desc`, `--release-type official\|unofficial\|all`, `--owned`, `--wanted`, `--after` and `--max-requests` (both with a `--release-type` scan) |
-| `collection` | no ref; `--limit`, `--page`, `--sort label\|artist\|title\|catno\|format\|rating\|added\|year`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--artist`, `--title`, `--folder`, `--fields`, `--after` and `--max-requests` (with a filter, not `--folder` alone); or `--count-by label\|year\|decade\|format\|genre\|style\|artist` with `--top`, the filters, `--folder` and `--max-requests`; or `--duplicates release\|master` with the filters, `--folder`, `--fields` and `--max-requests`; or `--value` alone |
+| `collection` | no ref; `--limit`, `--page`, `--sort label\|artist\|title\|catno\|format\|rating\|added\|year`, `--desc`, `--format`, `--genre`, `--style`, `--year`, `--label`, `--artist`, `--title`, `--folder`, `--fields`, `--after` and `--max-requests` (with a filter, not `--folder` alone); or `--count-by label\|year\|decade\|format\|genre\|style\|artist` with `--top`, the filters, `--folder` and `--max-requests`; or `--duplicates release\|master` with the filters, `--folder`, `--fields` and `--max-requests`; or `--random [N]` with the filters, `--folder`, `--fields` and `--max-requests` (with a filter); or `--value` alone |
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
 | `inventory` | one username, not a ref; `--limit`, `--page`, `--sort listed\|price\|item\|artist\|label\|catno`, `--desc`, `--owned`, `--condition`, `--sleeve`, `--ships-from`, `--in-wantlist`, `--max-price` and `--currency` (each needs the other), `--after` (with a filter) and `--max-requests` (with a filter or `--owned`) |

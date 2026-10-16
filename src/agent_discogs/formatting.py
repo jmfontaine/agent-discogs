@@ -827,35 +827,70 @@ def format_collection(
         [_label("Collection"), f" {subject} ", Span(counts, "dim")],
         "",
     ]
-    for record in records:
-        values = {} if fields is None else field_values(record, fields)
-        release = getattr(record, "basic_information", None)
-        labels = getattr(release, "labels", None) or []
-        first = labels[0] if labels else None
-        folder_id = getattr(record, "folder_id", None)
-        added = getattr(record, "date_added", None)
-        lines.append(
-            _release_row(
-                ref=_ref("release", record.id),
-                title=artist_title(release),
-                year=getattr(release, "year", None),
-                label=getattr(first, "name", None),
-                catno=getattr(first, "catalog_number", None),
-                fmt=_format_string(getattr(release, "formats", None)) or None,
-                # `· folder 99` for a folder the list does not name.
-                folder=None
-                if folder_id is None
-                else folders.get(folder_id, str(folder_id)),
-                # The day in the timestamp's own offset, as `get release` and
-                # the JSON `added` beside it give it.
-                added=added.date().isoformat() if added else None,
-                rating=getattr(record, "rating", None),
-                tail=[" ".join(f"· {k}: {v}" for k, v in values.items())]
-                if values
-                else None,
-            )
-        )
+    lines.extend(_collection_row(record, folders, fields) for record in records)
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
+    return _text(lines)
+
+
+def _collection_row(
+    record: Any, folders: dict[int, str], fields: dict[int, CustomField] | None
+) -> Line:
+    """One `get collection` row: the release titled like a search result,
+    then the copy's folder by name, the day it was added, its rating when
+    set and, with `fields`, `· Name: value` for each of its notes."""
+    values = {} if fields is None else field_values(record, fields)
+    release = getattr(record, "basic_information", None)
+    labels = getattr(release, "labels", None) or []
+    first = labels[0] if labels else None
+    folder_id = getattr(record, "folder_id", None)
+    added = getattr(record, "date_added", None)
+    return _release_row(
+        ref=_ref("release", record.id),
+        title=artist_title(release),
+        year=getattr(release, "year", None),
+        label=getattr(first, "name", None),
+        catno=getattr(first, "catalog_number", None),
+        fmt=_format_string(getattr(release, "formats", None)) or None,
+        # `· folder 99` for a folder the list does not name.
+        folder=None if folder_id is None else folders.get(folder_id, str(folder_id)),
+        # The day in the timestamp's own offset, as `get release` and the
+        # JSON `added` beside it give it.
+        added=added.date().isoformat() if added else None,
+        rating=getattr(record, "rating", None),
+        tail=[" ".join(f"· {k}: {v}" for k, v in values.items())] if values else None,
+    )
+
+
+def format_collection_random(
+    username: str,
+    picked: list[Any],
+    requested: int,
+    population: int,
+    read: Ownership | None,
+    *,
+    folders: dict[int, str],
+    fields: dict[int, CustomField] | None,
+    filters: dict[str, str],
+) -> str:
+    """`get collection --random`: the records drawn, as `get collection`
+    rows in collection order, under `(3 of 250 records)`, or with a filter
+    (`read`, the scan) `(2 of 12 matching records)` and why the scan
+    stopped, if it did."""
+    if read is None:
+        counts = f"({len(picked):,} of {_records(population)})"
+    elif read.total_records is None:
+        counts = _whole_read(0, read)
+    else:
+        noun = "record" if population == 1 else "records"
+        matching = f"{len(picked):,} of {population:,} matching {noun}"
+        counts = f"({matching}{_stop_suffix(read)})"
+    subject = " ".join(
+        p for p in (username, _format_filters(filters), f"random {requested}") if p
+    )
+    lines: list[Line] = [[_label("Collection"), f" {subject} ", Span(counts, "dim")]]
+    if picked:
+        lines.append("")
+    lines.extend(_collection_row(record, folders, fields) for record in picked)
     return _text(lines)
 
 
@@ -881,12 +916,17 @@ def _whole_read(counted: int, read: Ownership, lead: str = "") -> str:
         cap = "" if read.stop is None else f" {read.stop.max_requests}"
         return f"(--max-requests{cap} ran out before the scan started)"
     shown = _records(total) if counted == total else f"{counted:,} of {_records(total)}"
+    return f"({lead}{shown}{_stop_suffix(read)})"
+
+
+def _stop_suffix(read: Ownership) -> str:
+    """Why a read of the whole collection stopped and after how many
+    records, for its header counts, or nothing when it did not."""
     if read.stop is None:
-        return f"({lead}{shown})"
+        return ""
     # `scan stopped: rate limited, retry in 30s, after ...`
     sep = "," if read.stop.reason == "rate_limited" else ""
-    after = _records(read.records_read)
-    return f"({lead}{shown}; {_scan_note(read.stop)}{sep} after {after})"
+    return f"; {_scan_note(read.stop)}{sep} after {_records(read.records_read)}"
 
 
 def format_collection_counts(

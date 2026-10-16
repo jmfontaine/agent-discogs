@@ -107,6 +107,15 @@ Under `--wanted` (`search`, `get versions`, `get releases`; see [Marking rows wi
 - `collection` is the object `--count-by` prints. When the read stopped early, a group may lack copies and some groups may be missing.
 - `--json --full` gives each group as `{"ref", "instances"}`, `instances` being its collection records as the SDK normalizes them (`CollectionItem`), with the other keys unchanged; it reads no folder list (folders are `folder_id`s) unless `--folder` is given, and does not take `--fields`.
 
+`get collection --random [N] --json` is the records drawn (see [--random](commands.md#--random)), with no `pagination`:
+
+```json
+{"random":{"requested":3,"population":250},"results":[{"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral","year":1994,"label":"Nothing Records","catno":"92346-2","format":"CD (Album)","folder":"Vinyl","added":"2024-01-04T10:00:00-08:00","rating":4}]}
+```
+
+- `random.requested` is N; `random.population` is the number of records drawn from: the collection's size (or the folder's) when unfiltered, otherwise the records the filters kept, so far if the scan stopped. `results` holds `min(N, population)` [collection rows](#collection), in collection order; under `--json --full`, the records as the SDK normalizes them (`CollectionItem`, folders by id).
+- A filtered draw adds `collection`, the object `--count-by` prints (`complete`, `records_read`, `total_records`, and `stop_reason` / `retry_after` when the scan stopped early). An unfiltered draw has no `collection`: it never reads the whole collection.
+
 ## Wantlist
 
 `get wantlist --json` is the paginated envelope (see [get wantlist](commands.md#wantlist)):
