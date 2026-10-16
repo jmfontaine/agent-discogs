@@ -12,6 +12,7 @@ from discogs_sdk import (
     PriceSuggestions,
     Release,
 )
+from discogs_sdk.models import ArtistRelease, LabelRelease
 
 from agent_discogs.formatting import (
     _artist_parts,
@@ -38,6 +39,15 @@ from agent_discogs.formatting import (
 )
 from agent_discogs.markup import plain
 from tests.conftest import fake
+
+
+def _stats(*, have: int, want: int) -> dict[str, object]:
+    """The raw `stats` Discogs sends on an artist or label release row: the
+    community's counts, and the user's own, which these rows never show."""
+    return {
+        "community": {"in_wantlist": want, "in_collection": have},
+        "user": {"in_wantlist": 1, "in_collection": 1},
+    }
 
 
 class TestArtistTitle:
@@ -161,7 +171,7 @@ class TestFormatSearchResults:
         ) in output
         assert (
             '@r847868 "Nine Inch Nails - The Downward Spiral" 1994 US '
-            "· Nothing Records 92346-2 · CD, Album · have 7,544 → @m3719"
+            "· Nothing Records 92346-2 · CD, Album · have 7,544 · want 1,113 → @m3719"
         ) in output
         assert "Next page:" not in output
 
@@ -238,7 +248,7 @@ class TestFormatRelease:
             labels=[label],
             formats=[fmt],
             genres=["Electronic", "Rock"],
-            styles=["Industrial"],
+            styles=["Industrial", "Alternative Rock"],
             num_for_sale=1247,
             lowest_price=5.00,
             master_id=4917,
@@ -252,7 +262,8 @@ class TestFormatRelease:
         )
         assert "Label: Nothing Records (INT-92346)" in output
         assert "Format: Vinyl (LP, Album)" in output
-        assert "Genres: Electronic, Rock" in output
+        assert "Genres: Electronic; Rock" in output
+        assert "Styles: Industrial; Alternative Rock" in output
         assert "Rating: 4.38/5 (4,521 votes)" in output
         assert "Have: 89,234" in output
         assert "Master: @m4917" in output
@@ -276,6 +287,38 @@ class TestFormatRelease:
         )
         output = format_release(release)
         assert '@r99999 [release] "Unknown" by Unknown Artist' in output
+
+    def test_genre_with_commas_is_one_entry(self) -> None:
+        # Discogs' genre "Folk, World, & Country" holds commas itself.
+        release = Release.model_validate(
+            {
+                "id": 1,
+                "title": "T",
+                "genres": ["Rock", "Folk, World, & Country"],
+                "styles": ["Folk Rock", "Folk"],
+            }
+        )
+        lines = format_release(release).splitlines()
+        assert "Genres: Rock; Folk, World, & Country" in lines
+        assert "Styles: Folk Rock; Folk" in lines
+
+    def test_single_genre_and_no_styles(self) -> None:
+        release = Release.model_validate(
+            {"id": 1, "title": "T", "genres": ["Rock"], "styles": []}
+        )
+        lines = format_release(release).splitlines()
+        assert "Genres: Rock" in lines
+        assert not [line for line in lines if line.startswith("Styles:")]
+
+    def test_master_year_ends_the_master_line(self) -> None:
+        release = Release.model_validate({"id": 1, "title": "T", "master_id": 5460})
+        lines = format_release(release, master_year=1959).splitlines()
+        assert "Master: @m5460 (1959)" in lines
+        lines = format_release(
+            release, master_year=1959, master_error="Not cached: GET /masters/5460"
+        ).splitlines()
+        assert "Master: @m5460 · ✗ Not cached: GET /masters/5460" in lines
+        assert "Master: @m5460" in format_release(release).splitlines()
 
 
 class TestFormatArtist:
@@ -316,7 +359,7 @@ class TestFormatMaster:
             year=1994,
             artists=[artist],
             genres=["Electronic", "Rock"],
-            styles=["Industrial"],
+            styles=["Industrial", "Alternative Rock"],
             main_release=367113,
             num_for_sale=5476,
             lowest_price=0.36,
@@ -327,7 +370,28 @@ class TestFormatMaster:
             '@m4917 [master] "The Downward Spiral" by Nine Inch Nails (1994)' in output
         )
         assert "Main release: @r367113" in output
+        assert "Genres: Electronic; Rock" in output
+        assert "Styles: Industrial; Alternative Rock" in output
         assert "1. Mr. Self Destruct (4:09)" in output
+
+    def test_genre_with_commas_is_one_entry(self) -> None:
+        master = Master.model_validate(
+            {
+                "id": 375249,
+                "title": "Every Kingdom",
+                "genres": ["Rock", "Folk, World, & Country"],
+                "styles": ["Alternative Rock", "Acoustic", "Folk Rock", "Folk"],
+            }
+        )
+        lines = format_master(master).splitlines()
+        assert "Genres: Rock; Folk, World, & Country" in lines
+        assert "Styles: Alternative Rock; Acoustic; Folk Rock; Folk" in lines
+
+    def test_single_genre_and_no_styles(self) -> None:
+        master = Master.model_validate({"id": 1, "title": "T", "genres": ["Rock"]})
+        lines = format_master(master).splitlines()
+        assert "Genres: Rock" in lines
+        assert not [line for line in lines if line.startswith("Styles:")]
 
     def test_lowest_price_is_a_bare_amount(self) -> None:
         # Master.lowest_price is a bare float and Discogs takes no currency
@@ -440,6 +504,31 @@ class TestFormatArtistReleases:
         ) in output
         assert "Next page:" in output
 
+    def test_rows_show_the_community_counts_discogs_sent(self) -> None:
+        """`stats` is not modeled on these rows, so it is a raw dict; `0` is
+        shown, and a row without counts shows neither."""
+
+        def row(release_id: int, type_: str, **data: object) -> ArtistRelease:
+            return ArtistRelease.model_validate(
+                {"id": release_id, "type": type_, "title": "T", "role": "Main", **data}
+            )
+
+        releases = [
+            row(3373, "master", stats=_stats(have=2687, want=903)),
+            row(1, "release", stats=_stats(have=0, want=0)),
+            row(2, "release"),
+            row(3, "release", stats={"community": {"in_collection": 5}}),
+        ]
+        output = format_artist_releases(
+            releases, "@a3857", "NIN", page=1, total_results=4, next_page_cmd=None
+        )
+        assert output.splitlines()[2:] == [
+            '@m3373 [master] "T" · Main · have 2,687 · want 903',
+            '@r1 [release] "T" · Main · have 0 · want 0',
+            '@r2 [release] "T" · Main',
+            '@r3 [release] "T" · Main · have 5',
+        ]
+
 
 class TestFormatMasterVersions:
     def test_master_versions(self) -> None:
@@ -472,11 +561,12 @@ class TestFormatMasterVersions:
         )
         assert 'Versions of @m3719 "The Downward Spiral"' in output
         # Versions are always releases: no [release] tag, no parens around year
+        lines = output.splitlines()
         assert (
-            "@r847868 1994 US · Nothing Records 92346-2 · CD, Album · have 7,544"
-            in output
-        )
-        assert "@r9876543 2017 US · Interscope · Vinyl, 2xLP, 180g" in output
+            "@r847868 1994 US · Nothing Records 92346-2 · CD, Album "
+            "· have 7,544 · want 1,113"
+        ) in lines
+        assert "@r9876543 2017 US · Interscope · Vinyl, 2xLP, 180g" in lines
         assert "[release]" not in output
         assert "Next page:" in output
 
@@ -991,6 +1081,52 @@ class TestFormatLabelReleases:
             in output
         )
         assert output.endswith("Next page: agent-discogs get releases @l647 --page 2")
+
+    def test_rows_show_the_community_counts_discogs_sent(self) -> None:
+        def row(release_id: int, **data: object) -> LabelRelease:
+            return LabelRelease.model_validate(
+                {"id": release_id, "title": "T", "catno": "C", **data}
+            )
+
+        releases = [
+            row(8752, stats=_stats(have=759, want=69)),
+            row(1, stats=_stats(have=0, want=0)),
+            row(2),
+            # A raw dict holds any JSON: a non-integer count is not shown.
+            row(3, stats={"community": {"in_wantlist": 4, "in_collection": True}}),
+        ]
+        output = format_label_releases(releases, "@l2055", "Jet", 1, 4, None)
+        assert output.splitlines()[2:] == [
+            '@r8752 "T" · C · have 759 · want 69',
+            '@r1 "T" · C · have 0 · want 0',
+            '@r2 "T" · C',
+            '@r3 "T" · C · want 4',
+        ]
+
+    def test_header_notes_the_dropped_repeats(self) -> None:
+        def header(dropped: int, *, filtered: bool) -> str:
+            return (
+                format_label_releases(
+                    [],
+                    "@l647",
+                    "Nothing Records",
+                    1,
+                    2718,
+                    None,
+                    filtered=filtered,
+                    dropped=dropped,
+                )
+                .splitlines()[0]
+                .removeprefix('Releases on @l647 "Nothing Records" ')
+            )
+
+        assert header(1, filtered=False) == (
+            "(page 1, 0 of 2,718 results; 1 repeated row dropped)"
+        )
+        assert header(1_200, filtered=True) == (
+            "(page 1, 0 of ≤2,718 results; 1,200 repeated rows dropped)"
+        )
+        assert header(0, filtered=False) == "(page 1, 0 of 2,718 results)"
 
 
 class TestFormatTracklistEdgeCases:

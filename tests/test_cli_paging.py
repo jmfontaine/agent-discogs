@@ -40,6 +40,7 @@ class TestPagingBounds:
             ["search", "Limit", "--release-type", "all", "--limit", "0"],
             ["search", "Limit", "--release-type", "all", "--page", "0"],
             ["search", "--year", ""],
+            ["search", "--credit", " "],
             ["search", "release", "--year", "", "--label", " "],
             ["search", " ", "--artist", ""],
             ["get", "releases", "@a1", "--limit", "0"],
@@ -136,6 +137,22 @@ _LISTINGS: dict[str, tuple[str, int, list[list[int]]]] = {
         "search --release-type all --catno ABC --limit 2 -- ' release'",
         1,
         _SERVER_PAGES,
+    ),
+    "search, server-side with credit, track and title": (
+        (
+            "search --credit 'Rudy Van Gelder' --track 'So What' "
+            "--title 'Kind of Blue' --release-type all --limit 2 -- release"
+        ),
+        1,
+        _SERVER_PAGES,
+    ),
+    "search, filtered with credit, track and title": (
+        (
+            "search --credit 'Rudy Van Gelder' --track 'So What' "
+            "--title 'Kind of Blue' --limit 2 -- release"
+        ),
+        1,
+        _FILTERED_PAGES,
     ),
     "artist releases": (
         "get releases @a1 --sort year --desc --limit 2",

@@ -86,12 +86,18 @@ class TestCompletion:
         ]
         assert complete("agent-discogs search r") == ["release"]
         assert complete("agent-discogs search --year 1994 ma") == ["master"]
+        assert complete("agent-discogs search --credit Gelder r") == ["release"]
         # A query word that is no type gets nothing, and after the first
         # positional nothing is offered: the rest is free text.
         assert complete("agent-discogs search Radiohead") == []
         assert complete("agent-discogs search release ") == []
         assert complete("agent-discogs search Wire a") == []
         assert complete("agent-discogs search Radiohead --bogus r") == []
+
+    def test_search_offers_the_new_filters(self) -> None:
+        assert complete("agent-discogs search --cr") == ["--credit"]
+        assert complete("agent-discogs search --t") == ["--title", "--track"]
+        assert complete("agent-discogs search --an") == ["--anv"]
 
     @pytest.mark.parametrize(
         ("line", "offered"),

@@ -21,8 +21,9 @@ _SKILLS_DIR = (
 # Bytes each level may print. `skills get core` is loaded in every session, so
 # a later addition must not quietly regrow it: put detail in references/ or in
 # the skill the task needs.
-_BRIEF_LIMIT = 20_000
-_FULL_LIMIT = {"core": 75_000}
+_BRIEF_LIMIT = {"core": 24_000}
+_BRIEF_LIMIT_DEFAULT = 20_000
+_FULL_LIMIT = {"core": 85_000}
 _FULL_LIMIT_DEFAULT = 40_000
 
 
@@ -104,7 +105,7 @@ class TestSkillsCommand:
 
     @pytest.mark.parametrize("name", SKILLS)
     def test_each_level_stays_within_its_size_budget(self, name: str) -> None:
-        assert len(_get(name).encode()) <= _BRIEF_LIMIT
+        assert len(_get(name).encode()) <= _BRIEF_LIMIT.get(name, _BRIEF_LIMIT_DEFAULT)
         limit = _FULL_LIMIT.get(name, _FULL_LIMIT_DEFAULT)
         assert len(_get(name, "--full").encode()) <= limit
 

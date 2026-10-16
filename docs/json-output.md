@@ -10,6 +10,8 @@ Each release, master, artist, label, search result, list (`get list`) and `get l
 
 Rows of `get versions` and `get releases` carry `url` only when Discogs includes a link (`uri`) in the row, which it does not today, and the release facets (`tracks`, `price`, `get credits`, `get identifiers`) never do: use `get release @r... --json` for the link.
 
+Release and master rows of `search`, and the rows of `get versions` and `get releases` (artist and label), carry Discogs' community counts as integers: `have`, how many Discogs users own the release, and `want`, how many want it (`"have":7544,"want":1113`). They come with the listing page, at no extra request. `0` is kept; a count Discogs did not send is left out, so a row with no community data has neither key. `--full` keeps them where the record holds them: `community.have`/`want` on search results, `stats.community.in_collection`/`in_wantlist` on the others.
+
 An artist or label `profile`, release `notes` (`-v`) and a list's `description` carry Discogs' markup converted as in the text view, line breaks kept: `[l647]` → `@l647`, `[a=Name]` → `Name`, `[url=https://host/path]text[/url]` → `text (host)`, and `[b]` and the other formatting tags removed, their text kept. The conversion adds no escape code. See [Profiles and notes](commands.md#profiles-and-notes) for every tag. `--json --full` keeps these fields as Discogs sent them, markup included.
 
 `credits` is grouped by role: `{"Producer":[{"ref":"@a20661","name":"Flood","tracks":"1, 2"}],...}`. Tracklist rows carry `"type": "heading"` or `"type": "index"` when they are not plain tracks, and an index row nests its parts under `sub_tracks`.
@@ -22,7 +24,8 @@ Lists are wrapped as `{"pagination":{...},"results":[...]}`. The `pagination` en
 
 - `page`, `total_items` and `total_pages` are always present, with `null` totals only when a scan stopped before reading any page;
 - a filtered list always adds `filtered`, `capped` and `next_cursor`, `null` when nothing remains;
-- a capped one adds `stop_reason`, plus `retry_after` when Discogs sent one.
+- a capped one adds `stop_reason`, plus `retry_after` when Discogs sent one;
+- a label catalogue page (`get releases @l...`) that dropped rows equal to the row Discogs sent just before them adds `duplicates_dropped`, their count, only when it is above 0: `results` holds the remaining rows, and `total_items` and `total_pages` keep Discogs' counts, repeats included (see [Repeated rows in a label catalogue](commands.md#repeated-rows-in-a-label-catalogue)).
 
 In a filtered list, the totals describe the listing before the filter, not your pages: `page` counts pages of `--limit` matching rows, while `total_items` is the unfiltered total (the `≤N` of the text header) and `total_pages` counts the 100-row pages the scan reads from Discogs.
 
@@ -33,10 +36,10 @@ For example, the second page of `get releases @l647 --year 1994 --limit 2 --json
 Under `--owned` (`search`, `get versions`, `get releases`, `get inventory`; see [Marking rows with --owned](commands.md#marking-rows-with---owned)), each release row gets `owned`, and the document gets `collection` next to `pagination`:
 
 ```json
-{"pagination":{...},"results":[{"ref":"@r352665","title":"...","have":812,"owned":2},{"ref":"@r847868","title":"...","have":40,"owned":0}],"collection":{"complete":true,"records_read":250,"total_records":250}}
+{"pagination":{...},"results":[{"ref":"@r352665","title":"...","have":812,"want":95,"owned":2},{"ref":"@r847868","title":"...","have":40,"want":3,"owned":0}],"collection":{"complete":true,"records_read":250,"total_records":250}}
 ```
 
-- `owned` is an integer, the number of copies you own, `0` when you own none, or `null` when the collection read stopped before it could tell. It is an exception to omitted empty fields: `0` and `null` are always present. `have` is Discogs' community count, not yours.
+- `owned` is an integer, the number of copies you own, `0` when you own none, or `null` when the collection read stopped before it could tell. It is an exception to omitted empty fields: `0` and `null` are always present. `have` and `want` are Discogs' community counts, not yours.
 - `0` is reported only when the whole collection was read. After a partial read, a release found in the part read shows the count found so far (it may be short) and every other row is `null`.
 - Only release rows carry `owned`; a master, artist or label row has none. Under `--full` it is added to each release record the SDK returns.
 - `collection` is `{"complete": bool, "records_read": int, "total_records": int|null}`. A read that stopped early adds `stop_reason` (`"max_requests"` or `"rate_limited"`) and, for a 429 when Discogs sent a usable `Retry-After`, `retry_after`; `total_records` is `null` when nothing was read. A 429 on the username or the first collection page, or a listing scan that already stopped on one, reads nothing: `{"complete":false,"records_read":0,"total_records":null,"stop_reason":"rate_limited","retry_after":30}` and every release row has `owned: null`. A page with no release row has neither `owned` nor `collection`.
@@ -114,6 +117,19 @@ With `--for-sale` (a filtered scan, so `pagination` carries `filtered`, `capped`
 - Each item carries `ref` (`@r`, `@m`, `@a` or `@l`, from its type), `title` (Discogs' `display_title`) and `comment` when set, exactly as Discogs sent it. An item of a type with no ref prefix carries `id` and `type` instead of `ref`. An item has no `url`.
 - `--full` prints the list record as the SDK normalizes it, its `items` with `display_title`, `comment`, `uri`, `resource_url` and `image_url`.
 - A list with no items has no `items` key, like any empty field.
+
+## Master year
+
+`get release --master-year --json` adds `master_year` right after `master` (see [release](commands.md#release)):
+
+```json
+{"ref":"@r352665","title":"...","master":"@m3719","master_year":1994,...}
+```
+
+- When the master was not read, `master_year` is absent and `master_year_error` takes its place: `{"code":"cache_miss","message":"Not cached: GET /masters/3719"}` under `--cached`, or `"code":"not_found"` for a deleted master, with `hint` when there is one. The release document is complete either way.
+- A release with no master, or a master year Discogs does not know, has neither key.
+- `--json --full` adds a top-level `master_year` (or `master_year_error`) beside the release record's own keys, as `get price --full` adds `marketplace_stats`.
+- Without `--master-year`, neither key appears in any shape.
 
 ## --full
 
