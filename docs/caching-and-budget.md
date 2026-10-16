@@ -35,7 +35,7 @@ That includes client-side scans: under `--cached` a scan reads cached pages unti
 
 A collection read by `--owned` on `search` and `get inventory`, or by `get owned @m...`, is cached for an hour like everything else, and on `get versions` and `get releases` the marks come with the cached listing page, so either way a record added to your collection within the last hour may still show as not owned. `--fresh` re-reads the collection, or the listing, from Discogs.
 
-Marketplace stats read by `get wantlist --for-sale` are cached for an hour too, so a copy listed or sold within the last hour may not show up. Pass `--fresh` when current Marketplace numbers matter; it re-reads the stats of every want checked, one request each.
+Marketplace stats read by `get wantlist --for-sale` and `get stats` are cached for an hour too, so a copy listed or sold within the last hour may not show up. Pass `--fresh` when current Marketplace numbers matter; it re-reads the stats of every want or ref checked, one request each (`get stats` re-reads the release too).
 
 The `Next page:` / `Continue scan:` command printed under a list repeats `--cached` or `--fresh` (and `--max-requests`, `--owned`, `--wanted`, for `get collection` and `get inventory` `--limit`, their filters, `--sort` and `--desc`, plus `--fields` for the collection, `--in-wantlist` for the inventory, and for `get lists` and `get wantlist` `--limit`, plus `--for-sale`, `--max-price`, `--currency` for the wantlist), so the next page is read under the same cache policy, cap and filter as the first.
 
@@ -72,6 +72,7 @@ What commands cost (network requests; listing rows are per ref):
 | `get artist\|label\|master\|release\|credits\|identifiers\|tracklist`, `tracks` | 1 per ref |
 | `get release --master-year` | 1 per ref, plus 1 per release with a master whose master is not cached (`GET /masters/{id}`, shared with `get master` and between releases of one master; under `--fresh`, 1 per such ref): at most 2 per ref, 20 for 10 refs |
 | `get price`, `price` | 3 per ref (`--json --full`: 2, the release itself is not read) |
+| `get stats` | 2 per ref, the release then its Marketplace stats: 20 for 10 refs. The release request is the one `get release` and `get price` send, the stats request the one `get price` sends without `--currency` and `get wantlist --for-sale` sends with the same `--currency` (or none), so they share the cache. A release that does not exist costs 1 (no stats request). Another `--currency` is another stats request: a rerun with a new code sends 1 per ref, the stats only. Under `--cached`, a ref whose release or stats is not cached is its own `cache_miss` block and nothing is sent. No username or profile request |
 | `get releases @a...`, `get releases @l...`, `get versions @m...` (also with `--release-type all`, the default, or `unofficial` without `--format`, filtered by Discogs) | `--json`: 1; text: 2 (the header's artist, label or master name) |
 | `get versions @r...` | 2, text or `--json` (the release, for its master, then the list) |
 | Client-side scans: `get releases @a... --role`, `get releases @l... --year`, `get versions @m... --release-type official` (or `unofficial` with `--format`) | `--json`: one per 100 rows scanned; text: one more, for the header name (`get versions @r...`: one more in either mode, the release, which also gives the header its title) |

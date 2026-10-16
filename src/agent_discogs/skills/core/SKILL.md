@@ -63,7 +63,7 @@ Check status: `agent-discogs status`. Its `Auth:` line names the credentials req
 
 What each database command prints, noun by noun, is in [references/commands.md](references/commands.md) (`agent-discogs skills get core --full`); the collection and marketplace commands, in the `--full` of their skills. These conventions hold for every command:
 
-- **Currency** — amounts are never shown with a symbol. `price` names the ISO code Discogs returns (`EUR 20.00`); the `Market: 9 for sale from 9.36` line of `get release` and `get master` is a bare amount in a currency Discogs does not name. Details: [Currency](references/commands.md#currency).
+- **Currency** — amounts are never shown with a symbol. `price` and `get stats` name the ISO code Discogs returns (`EUR 20.00`); the `Market: 9 for sale from 9.36` line of `get release` and `get master` is a bare amount in a currency Discogs does not name. Details: [Currency](references/commands.md#currency).
 - **Dates** — unknown parts are left out in text and `--json`: Discogs' year `0` is omitted rather than printed, and a release date drops a zero month or day (`1994-05-00` → `1994-05`, `1994-00-00` → `1994`; the text view prints no `Released:` when that equals the header year).
 
 Characters stdout cannot encode print as backslash escapes: see [Text encoding](references/commands.md#text-encoding).
@@ -107,14 +107,14 @@ With `--json`, an error is a JSON document on stdout, `{"error":{"code":"not_fou
 
 ## What the Discogs API cannot answer
 
-The Discogs API has no endpoint or field for the first seven, and agent-discogs only reads: do not spend requests looking; say so and offer the alternative. `price` costs 3 requests per ref. *No seller settings*: `price` fails with `seller_settings_required`; `get release @r... -c` gives only the count for sale and lowest price (`Market: N for sale from X`, in the account's currency; `--json` `market`), and no per-condition value exists.
+The Discogs API has no endpoint or field for the first seven, and agent-discogs only reads: do not spend requests looking; say so and offer the alternative. `price` costs 3 requests per ref. *No seller settings*: `price` fails with `seller_settings_required`; `get stats @r...` gives only the count for sale and lowest price, with its currency (2 requests per ref; `agent-discogs skills get marketplace`), and no per-condition value exists.
 
 | Question | The API | Instead |
 |---|---|---|
 | What did it sell for? Price history? | No sales history for a release (order endpoints cover only a seller's own orders). | `price @r...`: suggested price per condition, count for sale, lowest price (*no seller settings*: above). Any sales history is on the discogs.com page (`url` in `get release @r... --json`). |
 | What is this one record worth? | Price suggestions per condition; no per-record value. | `price @r...` (*no seller settings*: above). The collection value cannot be split per record. |
 | What is this folder worth? | One value, for the whole collection. | `get collection --value`, no filter (see `agent-discogs skills get collection`). For a subset, add up `price @r...` amounts yourself, 3 requests per release; with *no seller settings*, no subset estimate exists. |
-| Who sells this release? Which copies, conditions, countries? | A count and one lowest price per release; no list of copies or sellers. | `get release @r... -c`, or `price @r...` (*no seller settings*: above); `get inventory <username>` for a known seller (`agent-discogs skills get marketplace`, section What the API cannot filter or find). The copies: the release's Marketplace page on discogs.com. |
+| Who sells this release? Which copies, conditions, countries? | A count and one lowest price per release; no list of copies or sellers. | `get stats @r...`, or `price @r...` (*no seller settings*: above); `get inventory <username>` for a known seller (`agent-discogs skills get marketplace`, section What the API cannot filter or find). The copies: the release's Marketplace page on discogs.com. |
 | Alert me on a new listing or a price drop | No alerts, saved searches or notifications; the CLI never waits or polls. | Rerun later: `get wantlist --for-sale --max-requests 60`, `search release ... --added-since YYYY-MM-DD`. Repeats within the hour are cached; `--fresh` for current numbers. |
 | Find sellers (by country, size, rating) | No endpoint lists or searches sellers; one seller's inventory needs their username. | `get inventory <username>`, the username from the user or a discogs.com page. |
 | Tempo, BPM or key of a track | Tracks carry position, type, title, duration and credits; no tempo or key field. | Say so; do not estimate. |
@@ -123,7 +123,7 @@ The Discogs API has no endpoint or field for the first seven, and agent-discogs 
 ## Anti-Patterns
 
 - **Don't search without a type filter** when you know the entity type.
-- **Don't fetch full release details just to check price.** Use `price @r...` directly.
+- **Don't fetch full release details just to check price.** Use `get stats @r...` (count for sale, lowest price, have/want, rating) or `price @r...` (per condition) directly.
 - **Don't paginate through all results.** Narrow with filters first.
 - **Don't compute page numbers.** Paste the `Next page:` / `Continue scan:` command printed under a list, unchanged: it repeats the cache flag, `--max-requests`, `--owned`/`--wanted` and the listing's own flags (the full list: [Global Flags](references/commands.md#global-flags)), and puts a search's type and query (or an inventory username starting with `-`) after `--`. Filtered lists ([client-side scans](references/commands.md#client-side-scans)) continue with an `--after` cursor; `--page` is rejected there and the error says what to use.
 - **Don't run an uncapped scan, `--added-since`, `--owned`/`--wanted` on a search, `--owned` on inventory, `get wantlist --for-sale` or a `get inventory` filter under a tool-call time limit.** A sparse filter scans until it fills `--limit` or the list ends, `--added-since` looks up every release in its window, and the others read the user's collection or wantlist, every want's Marketplace stats or a seller's listings (their skills give the costs); any can take many requests, and past the per-minute budget a 429 ends the command. Pass `--max-requests N` to cap the command's HTTP sends (header lookups included, cache hits free); a capped scan ends in `Continue scan:`, a capped `--added-since` in its incomplete note. Accepted only with these (a listing scan: one ref).
@@ -162,7 +162,7 @@ Refs encode entity type and Discogs ID: `@a3857` (artist), `@r847868` (release),
 
 ## Token Efficiency
 
-Prefer the most specific command: `tracks @r...` over `get release @r...` when you only need the tracklist, and `price @r...` over `get release @r...` when you only need pricing.
+Prefer the most specific command: `tracks @r...` over `get release @r...` when you only need the tracklist, and `get stats @r...` or `price @r...` over `get release @r...` when you only need the market or community numbers.
 
 ## Budget
 

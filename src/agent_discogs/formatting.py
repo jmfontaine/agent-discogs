@@ -656,6 +656,41 @@ def _market_tail(market: Market) -> list[Part]:
     return [Span("· for sale:", "dim"), sale]
 
 
+def community_rating(rating: Any) -> str | None:
+    """`4.43/5 (602 votes)`: a release's community rating, or None when
+    Discogs sent no average or no vote count."""
+    average = getattr(rating, "average", None)
+    count = getattr(rating, "count", None)
+    if average is None or count is None:
+        return None
+    return f"{average:.2f}/5 ({count:,} votes)"
+
+
+def format_stats(release: Any, market: Market) -> str:
+    """`get stats`: one release row, its community numbers (`have`, `want`,
+    the rating when anyone voted) from the release record, then its
+    Marketplace numbers from the stats, which name their currency. A part
+    Discogs did not send is left out."""
+    community = getattr(release, "community", None)
+    rating = getattr(community, "rating", None)
+    rated = community_rating(rating) if getattr(rating, "count", None) else None
+    tail: list[list[Part]] = [[f"· rating {rated}"]] if rated else []
+    tail.append(_market_tail(market))
+    return _text(
+        [
+            _release_row(
+                ref=_ref("release", release.id),
+                title=release.title,
+                artist=artist_names(release) or None,
+                year=getattr(release, "year", None),
+                have=_count(getattr(community, "have", None)),
+                want=_count(getattr(community, "want", None)),
+                tail=_joined(tail, " "),
+            )
+        ]
+    )
+
+
 def format_wantlist(
     wants: list[Any],
     username: str,
@@ -1477,12 +1512,9 @@ def format_release(
 
     community = getattr(release, "community", None)
     if community:
-        rating = getattr(community, "rating", None)
+        rating = community_rating(getattr(community, "rating", None))
         if rating:
-            avg = getattr(rating, "average", None)
-            count = getattr(rating, "count", None)
-            if avg is not None and count is not None:
-                lines.append([_label("Rating"), f" {avg:.2f}/5 ({count:,} votes)"])
+            lines.append([_label("Rating"), f" {rating}"])
 
         have = getattr(community, "have", None)
         want = getattr(community, "want", None)
@@ -1612,9 +1644,10 @@ def _search_head(
     return [_label("Search"), f" {searched}"]
 
 
-def artist_title(release: Any) -> str | None:
-    """`Artist - Title`, the way a search result titles a release. A comma
-    join attaches to the name before it (`A, B`); others stand apart (`A & B`)."""
+def artist_names(release: Any) -> str:
+    """A release's artist names as credited (`A, B & C`), or `""` with none.
+    A comma join attaches to the name before it (`A, B`); others stand apart
+    (`A & B`)."""
     names = ""
     for artist in getattr(release, "artists", None) or []:
         names += getattr(artist, "name", None) or "Unknown"
@@ -1622,8 +1655,14 @@ def artist_title(release: Any) -> str | None:
         if join:
             names += join if join == "," else f" {join}"
         names += " "
+    return names.rstrip()
+
+
+def artist_title(release: Any) -> str | None:
+    """`Artist - Title`, the way a search result titles a release."""
+    names = artist_names(release)
     title = getattr(release, "title", None)
-    return f"{names.rstrip()} - {title}" if names else title
+    return f"{names} - {title}" if names else title
 
 
 def _utc_day(moment: datetime | None) -> str | None:

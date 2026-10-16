@@ -146,7 +146,7 @@ One or more refs (at most 10), run in sequence. Text blocks are separated by a b
 - `tracklist` (`@r` or numeric ID; shortcut `tracks`) — numbered tracklist with durations and per-track artists (for VA releases). Index tracks (a suite or medley) list their parts indented beneath them; in `--json` an index row has `"type": "index"` and nests its parts under `sub_tracks`.
 - `versions` (`@m` or numeric ID) — paginated master release versions, one row per pressing: ref, year, country, label + catalog number, format, `have N · want N` (Discogs community counts). `--sort released` puts the earliest pressing first; `--year` narrows; `--owned` marks the ones you own. `--release-type official|unofficial|all` filters on the "Unofficial Release" format description like `search`, but **defaults to `all`** (every version, unofficial ones included). `unofficial` is filtered by Discogs (exact total, `--page`); `official` is a client-side scan (`≤N`, continues via `--after`, takes `--max-requests`), as is `unofficial` with `--format`. "Partially Unofficial" versions count as official.
 
-The other nouns have their own skill: `collection`, `list`, `lists` and `owned` read the user's own collection and lists (`agent-discogs skills get collection`); `inventory`, `price` and `wantlist` cover the Marketplace (`agent-discogs skills get marketplace`).
+The other nouns have their own skill: `collection`, `list`, `lists` and `owned` read the user's own collection and lists (`agent-discogs skills get collection`); `inventory`, `price`, `stats` and `wantlist` cover the Marketplace (`agent-discogs skills get marketplace`).
 
 ### Markup in profiles and notes
 
@@ -165,13 +165,13 @@ Discogs writes links into artist and label profiles and release notes as markup,
 
 ### Currency
 
-`price` prints amounts as `EUR 20.00`, the ISO code Discogs returns, never a symbol; under `--json` each suggestion is `{"value":20.0,"currency":"EUR"}` and `market` carries `lowest` and `currency`. The `Market: N for sale from 9.36` line of `release` and `master` is a bare amount in the token account's buyer currency (USD when unauthenticated): Discogs does not name it, so its JSON `market` has no `currency` key. Use `price @r...` when the currency matters.
+`price` and `stats` print amounts as `EUR 20.00`, the ISO code Discogs returns, never a symbol; under `--json` each suggestion is `{"value":20.0,"currency":"EUR"}` and `market` carries `lowest` and `currency`. The `Market: N for sale from 9.36` line of `release` and `master` is a bare amount in the token account's buyer currency (USD when unauthenticated): Discogs does not name it, so its JSON `market` has no `currency` key. Use `get stats @r...` (the count for sale and lowest price with their currency, plus `have`/`want` and the rating; no seller settings needed) or `price @r...` when the currency matters.
 
 ### Flags
 
 | Flag | Description |
 |------|-------------|
-| `--json` | JSON output: a compact projection of the text view, plus `url` on `release`, `master`, `artist`, `label`, `list` and each `lists` row: the absolute Discogs web page (never in text; `versions` and `releases` rows only when Discogs sends one, which it does not today; never on list items, `tracklist`, `price`, `credits`, and `identifiers`: use `release` for the link). Errors become `{"error":{"code",...}}` on stdout |
+| `--json` | JSON output: a compact projection of the text view, plus `url` on `release`, `master`, `artist`, `label`, `list` and each `lists` row: the absolute Discogs web page (never in text; `versions` and `releases` rows only when Discogs sends one, which it does not today; never on list items, `tracklist`, `price`, `stats`, `credits`, and `identifiers`: use `release` for the link). Errors become `{"error":{"code",...}}` on stdout |
 | `--full` | With `--json`: the complete record instead of the projection, normalized (consistent field names such as `catalog_number` and a track's `type`, RFC 3339 timestamps, `null` for an absent or unparseable timestamp; unmodeled fields as Discogs sends them) |
 | `--limit` | `releases`, `versions`, `collection`, `lists`, `wantlist`, `inventory`: results per page, 1-100 (default: 5); with a `collection` filter, `wantlist --for-sale` or an `inventory` filter, how many matches to collect |
 | `--page` | Page number, from 1 (server-side pages: `versions` without a `--release-type` scan, `collection` without a filter, `lists`, `wantlist`, `inventory` without a filter, `releases` without `--role` / label `--year`); rejected with a `collection` filter, `wantlist --for-sale`, an `inventory` filter and `versions --release-type official` (or `unofficial --format ...`) |
@@ -218,6 +218,7 @@ Each flag applies only to the nouns below. Any other flag fails with `invalid_ar
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
 | `inventory` | one username, not a ref; `--limit`, `--page`, `--sort`, `--desc`, `--owned`, `--condition`, `--sleeve`, `--ships-from`, `--in-wantlist`, `--max-price` and `--currency` (each needs the other), `--after` (with a filter) and `--max-requests` (with a filter or `--owned`) |
+| `stats` | `--currency` |
 | `artist`, `credits`, `identifiers`, `label`, `list`, `master`, `owned`, `price`, `tracklist` | none |
 
 ### Smart resolution

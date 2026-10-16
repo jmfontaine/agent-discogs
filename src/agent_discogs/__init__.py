@@ -56,12 +56,25 @@ Search Auth:   Discogs documents search as needing credentials (see
                Environment); unauthenticated searches currently get answers,
                but Discogs may refuse one with auth_required
 Get Nouns:     artist, credits, identifiers (ids), label, list, master, owned,
-               price, release, releases, tracklist, versions; inventory (a
-               seller's username); collection, lists and wantlist (no ref)
+               price, release, releases, stats, tracklist, versions; inventory
+               (a seller's username); collection, lists and wantlist (no ref)
                (artist/label 'URLs:' lists site domains, empty entries omitted)
 Get Credits:   release, track, and sub-track credits by role; each person once
                per role with the tracks covered (none = whole release);
                --json --full adds track_credits
+Get Stats:     get stats <release ref>...: each release's community and
+               Marketplace numbers on one line, as '@r847868 "The Downward
+               Spiral" by Nine Inch Nails 1994 · have 7,618 · want 1,355 ·
+               rating 4.43/5 (602 votes) · for sale: 45 from EUR 0.80' (no
+               rating without votes; 'for sale: 0' when none is for sale or
+               the release is blocked from sale; 'for sale: 3' when Discogs
+               gives no price). 2 requests per ref, the release then its
+               Marketplace stats, which name their currency: the account's
+               buyer currency (USD without credentials), or --currency CODE.
+               No seller settings or user needed. --json: ref, title,
+               artists, year, community (have, want, rating, votes), market
+               (for_sale, lowest, currency; blocked true when blocked from
+               sale); --json --full: release, marketplace_stats
 Get Owned:     get owned <release or master ref>...: your own copies of each
                release, as '@r352665 owned \u00d72: Vinyl, Uncategorized'
                ('owned: Vinyl' for one copy) or '@r847868 not owned'
@@ -318,13 +331,13 @@ Options:
                    dropped); a listing in another currency is dropped and
                    counted (header 'N listings in other currencies skipped';
                    JSON skipped_currency). Needs --currency
-  --currency CODE  get wantlist --for-sale: prices in USD, GBP, EUR, CAD, AUD,
-                   JPY, CHF, MXN, BRL, NZD, SEK or ZAR (any case; another code
-                   is invalid_argument); without it Discogs uses the account's
-                   currency (sent as curr_abbr). get inventory: only with
-                   --max-price; matched client-side against each listing's
-                   price currency, never sent (sellers price in their own
-                   currency, so pick theirs)
+  --currency CODE  get wantlist --for-sale and get stats: prices in USD, GBP,
+                   EUR, CAD, AUD, JPY, CHF, MXN, BRL, NZD, SEK or ZAR (any
+                   case; another code is invalid_argument); without it Discogs
+                   uses the account's currency (sent as curr_abbr on the stats
+                   requests). get inventory: only with --max-price; matched
+                   client-side against each listing's price currency, never
+                   sent (sellers price in their own currency, so pick theirs)
   --condition GRADE, --sleeve GRADE
                    get inventory: keep listings whose media (--condition) or
                    sleeve grade is GRADE or better. Order: M, NM, VG+, VG, G+,
@@ -397,6 +410,7 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --fields, --after and --max-requests (with a filter, not
                    --folder alone); or --value alone
   lists            no ref; --limit, --page
+  stats            --currency
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
                    --currency (both with --for-sale), --after and
                    --max-requests (with --for-sale, 3 or more)
@@ -488,7 +502,8 @@ status stays under Members.
 
 Prices carry the ISO code Discogs returns ('EUR 20.00'), never a symbol. The
 'Market: 9 for sale from 9.36' line of get release/master is a bare amount in
-the account's buyer currency (USD without a token); 'price' names the currency.
+the account's buyer currency (USD without a token); 'price' and 'get stats'
+name the currency.
 
 get release prints 'Added: YYYY-MM-DD', the day the release was added to
 Discogs (--json: 'added', an RFC 3339 timestamp), at no extra request.
@@ -513,6 +528,7 @@ Examples:
   agent-discogs get versions @m3719 --release-type official --json
   agent-discogs tracks @r847868
   agent-discogs price @r847868
+  agent-discogs get stats @r847868 @r352665 --currency EUR
   agent-discogs get releases @a3857 --role Main --limit 5
   agent-discogs search release --artist Wire --added-since 2026-07-08
   agent-discogs search release --artist Wire --limit 20 --owned
