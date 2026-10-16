@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Any
 from discogs_sdk import RateLimitError
 
 from agent_discogs import account, trace
-from agent_discogs.collection import is_release_row
 from agent_discogs.pagination import (
     PageResult,
     ScanStop,
@@ -76,6 +75,13 @@ def release_id(listing: Any) -> int | None:
     """The id of the release a listing is a copy of, which `--owned` and
     `--in-wantlist` look up: not the listing's own `id`."""
     return getattr(listing.release, "id", None)
+
+
+def is_release_row(row: Any) -> bool:
+    """Whether a list row is a release, the only thing a collection or a
+    wantlist holds. Search and artist discography rows carry a `type`; version
+    and label catalogue rows have none and are all releases."""
+    return getattr(row, "type", "release") == "release"
 
 
 @dataclass(frozen=True)

@@ -38,6 +38,7 @@ KNOWN_REFS: dict[str, tuple[str, str]] = {
     "@l647": ("label", "Nothing Records"),
     "@a20661": ("artist", "Flood"),
     "@m563536": ("master", "Woodstock 94"),
+    "@l281": ("label", "Blue Note"),
 }
 
 # Entity names the docs mention, by kind. A ref whose ±CONTEXT-line window

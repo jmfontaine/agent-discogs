@@ -16,6 +16,7 @@ from discogs_sdk import (
     Release,
     SearchResult,
 )
+from discogs_sdk.models import ArtistRelease
 
 from agent_discogs import cli
 from agent_discogs.pagination import PageResult
@@ -88,6 +89,7 @@ class TestJsonSearch:
                 "catno": "92346-2",
                 "format": ["CD", "Album"],
                 "have": 7544,
+                "want": 900,
                 "master": "@m3719",
             }
         ]
@@ -384,15 +386,32 @@ class TestJsonGet:
     def test_get_releases_json_projection(self) -> None:
         artist = listed(id=3857, name="NIN")
         self._set_client(fake_client(artists_get=lambda _id: artist))
-        rel = fake_model(
-            id=3373,
-            type="master",
-            title="Down In It",
-            year=1989,
-            role="Main",
-            thumb="x",
+        # `stats` is not modeled on these rows: the SDK keeps it a raw dict.
+        master = ArtistRelease.model_validate(
+            {
+                "id": 3373,
+                "type": "master",
+                "title": "Down In It",
+                "year": 1989,
+                "role": "Main",
+                "thumb": "x",
+                "stats": {"community": {"in_wantlist": 903, "in_collection": 2687}},
+            }
         )
-        self._serve_page(PageResult(items=[rel], page=1, total_items=1, total_pages=1))
+        release = ArtistRelease.model_validate(
+            {
+                "id": 4401,
+                "type": "release",
+                "title": "Pretty Hate Machine",
+                "role": "Main",
+                "stats": {
+                    "community": {"in_wantlist": 0, "in_collection": 12},
+                    "user": {"in_wantlist": 1, "in_collection": 2},
+                },
+            }
+        )
+        page = PageResult(items=[master, release], page=1, total_items=2, total_pages=1)
+        self._serve_page(page)
         data = json.loads(
             CliRunner().invoke(cli, ["get", "--json", "releases", "@a3857"]).stdout
         )
@@ -404,8 +423,26 @@ class TestJsonGet:
                 "title": "Down In It",
                 "year": 1989,
                 "role": "Main",
-            }
+                "have": 2687,
+                "want": 903,
+            },
+            {
+                "ref": "@r4401",
+                "type": "release",
+                "title": "Pretty Hate Machine",
+                "role": "Main",
+                "have": 12,
+                "want": 0,  # the community's, never the user's `stats.user`
+            },
         ]
+        # --full is the SDK record, raw `stats` included: no projected want.
+        argv = ["get", "--json", "releases", "@a3857", "--full"]
+        full = json.loads(CliRunner().invoke(cli, argv).stdout)
+        assert full["results"] == [
+            master.model_dump(mode="json"),
+            release.model_dump(mode="json"),
+        ]
+        assert "want" not in full["results"][0]
 
     def test_get_versions_json_projection(self) -> None:
         master = listed(id=3719, title="TDS")
@@ -435,6 +472,7 @@ class TestJsonGet:
                 "catno": "92346-2",
                 "format": "CD, Album",
                 "have": 7544,
+                "want": 1,
             }
         ]
 
