@@ -85,6 +85,17 @@ Under `--wanted` (`search`, `get versions`, `get releases`; see [Marking rows wi
 
 `get collection --value --json` is the collection's value in your profile's currency, each amount a number: `{"currency":"EUR","minimum":75.5,"median":100.25,"maximum":250.0}`. `--full` is `{"currency":"EUR","value":{"maximum":"€250.00","median":"€100.25","minimum":"€75.50"}}`: the SDK's `CollectionValue` record, its amounts the strings Discogs sent, unparsed.
 
+`get collection --count-by KEY --json` is the count per value (see [--count-by](commands.md#--count-by)), with no `pagination`:
+
+```json
+{"count_by":"label","records":12,"without_value":0,"distinct":2,"counts":[{"value":"Nothing Records","ref":"@l647","count":9},{"value":"Self-released","count":3}],"collection":{"complete":true,"records_read":250,"total_records":250}}
+```
+
+- `count_by` is the key. `records` is the records counted, after the filters. `without_value` is the records with no value for the key (`0` is kept). `distinct` is the number of distinct values, more than the length of `counts` under `--top`.
+- `counts` is ordered largest first, ties by value: `{"value", "count"}`, plus `ref` (`@l…`, `@a…`) for a label or artist group that has an id. `value` is always a string (`"1994"`, `"1990s"`), spelled as in the first record that has it; a label or artist group with an id but no name has its ref as `value`.
+- `collection` is the object `--owned` documents (see [Owned rows](#owned-rows)): `complete`, `records_read` (every record read, kept by the filters or not; `0` when the cap was spent before the first page), `total_records` (the collection's size, or the folder's with `--folder`; `null` when no page was read) and, when the read stopped early, `stop_reason` (`"max_requests"` or `"rate_limited"`) and, for a 429 that said, `retry_after`. A stopped read's counts are those of the records read, a lower bound.
+- There is no `--full`: `--count-by --json --full` fails with `invalid_argument`.
+
 ## Wantlist
 
 `get wantlist --json` is the paginated envelope (see [get wantlist](commands.md#wantlist)):
