@@ -26,6 +26,10 @@ _FOLDERS = [
 ]
 # The Techno records: 12 of 250, on each of the three 100-record pages.
 _TECHNO = (5, 17, 40, 99, 100, 130, 160, 199, 200, 210, 230, 249)
+# The masters of the releases that have one: release 7 (records 3 and 120)
+# is master 60, as release 1050 is when a test gives it one through `odd`;
+# releases 1011 and 1012 are master 61. No other record has a `master_id`.
+_MASTERS = {7: 60, 1011: 61, 1012: 61}
 
 _VALUE_PATH = f"{_USER}/collection/value"
 # The collection value as Discogs writes it, in the profile's currency.
@@ -38,13 +42,14 @@ def _too_many() -> httpx2.Response:
 
 class _Collection:
     """The token's user `me` owns `size` records, in collection order. Record
-    `n` is release `1000 + n`, `Record <n>` by Artist on Label (`CAT<n>`), a
-    House LP from 2001 in Uncategorized, added on 2024-01-(n % 28 + 1), except
-    that the `_TECHNO` records are Techno 12" singles from 1992 on Tresor,
-    record 3 is release 7, rated 4, in Vinyl, record 120 is release 7 again,
-    in Uncategorized, and `odd` replaces records by number. The profile
-    adds `profile` (by default `curr_abbr: EUR`) and the collection value is
-    `value` (by default `_VALUE`). `throttle` answers with a 429:
+    `n` is release `1000 + n`, `Record <n>` by Artist (artist 4242) on Label
+    (`CAT<n>`), an Electronic, House LP from 2001 in Uncategorized, added on
+    2024-01-(n % 28 + 1), except that the `_TECHNO` records are Techno 12"
+    singles from 1992 on Tresor, record 3 is release 7, rated 4, in Vinyl,
+    record 120 is release 7 again, in Uncategorized, the releases in
+    `_MASTERS` name their master, and `odd` replaces records by number. The
+    profile adds `profile` (by default `curr_abbr: EUR`) and the collection
+    value is `value` (by default `_VALUE`). `throttle` answers with a 429:
     `"identity"` the username, `"folders"` the folder list, `"page:N"`
     collection page N. A search lists releases 1 and 2."""
 
@@ -107,7 +112,7 @@ class _Collection:
                 "id": release,
                 "title": f"Record {n}",
                 "year": 1992 if techno else 2001,
-                "artists": [{"name": "Artist", "join": ""}],
+                "artists": [{"id": 4242, "name": "Artist", "join": ""}],
                 "labels": [
                     {"name": "Tresor" if techno else "Label", "catno": f"CAT{n}"}
                 ],
@@ -120,7 +125,8 @@ class _Collection:
                 ],
                 "genres": ["Electronic"],
                 "styles": ["Techno"] if techno else ["House"],
-            },
+            }
+            | ({"master_id": _MASTERS[release]} if release in _MASTERS else {}),
         }
 
 
@@ -190,14 +196,23 @@ class TestListing:
         assert document["results"][3] == {
             "ref": "@r7",
             "title": "Artist - Record 3",
+            "artists": [{"ref": "@a4242", "name": "Artist"}],
             "year": 2001,
             "label": "Label",
             "catno": "CAT3",
             "format": "Vinyl (LP)",
+            "genres": ["Electronic"],
+            "styles": ["House"],
+            "master": "@m60",
             "folder": "Vinyl",
             "added": "2024-01-04T10:00:00-08:00",
             "rating": 4,
         }
+        assert list(document["results"][3]) == [  # the documented key order
+            "ref",
+            *("title", "artists", "year", "label", "catno", "format"),
+            *("genres", "styles", "master", "folder", "added", "rating"),
+        ]
         assert "rating" not in document["results"][0]  # 0 is unrated
 
         last, sent = h.run(
@@ -262,6 +277,8 @@ class TestListing:
         assert row["folder_id"] == 5
         assert row["instance_id"] == 10_003
         assert row["basic_information"]["labels"][0]["catalog_number"] == "CAT3"
+        assert row["basic_information"]["master_id"] == 60
+        assert "artists" not in row  # the record as sent, not the projection
 
     def test_sort_is_sent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         h = _Harness(monkeypatch)
@@ -320,6 +337,56 @@ class TestListing:
             },
         ]
 
+    def test_rows_carry_artists_genres_styles_and_the_master(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Each from `basic_information`, in credit order, and each omitted
+        when empty; Discogs' master 0 is no master."""
+
+        def release(n: int, **information: Any) -> dict[str, Any]:
+            """Record `n` as release `1000 + n`, with no master unless given."""
+            record = _Collection.record(n)
+            basic = record["basic_information"]
+            basic.pop("master_id", None)
+            return {
+                **record,
+                "id": 1000 + n,
+                "basic_information": {**basic, "id": 1000 + n, **information},
+            }
+
+        split = [
+            {"id": 1, "name": "One", "join": "&"},
+            {"name": "Two", "join": ","},
+            {"id": 3, "join": ""},
+            {"join": ""},
+        ]
+        odd = {
+            0: release(50, master_id=60),
+            1: release(1, master_id=0, artists=split),
+            2: release(2, genres=[], styles=[], artists=[]),
+            3: release(3, artists=[{"join": ""}], genres=None, styles=None),
+        }
+        h = _Harness(monkeypatch, _Collection(13, odd=odd))
+        result, _ = h.run("get", "collection", "--limit", "20", "--json")
+        rows = {row["ref"]: row for row in _document(result)["results"]}
+        assert rows["@r1050"]["master"] == "@m60"
+        assert rows["@r1001"]["artists"] == [
+            {"ref": "@a1", "name": "One"},
+            {"name": "Two"},
+            {"ref": "@a3"},
+        ]
+        for ref in ("@r1002", "@r1003"):
+            assert not {"artists", "genres", "styles"} & set(rows[ref])
+        masters = {ref: row.get("master") for ref, row in rows.items()}
+        assert masters == {
+            "@r1050": "@m60",
+            **{f"@r{1000 + n}": None for n in range(1, 11)},
+            "@r1011": "@m61",
+            "@r1012": "@m61",
+        }
+        joins = [a for row in rows.values() for a in row.get("artists", [])]
+        assert not any("join" in a for a in joins)
+
     def test_an_empty_collection(self, monkeypatch: pytest.MonkeyPatch) -> None:
         h = _Harness(monkeypatch, _Collection(0))
         result, _ = h.run("get", "collection")
@@ -354,6 +421,7 @@ class TestFilters:
         assert all("sort" not in params for _, params in sent)
         document = _document(result)
         assert [row["ref"] for row in document["results"]] == _TECHNO_REFS
+        assert all("Techno" in row["styles"] for row in document["results"])
         assert document["pagination"] == {
             "page": 1,
             "total_items": 250,

@@ -444,21 +444,39 @@ def project_list(found: Any) -> dict[str, Any]:
     )
 
 
+def _credits(artists: list[Any] | None) -> list[dict[str, Any]]:
+    """A record's artists in credit order, each its ref and name as far as
+    known; a credit with neither is dropped. No `join`: the row's title
+    carries the joins."""
+    known = (
+        drop_empty({"ref": a["ref"], "name": a["name"]}) for a in _artist_refs(artists)
+    )
+    return [credit for credit in known if credit]
+
+
 def project_record(record: Any, folders: dict[int, str]) -> dict[str, Any]:
     """A `get collection` row: one copy, its release titled like a search
     result, with the copy's folder by name (`folders`), `added`, its full
-    RFC 3339 timestamp, and `rating` (Discogs' 0 is unrated)."""
+    RFC 3339 timestamp, and `rating` (Discogs' 0 is unrated).
+
+    Unlike the text row, it also carries the release's artists, genres,
+    styles and master (Discogs' master 0 is none), from the same response."""
     release = getattr(record, "basic_information", None)
     labels = getattr(release, "labels", None) or []
     first = labels[0] if labels else None
+    master_id = getattr(release, "master_id", None)
     return drop_empty(
         {
             "ref": make_ref("release", record.id),
             "title": artist_title(release),
+            "artists": _credits(getattr(release, "artists", None)),
             "year": known_year(getattr(release, "year", None)),
             "label": getattr(first, "name", None),
             "catno": getattr(first, "catalog_number", None),
             "format": _format_string(getattr(release, "formats", None)),
+            "genres": getattr(release, "genres", None),
+            "styles": getattr(release, "styles", None),
+            "master": make_ref("master", master_id) if master_id else None,
             "folder": folder_name(folders, getattr(record, "folder_id", None)),
             "added": _timestamp(getattr(record, "date_added", None)),
             "rating": getattr(record, "rating", None) or None,

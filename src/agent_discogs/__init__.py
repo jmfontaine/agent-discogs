@@ -77,8 +77,10 @@ Get Collection:
                for your username, 1 for your folder names (not with --json
                --full), then 1 per page or per 100 records scanned; without
                --sort a scan reuses the pages --owned cached. --json: ref,
-               title, year, label, catno, format, folder, added, rating;
-               --json --full: the collection records (folder_id).
+               title, artists, year, label, catno, format, genres, styles,
+               master, folder, added, rating (artists, genres, styles and
+               master are not in the text row); --json --full: the
+               collection records (folder_id).
                get collection --value instead prints its value from Discogs'
                Marketplace sales in your profile's currency, as 'Collection
                value (EUR): min 75.50 · median 100.25 · max 250.00' (--json:
