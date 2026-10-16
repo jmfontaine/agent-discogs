@@ -51,6 +51,7 @@ from agent_discogs.formatting import (
     format_owned_master,
     format_price_guide,
     format_release,
+    format_stats,
     format_tracklist,
     format_wantlist,
     iter_tracks,
@@ -84,16 +85,18 @@ from agent_discogs.projections import (
     project_list,
     project_list_summary,
     project_listing,
+    project_market,
     project_master,
     project_master_version,
     project_price,
     project_record,
     project_release,
+    project_stats,
     project_tracklist,
     project_want,
 )
 from agent_discogs.refs import make_ref, parse_ref
-from agent_discogs.wantlist import ForSale
+from agent_discogs.wantlist import ForSale, market_of
 
 # Which entity type each noun expects
 NOUN_EXPECTED_TYPE = {
@@ -106,6 +109,7 @@ NOUN_EXPECTED_TYPE = {
     "price": "release",
     "release": "release",
     "releases": "artist",
+    "stats": "release",
     "tracklist": "release",
     "versions": "master",
 }
@@ -412,6 +416,26 @@ def _get_release(
         master_year=year,
         master_error=classify(miss, context).message if miss else None,
     )
+
+
+def _get_stats(
+    client: Discogs, entity_id: int, *, currency: CurrencyCode | None, mode: Mode
+) -> Any:
+    """A release's community numbers, from its record, and its Marketplace
+    numbers, from its stats, which name the currency Discogs priced them in
+    (`currency`, sent as `curr_abbr`, else the account's). Two requests,
+    the release first: one that does not exist sends no stats request, and
+    a failure of either fails the ref rather than print half the numbers."""
+    release = client.releases.get(entity_id)
+    # Reading a field of a lazy proxy sends its request: the release first.
+    _ = release.title
+    stats = release.marketplace_stats.get(curr_abbr=currency)
+    market = market_of(stats)
+    if mode.full:
+        return {"release": full_dump(release), "marketplace_stats": full_dump(stats)}
+    if mode.json:
+        return project_stats(release, market, blocked=bool(stats.blocked_from_sale))
+    return format_stats(release, market)
 
 
 def _get_label_releases(
@@ -842,14 +866,7 @@ def _get_wantlist(
                 context = f"Want {make_ref('release', want.id)}"
                 row["error"] = error_document(misses[want.id], context)
             elif want.id in markets:
-                market = markets[want.id]
-                row["market"] = drop_empty(
-                    {
-                        "for_sale": market.for_sale,
-                        "lowest": getattr(market.lowest, "value", None),
-                        "currency": getattr(market.lowest, "currency", None),
-                    }
-                )
+                row["market"] = project_market(markets[want.id])
         return document, bool(misses)
 
     amount = None if max_price is None else _amount(max_price)
@@ -1072,6 +1089,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "year",
         },
     ),
+    "stats": frozenset({"currency"}),
     "versions": frozenset(
         {
             "after",
@@ -1336,6 +1354,10 @@ def _flag_error(
         )
         if inventory_error:
             return inventory_error
+    if noun == "stats":
+        price_error = _price_error(None, currency)
+        if price_error:
+            return price_error
     if noun == "wantlist":
         wantlist_error = _wantlist_error(
             refs,
@@ -1499,6 +1521,7 @@ def _run_one(
     verbose: bool,
     compact: bool,
     master_year: bool,
+    currency: CurrencyCode | None,
     mode: Mode,
 ) -> Any:
     """One noun for one ref: text, or the JSON document."""
@@ -1546,6 +1569,8 @@ def _run_one(
             wanted=wanted,
             mode=mode,
         )
+    if noun == "stats":
+        return _get_stats(client, entity_id, currency=currency, mode=mode)
     if noun == "tracklist":
         return _get_tracklist(client, entity_id, mode)
     return _get_versions(
@@ -1793,6 +1818,7 @@ def _dispatch(
                     verbose=verbose,
                     compact=compact,
                     master_year=master_year,
+                    currency=_currency(currency) if currency else None,
                     mode=mode,
                 )
             )
@@ -1871,9 +1897,9 @@ def _json_options(command: Any) -> Any:
     "--currency",
     metavar="CODE",
     shell_complete=_complete_currency,
-    help=f"{'|'.join(CURRENCIES)}, any case. wantlist --for-sale: the currency "
-    "of the Marketplace prices (sent as curr_abbr); inventory: with --max-price, "
-    "keep listings priced in it (matched client-side, never sent)",
+    help=f"{'|'.join(CURRENCIES)}, any case. wantlist --for-sale, stats: the "
+    "currency of the Marketplace prices (sent as curr_abbr); inventory: with "
+    "--max-price, keep listings priced in it (matched client-side, never sent)",
 )
 @click.option(
     "--desc", is_flag=True, default=False, help="With --sort: descending order"
@@ -2065,7 +2091,7 @@ def get(
     """Get entity details for one or more refs.
 
     NOUN is the entity type: artist, credits, identifiers (alias: ids), label,
-    list, master, owned, price, release, releases, tracklist, versions;
+    list, master, owned, price, release, releases, stats, tracklist, versions;
     inventory, a seller's listings, which takes one Discogs username as REF;
     or collection, lists and wantlist, your own collection, lists and
     wantlist, which take no REF.

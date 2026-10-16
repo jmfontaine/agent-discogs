@@ -11,6 +11,7 @@ from discogs_sdk import (
     MarketplaceReleaseStats,
     Master,
     NotFoundError,
+    Price,
     PriceSuggestions,
     RateLimitError,
     Release,
@@ -20,7 +21,8 @@ from discogs_sdk.models import ArtistRelease
 
 from agent_discogs import cli
 from agent_discogs.pagination import PageResult
-from agent_discogs.projections import project_release
+from agent_discogs.projections import project_market, project_release
+from agent_discogs.wantlist import Market
 from tests.conftest import (
     ServePage,
     UseClient,
@@ -681,3 +683,26 @@ class TestReleaseMasterYear:
         assert data["master"] == "@m5460"
         assert "master_year" not in data
         assert "master_year_error" not in data
+
+
+class TestProjectMarket:
+    """The `market` object `get stats` and `get wantlist --for-sale` print."""
+
+    @pytest.mark.parametrize(
+        ("market", "blocked", "expected"),
+        [
+            (
+                Market(14, Price(currency="EUR", value=6.5)),
+                False,
+                {"for_sale": 14, "lowest": 6.5, "currency": "EUR"},
+            ),
+            (Market(3, None), False, {"for_sale": 3}),
+            (Market(0, None), False, {"for_sale": 0}),
+            (Market(0, None), True, {"for_sale": 0, "blocked": True}),
+        ],
+        ids=["priced", "no-price", "none", "blocked"],
+    )
+    def test_shapes(
+        self, market: Market, blocked: bool, expected: dict[str, object]
+    ) -> None:
+        assert project_market(market, blocked=blocked) == expected

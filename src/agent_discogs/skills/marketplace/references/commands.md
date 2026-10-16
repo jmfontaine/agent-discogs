@@ -6,6 +6,10 @@
 
 Price suggestions by condition (Mint, Near Mint, VG+, etc.) and marketplace stats, each amount with the ISO currency code Discogs returns: `Mint (M): EUR 20.00`, `Lowest: GBP 9.99`. It needs a token or OAuth *and* seller settings on that account (see Setup in `agent-discogs skills get core`).
 
+### `get stats @r... [@r...]`
+
+The numbers that compare pressings, one line per release (1-10 release refs or raw ids, blocks separated by a blank line): `@r847868 "The Downward Spiral" by Nine Inch Nails 1994 · have 7,618 · want 1,355 · rating 4.43/5 (602 votes) · for sale: 45 from EUR 0.80`. `have`, `want` and the community rating come from the release record (`GET /releases/{id}`); the count for sale and the lowest price come from its Marketplace stats (`GET /marketplace/stats/{id}`), which name the currency: the account's buyer currency (USD without credentials), or `--currency CODE` (`USD`, `GBP`, `EUR`, `CAD`, `AUD`, `JPY`, `CHF`, `MXN`, `BRL`, `NZD`, `SEK`, `ZAR`, any case; sent as `curr_abbr` on the stats request only; another code is `invalid_argument` before any request). A part Discogs did not send is left out (no rating when nobody voted). Nothing for sale, and a release blocked from sale, print `· for sale: 0`; a count with no price prints `· for sale: 3`, with no `from`. **Cost: 2 requests per ref** (20 for 10), the release first, so a release that does not exist costs 1; no username, profile, seller settings or user needed. A ref that is not a release, a 404, a 429 or a `--cached` miss on either request makes that ref its `✗` block (JSON `{"ref","error"}`), never a half line; the others still run and the command exits 1. Takes `--currency` only (besides `--json`, `--full`).
+
 ### `get wantlist`
 
 Your own wantlist, 5 wants a page (`--limit` 1-100, `--page`), no ref (a ref is `invalid_argument`): header `Wantlist: me (page 1, 5 of 150 wants)`, rows like `@r847868 "Nine Inch Nails - The Downward Spiral" 1994 · Nothing Records 92346-2 · CD (Album) · notes: Sealed only`, then `Next page: ...`. JSON rows carry `ref`, `title`, `year`, `label`, `catno`, `format`, and `notes`/`rating` when set (`rating` 0 = unrated is omitted; `--json --full` is the SDK's want records: `id`, `basic_information`, `notes`, `rating`, `resource_url`). Needs a token or OAuth, like `--owned` (`auth_required` before any request otherwise). Cost: 1 for the username (cached an hour) + 1 per page of up to 100 wants. Copy a row's `@r...` into `get release`, `price` or `get owned`. Only your own wantlist: no `--user`, and nothing adds or removes wants.
@@ -24,6 +28,8 @@ One seller's Marketplace listings (`GET /users/{username}/inventory`), 5 a page 
 
 ## JSON
 
+`get stats --json` is `{"ref","title","artists","year","community":{"have","want","rating","votes"},"market":{"for_sale","lowest","currency"}}` for one ref, a list for several (`{"ref","error"}` items for failures). `rating` is left out when `votes` is 0. `market` is the object `get wantlist --for-sale` rows carry: `for_sale` is `0` when Discogs sends `null` (nothing for sale, or blocked from sale), `lowest`/`currency` are omitted when it gives no price, and a release blocked from sale adds `"blocked": true`. `--json --full` is `{"release": <the release record>, "marketplace_stats": <the stats record>}`.
+
 `get wantlist --json` is `{"pagination":{...},"results":[{"ref","title","year","label","catno","format","notes","rating"}]}`; with `--for-sale` each kept row adds `market` and `pagination` is the filtered-scan envelope, and under `--cached` a want whose stats are not cached is a row with `error` instead of `market` (exit 1).
 
 `get inventory --json` is `{"pagination":{...},"results":[{"listing","ref","title","format","condition","sleeve","price","currency","ships_from","listed","url"}]}`; with a filter `pagination` is the filtered-scan envelope (plus `skipped_currency` with `--max-price`), with `--in-wantlist` the document has a `wantlist` object `{"complete","wants_read","total_wants"}` (`stop_reason`/`retry_after` when its read stopped, in which case `results` is empty), and with `--owned` rows carry `owned` and the document `collection`.
@@ -38,7 +44,7 @@ With any of `--condition`, `--sleeve`, `--ships-from`, `--max-price` or `--in-wa
 
 ## `--cached`
 
-Under `--cached`, `get wantlist` fails with `cache_miss` on the username or a wants page; under `--for-sale`, a want whose Marketplace stats are not cached becomes a row with its own `cache_miss` error and the command exits 1. `get inventory` fails so on an inventory page, and with `--in-wantlist` also on the username or a wants page; `get inventory` alone sends no username request.
+Under `--cached`, `get wantlist` fails with `cache_miss` on the username or a wants page; under `--for-sale`, a want whose Marketplace stats are not cached becomes a row with its own `cache_miss` error and the command exits 1. `get inventory` fails so on an inventory page, and with `--in-wantlist` also on the username or a wants page; `get inventory` alone sends no username request. `get stats` fails each ref whose release or stats is not cached with `cache_miss`, sending nothing.
 
 ## Flags for `get wantlist`
 
@@ -69,6 +75,7 @@ Any filter makes `get inventory` a client-side scan: 100-listing pages in the re
 
 ```bash
 agent-discogs get price @r847868
+agent-discogs get stats @r847868 @r352665 --currency EUR
 agent-discogs get wantlist
 agent-discogs get wantlist --limit 100 --page 2
 agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60

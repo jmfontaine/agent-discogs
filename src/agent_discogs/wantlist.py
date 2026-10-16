@@ -1,5 +1,6 @@
 """Which of the user's wants are for sale: the `get wantlist --for-sale`
-filter, one Marketplace stats lookup per want.
+filter, one Marketplace stats lookup per want. `Market` and `market_of()`
+are a release's Marketplace numbers, as `get stats` shows them too.
 
 The Discogs API lists no copies for sale per release, only these stats: how
 many copies are for sale and the lowest asking price across every condition
@@ -19,11 +20,22 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Market:
-    """A want's Marketplace stats: copies for sale and the lowest asking
+    """A release's Marketplace stats: copies for sale and the lowest asking
     price, in the `--currency` asked for (else the account's)."""
 
     for_sale: int
     lowest: Price | None
+
+
+def market_of(stats: Any) -> Market:
+    """The Marketplace numbers of a release's stats record, which Discogs
+    sends as `null` when nothing is for sale: a `null` count is 0, and a
+    release blocked from sale (`blocked_from_sale`, with `null` counts too)
+    reads as no copies. Reading a field of the lazy proxy sends its one
+    request."""
+    if stats.blocked_from_sale:
+        return Market(0, None)
+    return Market(stats.num_for_sale or 0, stats.lowest_price)
 
 
 class ForSale:

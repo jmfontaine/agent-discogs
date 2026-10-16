@@ -159,6 +159,7 @@ agent-discogs get tracklist @r352665
 agent-discogs get releases @a3857 --limit 20
 agent-discogs get versions @m3719 --country US --format Vinyl
 agent-discogs get price @r352665
+agent-discogs get stats @r847868 @r352665 --currency EUR
 agent-discogs get owned @r352665 @r847868
 agent-discogs get owned @m3719
 agent-discogs get versions @m3719 --country US --owned
@@ -174,7 +175,7 @@ agent-discogs get lists
 agent-discogs get list 123
 ```
 
-Nouns: `artist`, `collection` (takes no ref), `credits`, `identifiers` (alias `ids`), `inventory` (takes a seller's username), `label`, `list` (takes a list id), `lists` (takes no ref), `master`, `owned`, `price`, `release`, `releases`, `tracklist`, `versions`, `wantlist` (takes no ref). Use `--json` for JSON output.
+Nouns: `artist`, `collection` (takes no ref), `credits`, `identifiers` (alias `ids`), `inventory` (takes a seller's username), `label`, `list` (takes a list id), `lists` (takes no ref), `master`, `owned`, `price`, `release`, `releases`, `stats`, `tracklist`, `versions`, `wantlist` (takes no ref). Use `--json` for JSON output.
 
 ### release
 
@@ -215,6 +216,24 @@ An opening tag Discogs never closes ends with the field, and a closing tag with 
 `credits` lists who did what on a release, grouped by role, each person with an artist ref. It includes credits Discogs files on individual tracks and sub-tracks: each person appears once per role with the tracks the credit covers, and no track list means the whole release.
 
 `identifiers` lists barcodes, matrix/runout etchings, and other codes: the data that tells two pressings with the same catalog number apart.
+
+### stats
+
+`get stats @r... [@r...]` prints, for 1 to 10 releases (typed refs or raw ids), the numbers that compare pressings: how many Discogs users have each release and want it, its community rating, how many copies are for sale and the lowest asking price, with the currency named. One line per release, blocks separated by a blank line:
+
+```
+$ agent-discogs get stats @r847868 @r352665
+@r847868 "The Downward Spiral" by Nine Inch Nails 1994 · have 7,618 · want 1,355 · rating 4.43/5 (602 votes) · for sale: 45 from EUR 0.80
+
+@r352665 "The Downward Spiral" by Nine Inch Nails 2004 · have 1,978 · want 734 · rating 4.76/5 (251 votes) · for sale: 9 from EUR 72.00
+```
+
+- **Where the numbers come from.** `have`, `want` and the rating come from the release record (`GET /releases/{id}`, the request `get release` and `get price` send); the count for sale and the lowest price come from the release's Marketplace stats (`GET /marketplace/stats/{id}`, the request `get price` and `get wantlist --for-sale` send), which name the currency the price is in. A part Discogs did not send is left out: no rating when nobody voted, no `have`/`want` without community data.
+- **The market line** is `· for sale: N from CUR 12.50`, the amount with the ISO code Discogs sent, never a symbol, as on `get wantlist --for-sale`. Discogs sends no count and no price (`null`) when nothing is for sale, and also when the release is blocked from sale: both print `· for sale: 0`. A count with no price prints `· for sale: 3`, with no `from`.
+- **`--currency CODE`** (`USD`, `GBP`, `EUR`, `CAD`, `AUD`, `JPY`, `CHF`, `MXN`, `BRL`, `NZD`, `SEK`, `ZAR`, any case; Tab completes it) is sent as `curr_abbr` on the stats request only, so the price is in that currency. Without it Discogs prices in the account's buyer currency, or USD without credentials, and the line names it either way. An unknown code fails with `invalid_argument` before any request. The release record cannot be asked for another currency: Discogs ignores `curr_abbr` there.
+- **Cost: 2 requests per ref** on a cold cache, the release then its stats, both cached for an hour: 20 for 10 refs. The release is read first, so a release that does not exist costs 1 request and no stats request. No username, profile or seller settings are needed, and no credentials beyond what `get release` needs. See [Caching and request budget](caching-and-budget.md#what-commands-cost).
+- **Errors are per ref**, as for every several-ref `get`: a ref that is not a release (`@m3719 is a master, not a release. Use a release ref or ID with 'get stats'.`), a 404, a 429 or a `--cached` miss on either request makes that ref its `✗` block (JSON: a `{"ref","error"}` item), never a line with half the numbers; the other refs still run, and the command exits 1. `get stats` takes `--currency`, `--json` and `--full`; any other flag fails with `invalid_argument` before any request.
+- **`--json`**: `{"ref","title","artists","year","community":{"have","want","rating","votes"},"market":{"for_sale","lowest","currency"}}`, with `"blocked": true` in `market` for a release blocked from sale; `--json --full`: `{"release": <the release record>, "marketplace_stats": <the stats record>}`. See [JSON output](json-output.md#stats).
 
 ### owned
 
@@ -492,6 +511,7 @@ Each flag applies only to the nouns below. Any other flag you pass (even `--limi
 | `lists` | no ref; `--limit`, `--page` |
 | `wantlist` | no ref; `--limit`, `--page`, `--for-sale`, `--max-price` and `--currency` (both with `--for-sale`), `--after` and `--max-requests` (with `--for-sale`) |
 | `inventory` | one username, not a ref; `--limit`, `--page`, `--sort listed\|price\|item\|artist\|label\|catno`, `--desc`, `--owned`, `--condition`, `--sleeve`, `--ships-from`, `--in-wantlist`, `--max-price` and `--currency` (each needs the other), `--after` (with a filter) and `--max-requests` (with a filter or `--owned`) |
+| `stats` | `--currency` |
 | `artist`, `credits`, `identifiers`, `label`, `list`, `master`, `owned`, `price`, `tracklist` | none |
 
 ## tracks / price
@@ -505,7 +525,7 @@ agent-discogs price @r352665
 
 `price` prints each amount with the ISO currency code Discogs returns, never a symbol: `Mint (M): EUR 20.00`, `Lowest: GBP 9.99`. Under `--json` every price carries its `currency`: `"suggestions":{"Mint (M)":{"value":20.0,"currency":"EUR"}}`, `"market":{"for_sale":9,"lowest":9.99,"currency":"GBP"}`.
 
-The `Market: 9 for sale from 9.36` line of `get release` and `get master` is a bare amount: Discogs prices it in the token account's buyer currency (USD when unauthenticated) without naming it, so there it has no code and no `currency` key. Use `price` when the currency matters.
+The `Market: 9 for sale from 9.36` line of `get release` and `get master` is a bare amount: Discogs prices it in the token account's buyer currency (USD when unauthenticated) without naming it, so there it has no code and no `currency` key. Use [`get stats`](#stats) (the count, the lowest price and the community numbers, no seller settings needed) or `price` when the currency matters.
 
 ## Several refs
 
@@ -565,7 +585,7 @@ Tab completes every closed set of values:
 
 - commands, each under one name: the aliases (`find`, `query`, `fetch`, `show`) are not offered, but typed in full they still complete what follows;
 - option names (`--<Tab>`);
-- `get` nouns, `ids` included, the `--currency` codes of `get wantlist` and `get inventory`, and the grades of `--condition` and `--sleeve` (`M NM VG+ VG G+ G F P`);
+- `get` nouns, `ids` included, the `--currency` codes of `get wantlist`, `get inventory` and `get stats`, and the grades of `--condition` and `--sleeve` (`M NM VG+ VG G+ G F P`);
 - the `search` type word (`release`, `master`, `artist`, `label`), only as the first positional after `search` (options or `--` may come before it); the query after it gets no suggestions;
 - `search --release-type`, `search --sort`, the global `--color`, `cache clear`, the `skills` subcommands and skill names, and the `completion` shells;
 - `get --sort`: the keys of the noun typed before it (`get versions --sort <Tab>` offers `released title format label catno country`, `get collection --sort <Tab>` offers `label artist title catno format rating added year`, `get inventory --sort <Tab>` offers `listed price item artist label catno`), or every key of `releases`, `versions`, `collection` and `inventory` before a noun, and none after a noun that takes no `--sort`. A key the noun does not take is still rejected when the command runs.

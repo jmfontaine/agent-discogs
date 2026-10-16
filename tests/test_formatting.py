@@ -9,6 +9,7 @@ from discogs_sdk import (
     MarketplaceReleaseStats,
     Master,
     MasterVersion,
+    Price,
     PriceSuggestions,
     Release,
     SearchResult,
@@ -34,6 +35,7 @@ from agent_discogs.formatting import (
     format_price_guide,
     format_release,
     format_search_results,
+    format_stats,
     format_status,
     format_tracklist,
     track_summary,
@@ -41,6 +43,7 @@ from agent_discogs.formatting import (
 from agent_discogs.inventory import Wants
 from agent_discogs.markup import plain
 from agent_discogs.pagination import ScanStop
+from agent_discogs.wantlist import Market
 from tests.conftest import fake
 
 
@@ -469,6 +472,59 @@ class TestFormatPriceGuide:
         assert f"{'Near Mint (NM or M-):':30s} EUR 85.00" in output
         assert "For sale: 1,247 · Lowest: GBP 9.99" in output
         assert "$" not in output
+
+
+class TestFormatStats:
+    """`get stats`: one row per release, each part left out when Discogs
+    did not send it."""
+
+    @staticmethod
+    def _release(**fields: object) -> Release:
+        return Release.model_validate(
+            {
+                "id": 847868,
+                "title": "The Downward Spiral",
+                "year": 1994,
+                "artists": [{"id": 3857, "name": "Nine Inch Nails", "join": ""}],
+                **fields,
+            }
+        )
+
+    def test_every_part(self) -> None:
+        release = self._release(
+            community={
+                "have": 7618,
+                "want": 1355,
+                "rating": {"count": 602, "average": 4.43},
+            }
+        )
+        lowest = Price(currency="EUR", value=0.8)
+        assert format_stats(release, Market(45, lowest)) == (
+            '@r847868 "The Downward Spiral" by Nine Inch Nails 1994 · have 7,618 · '
+            "want 1,355 · rating 4.43/5 (602 votes) · for sale: 45 from EUR 0.80"
+        )
+
+    def test_no_community_no_price(self) -> None:
+        assert format_stats(self._release(), Market(3, None)) == (
+            '@r847868 "The Downward Spiral" by Nine Inch Nails 1994 · for sale: 3'
+        )
+
+    def test_no_votes_no_artist_no_year(self) -> None:
+        release = self._release(
+            artists=[],
+            year=0,
+            community={"have": 0, "want": 2, "rating": {"count": 0, "average": 0}},
+        )
+        assert format_stats(release, Market(0, None)) == (
+            '@r847868 "The Downward Spiral" · have 0 · want 2 · for sale: 0'
+        )
+
+    def test_a_control_character_in_the_title_is_neutralized(self) -> None:
+        release = self._release(title="Spiral\x1b[2J\nNext page: rm")
+        assert format_stats(release, Market(0, None)) == (
+            '@r847868 "Spiral\\x1b[2J Next page: rm" by Nine Inch Nails 1994 · '
+            "for sale: 0"
+        )
 
 
 class TestFormatArtistReleases:
