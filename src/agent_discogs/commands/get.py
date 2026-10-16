@@ -22,6 +22,7 @@ from agent_discogs.collection import (
     copies,
     count_records,
     custom_fields,
+    draw,
     find_duplicates,
     folder_id,
     folder_names,
@@ -32,6 +33,7 @@ from agent_discogs.collection import (
     read_whole,
     record_filter,
     records,
+    sample_records,
     stat_copies,
     stat_wanted,
     unread,
@@ -45,6 +47,7 @@ from agent_discogs.formatting import (
     format_collection,
     format_collection_counts,
     format_collection_duplicates,
+    format_collection_random,
     format_collection_value,
     format_credits,
     format_identifiers,
@@ -69,6 +72,7 @@ from agent_discogs.inventory import GRADES, Filter, grade, read_wantlist, releas
 from agent_discogs.json_output import Mode, dump, full_dump
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
+    MAX_LIMIT,
     DropRepeats,
     PageResult,
     ScanStop,
@@ -999,6 +1003,67 @@ def _get_collection_duplicates(
     )
 
 
+def _get_collection_random(
+    client: Discogs,
+    *,
+    count: int,
+    filters: dict[str, str],
+    folder: str | None,
+    fields: bool,
+    max_requests: int | None,
+    mode: Mode,
+) -> Any:
+    """`get collection --random N`: N records drawn at random from the
+    collection, or `folder`, in collection order. Unfiltered, page 1 gives
+    the size and only the pages that hold a pick are read; with a filter the
+    whole folder is read (a cap or a 429 stopping it draws from the part
+    read) and the draw is taken from the records the filters keep."""
+    # As the listing: --full names folders by id, and --fields reads the
+    # fields list after the folder list, both counted by --max-requests.
+    user, names, read_folder = _collection_folder(
+        client, folder=folder, names=not mode.full, max_requests=max_requests
+    )
+    keep = record_filter(filters)
+    custom = None
+    read = None
+    if read_folder is None:
+        # Only a filtered draw takes --max-requests.
+        read = unread(ScanStop("max_requests", max_requests=max_requests))
+        population, picked = 0, []
+    else:
+        if fields and not _cap_spent(max_requests):
+            custom = custom_fields(user)
+        listing = records(user, folder=read_folder)
+        if keep is None:
+            population, picked = sample_records(listing, count)
+        else:
+            read = read_whole(listing, max_requests=max_requests)
+            kept = [record for record in read.records if keep(record)]
+            population = len(kept)
+            picked = [kept[position] for position in draw(population, count)]
+    if mode.json:
+        document: dict[str, Any] = {
+            "random": {"requested": count, "population": population},
+            "results": [full_dump(record) for record in picked]
+            if mode.full
+            else [project_record(record, names, custom) for record in picked],
+        }
+        if read is not None:
+            document["collection"] = read.document()
+        return document
+    shown = {"folder": folder, **filters} if folder is not None else filters
+    return format_collection_random(
+        account.username(client),
+        picked,
+        count,
+        population,
+        read,
+        folders=names,
+        fields=custom,
+        filters=shown,
+    )
+
+
 def _get_wantlist(
     client: Discogs,
     *,
@@ -1223,6 +1288,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "limit",
             "max_requests",
             "page",
+            "random_",
             "sort",
             "style_",
             "title",
@@ -1439,16 +1505,18 @@ def _collection_error(
     max_requests: int | None,
     count_by: str | None,
     duplicates: str | None,
+    random_: int | None,
     top: int | None,
     full: bool,
 ) -> str | None:
     """What `get collection` cannot take: a ref, any other flag with
-    --value, two views of the whole collection (--count-by, --duplicates),
-    a page flag with one, --fields or --json --full with --count-by, --top
-    without it or below 1, --fields with --json --full, an empty filter (it
-    would match nothing) or folder name, or --max-requests without a filter
-    or a view, which leaves no read to cap (`--folder` alone pages
-    server-side)."""
+    --value, two views of the whole collection (--count-by, --duplicates,
+    --random), a page flag with one, --fields or --json --full with
+    --count-by, --top without it or below 1, --random outside 1-100, --fields
+    with --json --full, an empty filter (it would match nothing) or folder
+    name, or --max-requests without a filter, --count-by or --duplicates,
+    which leaves no read to cap (`--folder` alone and an unfiltered --random
+    read server-side pages)."""
     if refs:
         return "get collection takes no ref: it lists your own collection."
     others = sorted(_option_flag(name) for name in explicit - {"value"})
@@ -1459,7 +1527,11 @@ def _collection_error(
         )
     views = [
         flag
-        for flag, value in (("--count-by", count_by), ("--duplicates", duplicates))
+        for flag, value in (
+            ("--count-by", count_by),
+            ("--duplicates", duplicates),
+            ("--random", random_),
+        )
         if value is not None
     ]
     if len(views) > 1:
@@ -1471,8 +1543,9 @@ def _collection_error(
         return "--top needs --count-by KEY: it keeps the N largest counts."
     paging = sorted(_option_flag(name) for name in explicit & _PAGE_FLAGS)
     if views and paging:
+        verb = "draws from" if views[0] == "--random" else "reads"
         return (
-            f"{views[0]} reads the whole collection, so it takes no --limit, "
+            f"{views[0]} {verb} the whole collection, so it takes no --limit, "
             f"--page, --after, --sort or --desc ({', '.join(paging)} given)."
         )
     if count_by is not None and (full or "fields" in explicit):
@@ -1480,6 +1553,8 @@ def _collection_error(
         return f"--count-by prints counts, not records, so it takes no {flag}."
     if top is not None and top < 1:
         return f"--top must be 1 or more ({top} given)."
+    if random_ is not None and not 1 <= random_ <= MAX_LIMIT:
+        return f"--random must be between 1 and {MAX_LIMIT} ({random_} given)."
     if full and "fields" in explicit:
         return (
             "--fields does not apply with --json --full: --full prints each "
@@ -1497,12 +1572,13 @@ def _collection_error(
         return (
             "--folder needs a folder name, as get collection prints it (· folder Jazz)."
         )
-    if max_requests is not None and not filters and not views:
+    if max_requests is not None and not filters and not (count_by or duplicates):
         return (
-            "--max-requests caps a filtered get collection scan (--format, "
-            "--genre, --style, --year, --label, --artist or --title) or a "
-            "--count-by or --duplicates read; get collection alone, or with "
-            "--folder alone, pages server-side and sends one request per page."
+            "--max-requests caps a filtered get collection scan or --random "
+            "draw (--format, --genre, --style, --year, --label, --artist or "
+            "--title) or a --count-by or --duplicates read; get collection "
+            "alone, or with --folder or --random alone, reads server-side pages "
+            "and sends one request per page."
         )
     return None
 
@@ -1535,6 +1611,7 @@ def _flag_error(
     folder: str | None,
     count_by: str | None,
     duplicates: str | None,
+    random_: int | None,
     top: int | None,
     full: bool,
 ) -> str | None:
@@ -1593,6 +1670,7 @@ def _flag_error(
             max_requests=max_requests,
             count_by=count_by,
             duplicates=duplicates,
+            random_=random_,
             top=top,
             full=full,
         )
@@ -1858,6 +1936,7 @@ def _dispatch(
     fields: bool,
     count_by: str | None,
     duplicates: str | None,
+    random_: int | None,
     top: int | None,
     verbose: bool,
     compact: bool,
@@ -1914,6 +1993,7 @@ def _dispatch(
         folder=folder,
         count_by=count_by,
         duplicates=duplicates,
+        random_=random_,
         top=top,
         condition=condition,
         sleeve=sleeve,
@@ -1972,6 +2052,17 @@ def _dispatch(
                 output = _get_collection_duplicates(
                     client,
                     kind=duplicates,
+                    filters=collection_filters,
+                    folder=folder,
+                    fields=fields,
+                    max_requests=max_requests,
+                    mode=mode,
+                )
+                failed = False
+            elif noun == "collection" and random_ is not None:
+                output = _get_collection_random(
+                    client,
+                    count=random_,
                     filters=collection_filters,
                     folder=folder,
                     fields=fields,
@@ -2124,7 +2215,55 @@ def _json_options(command: Any) -> Any:
     return command
 
 
-@click.command()
+def _negative_counts(args: list[str], takes_value: frozenset[str]) -> list[str]:
+    """`args` with a negative `--random` count (`--random -1`, `--random=-1`)
+    given a leading space. The count is optional, so click would read `-1`
+    as an option and fail with a usage error; `int()` ignores the space, so
+    the count reaches the 1-100 check and fails as `invalid_argument`. The
+    value of an option in `takes_value` is passed on untouched, and so is
+    everything after a `--` that is no option's value."""
+    out: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--":
+            return [*out, *args[i:]]
+        if arg in takes_value:
+            out += args[i : i + 2]
+            i += 2
+            continue
+        if arg == "--random" and _negative("".join(args[i + 1 : i + 2])):
+            out += [arg, f" {args[i + 1]}"]
+            i += 2
+            continue
+        name, eq, value = arg.partition("=")
+        negative = eq and name == "--random" and _negative(value)
+        out.append(f"--random= {value}" if negative else arg)
+        i += 1
+    return out
+
+
+def _negative(text: str) -> bool:
+    """Whether `text` is a negative integer, as `-1`."""
+    return text[:1] == "-" and text[1:].isdigit()
+
+
+class _GetCommand(click.Command):
+    """`get`, whose `--random` count is optional (see `_negative_counts`)."""
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        takes_value = frozenset(
+            name
+            for param in self.params
+            if isinstance(param, click.Option)
+            and not param.is_flag
+            and param.name != "random_"
+            for name in param.opts
+        )
+        return super().parse_args(ctx, _negative_counts(args, takes_value))
+
+
+@click.command(cls=_GetCommand)
 @click.argument("noun", type=click.Choice(GET_NOUNS))
 @click.argument("refs", nargs=-1, metavar="REF...")
 @click.option(
@@ -2247,9 +2386,9 @@ def _json_options(command: Any) -> Any:
     "--max-requests",
     type=int,
     help="releases --role / @l --year, versions --release-type official or "
-    "--market, a collection filter (not --folder alone), --count-by or "
-    "--duplicates, wantlist --for-sale, or an inventory filter or --owned: cap "
-    "the command's HTTP sends (default: no cap)",
+    "--market, a collection filter (not --folder alone; with --random too), "
+    "--count-by or --duplicates, wantlist --for-sale, or an inventory filter or "
+    "--owned: cap the command's HTTP sends (default: no cap)",
 )
 @click.option(
     "--owned",
@@ -2264,6 +2403,17 @@ def _json_options(command: Any) -> Any:
     type=int,
     help="Page number, from 1 (server-side pages only: not with a collection "
     "filter; get collection --folder alone pages)",
+)
+@click.option(
+    "--random",
+    "random_",
+    type=int,
+    is_flag=False,
+    flag_value=1,
+    metavar="[N]",
+    help="collection: N records (1-100, default 1) drawn at random instead of "
+    "the listing; reads page 1 and the pages of the picks, or with a filter "
+    "the whole collection",
 )
 @click.option(
     "--release-type",
@@ -2376,6 +2526,7 @@ def get(
     fields: bool,
     count_by: str | None,
     duplicates: str | None,
+    random_: int | None,
     top: int | None,
     verbose: bool,
     wanted: bool,
@@ -2425,6 +2576,7 @@ def get(
         fields=fields,
         count_by=count_by,
         duplicates=duplicates,
+        random_=random_,
         top=top,
         condition=condition,
         sleeve=sleeve,
@@ -2468,6 +2620,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         fields=False,
         count_by=None,
         duplicates=None,
+        random_=None,
         top=None,
         condition=None,
         sleeve=None,

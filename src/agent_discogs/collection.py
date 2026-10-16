@@ -19,6 +19,7 @@ names each copy's notes and custom fields (`custom_fields()`,
 from __future__ import annotations
 
 import functools
+import random
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -435,6 +436,35 @@ def read_whole(listing: Listing, *, max_requests: int | None) -> Ownership:
         result.stop,
         tuple(result.items),
     )
+
+
+def draw(population: int, count: int) -> list[int]:
+    """`get collection --random`: `count` distinct positions out of
+    `population`, uniformly (all of them when fewer), in ascending order, so
+    the records print in collection order."""
+    return sorted(random.sample(range(population), min(count, population)))
+
+
+def sample_records(listing: Listing, count: int) -> tuple[int, list[Any]]:
+    """`count` records drawn from a folder's whole `listing`, unfiltered,
+    and the folder's size: page 1 (100 records, unsorted) for the size, then
+    each other page that holds a pick, once, in ascending order. A 429 on
+    any page propagates: a draw from part of the folder would not be
+    uniform."""
+    first = fetch_page(listing, page=1, per_page=MAX_LIMIT)
+    total = first.total_items or 0
+    pages = {1: first.items}
+    picked: list[Any] = []
+    for position in draw(total, count):
+        page, row = divmod(position, MAX_LIMIT)
+        if page + 1 not in pages:
+            pages[page + 1] = fetch_page(
+                listing, page=page + 1, per_page=MAX_LIMIT
+            ).items
+        # A page cached before the folder shrank can hold fewer records than
+        # page 1's total promised: a pick past its end is dropped.
+        picked.extend(pages[page + 1][row : row + 1])
+    return total, picked
 
 
 @dataclass(frozen=True)

@@ -157,6 +157,21 @@ Get Collection:
                folders, or for a master ref, copies, releases; records,
                without_master, collection; --json --full: each group's ref
                and instances).
+               get collection --random [N] instead prints N records (1-100,
+               default 1) drawn at random, one row per copy, in collection
+               order: 'Collection: me random 3 (3 of 250 records)', or with
+               filters 'Collection: me style=Techno random 2 (2 of 12 matching
+               records)'; all of them when fewer qualify. Unfiltered it reads
+               the username, the folder list, page 1 (100 records) and each
+               other page holding a pick: 3 + up to N requests cold, and a
+               429 on any of them is an error. With a filter it reads the
+               whole collection (as --count-by) and draws from the matches;
+               --max-requests (filtered only) or a 429 after the first page
+               draws from the part read, the header saying where it stopped.
+               --folder draws from one folder, --fields adds the fields. No
+               --limit, --page, --after, --sort or --desc (--json: random of
+               requested, population; results, the listing's rows; collection
+               when filtered; --json --full: the records).
                get collection --value instead prints its value from Discogs'
                Marketplace sales in your profile's currency, as 'Collection
                value (EUR): min 75.50 · median 100.25 · max 250.00' (--json:
@@ -276,14 +291,14 @@ Options:
                    --owned and --wanted reads or get wantlist --for-sale:
                    search or get versions with --release-type official, or
                    unofficial with --format; get releases --role / @l --year;
-                   get collection with a filter, --count-by or --duplicates,
-                   not --folder alone (its username, folder list and --fields
-                   list count first); search with --owned or --wanted; get
-                   inventory with --owned; get wantlist --for-sale; get
-                   inventory with a filter (--in-wantlist's wantlist read
-                   counts too; about 1 request per 100 listings, so a
-                   50,000-listing seller is 500:
-                   always pass it); one ref only. Default: no cap, the
+                   get collection with a filter (also with --random),
+                   --count-by or --duplicates, not --folder alone (its
+                   username, folder list and --fields list count first);
+                   search with --owned or --wanted; get inventory with
+                   --owned; get wantlist --for-sale; get inventory with a
+                   filter (--in-wantlist's wantlist read counts too; about 1
+                   request per 100 listings, so a 50,000-listing seller is
+                   500: always pass it); one ref only. Default: no cap, the
                    scan runs until the page fills or the list ends (--for-sale:
                    about 1 request per want, 500 wants = ~9 minutes of the
                    60/min budget, so always pass it; 3 or more there: the
@@ -452,6 +467,8 @@ Options:
                    get collection: the releases or masters you own more than
                    once instead of the listing; reads the whole collection
                    (see Get Collection)
+  --random [N]     get collection: N records (1-100, default 1) drawn at random
+                   instead of the listing (see Get Collection)
   --credit, --track, --title, --anv
                    search: match a person credited on a release or master, a
                    track title, the release title (sent as release_title; on
@@ -477,8 +494,9 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --fields, --after and --max-requests (with a filter, not
                    --folder alone); or --count-by with --top, the filters,
                    --folder and --max-requests; or --duplicates with the
-                   filters, --folder, --fields and --max-requests; or --value
-                   alone
+                   filters, --folder, --fields and --max-requests; or --random
+                   with the filters, --folder, --fields and --max-requests
+                   (with a filter); or --value alone
   lists            no ref; --limit, --page
   stats            --currency
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
@@ -609,6 +627,7 @@ Examples:
   agent-discogs get collection --style Techno --format 12\\" --max-requests 20
   agent-discogs get collection --count-by genre --top 10
   agent-discogs get collection --duplicates master --format Vinyl
+  agent-discogs get collection --random 3 --genre Jazz
   agent-discogs get collection --value
   agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
   agent-discogs get inventory <seller> --in-wantlist --condition VG+ --max-requests 60
