@@ -6,7 +6,7 @@ HTTP responses are cached automatically with a 1-hour TTL. The cache is stored a
 
 ## --cached and --fresh
 
-Two global flags control the cache for one command. They precede the subcommand and are mutually exclusive (exit code 2 otherwise):
+Two global flags control the cache for one command. They precede the subcommand and are mutually exclusive (exit code 2 otherwise); after the subcommand, they are [a usage error](errors.md#a-global-flag-after-the-command):
 
 ```bash
 agent-discogs --cached price @r352665      # serve only from the cache; never touches the API

@@ -89,6 +89,19 @@ Before any request, `get inventory` rejects with `invalid_argument` (no budget f
 
 A 429 after the first page of a filter scan keeps the rows matched so far, and `--in-wantlist` stopped short by `--max-requests` or a 429 scans nothing and prints an empty capped page, exit 0 (see [get inventory](commands.md#inventory)); a `--cached` miss on the username, a wants page or an inventory page fails with `cache_miss`.
 
+## A global flag after the command
+
+`--cached`, `--fresh`, `--debug` and `--color` are options of `agent-discogs` itself and go before the command (`agent-discogs --fresh get collection --value`). Typed after it, click rejects them: exit 2, text on stderr (under `--json` too), and nothing is sent to Discogs. The error says where the flag goes, with the command's canonical name (`get` for `fetch` or `show`):
+
+```
+Usage: agent-discogs get [OPTIONS] {artist|...|ids} REF...
+Try 'agent-discogs get --help' for help.
+
+Error: No such option '--fresh'. It is a global option: put it before the command, as in 'agent-discogs --fresh get ...'.
+```
+
+`--color never` and `--color=never` both report `--color`, and the example spells it `--color never` whatever value was typed. Any other unknown option keeps click's message and its `Did you mean` suggestion.
+
 ## Rate limited (429)
 
 When Discogs answers 429, the error says how much of the minute is left (`Rate limited: 0/60 requests left this minute.`), and under `--json` the envelope carries `retry_after`, `limit`, and `remaining`.

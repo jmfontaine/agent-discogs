@@ -4,7 +4,7 @@ The commands every task uses: the global flags, `search`, the database nouns of 
 
 ## Global Flags
 
-Global flags precede the command (`agent-discogs --cached price @r847868`).
+Global flags precede the command (`agent-discogs --cached price @r847868`). After it, `--cached`, `--fresh`, `--debug` or `--color` is a usage error (exit 2, nothing sent) whose message says to put it before.
 
 | Flag | Description |
 |------|-------------|
