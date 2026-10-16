@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -56,6 +57,10 @@ class TestSearchRequest:
             ("--label", "label"),
             ("--style", "style"),
             ("--year", "year"),
+            ("--credit", "credit"),
+            ("--track", "track"),
+            ("--title", "release_title"),
+            ("--anv", "anv"),
         ],
     )
     def test_each_filter_is_its_own_parameter(self, flag: str, param: str) -> None:
@@ -97,6 +102,102 @@ class TestSearchRequest:
             "page": "1",
             "per_page": "10",
         }
+
+    def test_new_filters_with_the_existing_ones(self) -> None:
+        sent = self._sent(
+            "release",
+            *("--artist", "Horace Silver", "--format", "Vinyl", "--year", "1956"),
+            *("--credit", "Rudy Van Gelder", "--track", "Senor Blues"),
+            *("--title", "Six Pieces of Silver"),
+        )
+        assert sent == {
+            "type": "release",
+            "artist": "Horace Silver",
+            "format": "Vinyl",
+            "year": "1956",
+            "release_title": "Six Pieces of Silver",
+            "credit": "Rudy Van Gelder",
+            "track": "Senor Blues",
+            "page": "1",
+            "per_page": "5",
+        }
+
+    @pytest.mark.parametrize(
+        ("args", "param"),
+        [
+            (["--anv", "Miles"], "anv"),
+            (["artist", "--anv", "Miles"], "anv"),
+            (["artist", "--title", "Kind of Blue"], "release_title"),
+            (["label", "--title", "Kind of Blue"], "release_title"),
+            (["--credit", "Rudy Van Gelder"], "credit"),
+        ],
+    )
+    def test_accepted_without_a_query(self, args: list[str], param: str) -> None:
+        kind = {"type": args[0]} if not args[0].startswith("-") else {}
+        assert self._sent(*args) == {
+            **kind,
+            param: args[-1],
+            "page": "1",
+            "per_page": "5",
+        }
+
+    def test_blank_new_filter_is_dropped(self) -> None:
+        assert self._sent("Spiral", "--credit", " ", "--title", "") == {
+            "q": "Spiral",
+            "page": "1",
+            "per_page": "5",
+        }
+
+    @pytest.mark.parametrize(
+        ("args", "message"),
+        [
+            (
+                ["artist", "--credit", "x"],
+                (
+                    "--credit matches the credits of releases and masters; an artist "
+                    "search has none. Search releases: agent-discogs search release "
+                    '--credit "..."'
+                ),
+            ),
+            (
+                ["label", "--track", "x"],
+                (
+                    "--track matches the track titles of releases and masters; a "
+                    "label search has none. Search releases: agent-discogs search "
+                    'release --track "..."'
+                ),
+            ),
+            (
+                ["release", "--anv", "x"],
+                (
+                    "--anv matches artist name variations; a release search has "
+                    'none. Search artists: agent-discogs search artist --anv "..."'
+                ),
+            ),
+            (
+                ["master", "--anv", "x"],
+                (
+                    "--anv matches artist name variations; a master search has "
+                    'none. Search artists: agent-discogs search artist --anv "..."'
+                ),
+            ),
+            (
+                ["label", "--anv", "x"],
+                (
+                    "--anv matches artist name variations; a label search has "
+                    'none. Search artists: agent-discogs search artist --anv "..."'
+                ),
+            ),
+        ],
+    )
+    def test_filter_on_a_type_it_cannot_match_is_rejected(
+        self, args: list[str], message: str
+    ) -> None:
+        result = CliRunner().invoke(cli, ["search", *args])
+        assert text_error(result) == f"✗ {message}\n"
+        error = json_error(CliRunner().invoke(cli, ["search", *args, "--json"]))
+        assert (error["code"], error["message"]) == ("invalid_argument", message)
+        assert self.api.sends == []
 
 
 class TestSearchCommand:
@@ -145,6 +246,24 @@ class TestSearchCommand:
             "",
             '@a3857 "Nine Inch Nails"',  # typed search: no per-row [type]
         ]
+
+    def test_header_echoes_the_new_filters_by_their_flag_names(self) -> None:
+        item = SearchResult(id=1, type="release", title="Six Pieces", format=["LP"])
+        self._serve_page(PageResult(items=[item], page=1, total_items=1, total_pages=1))
+        result = CliRunner().invoke(
+            cli,
+            [
+                "search",
+                "release",
+                *("--credit", "Rudy Van Gelder", "--artist", "Horace Silver"),
+                *("--title", "Six Pieces of Silver"),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert result.stdout.splitlines()[0] == (
+            'Search: release artist="Horace Silver" title="Six Pieces of Silver" '
+            'credit="Rudy Van Gelder" (page 1, 1 of ≤1 results)'
+        )
 
     def test_search_empty_query_after_type_no_filters(self) -> None:
         result = CliRunner().invoke(cli, ["search", "release"])
@@ -505,6 +624,52 @@ class TestUnofficialServerSide:
         assert len(self.api.sends) == sent
 
 
+_FOOTER = re.compile(r"^(?:Next page|Continue scan): (.+)$", re.MULTILINE)
+
+_TRICKY = 'Rudy Van "Gelder" $HOME'
+
+
+class TestNewFilterContinuation:
+    """The printed continuation repeats `--title`, `--credit`, `--track` and
+    `--anv` by their flag names, quoted so they paste back unchanged."""
+
+    @pytest.mark.parametrize(
+        ("release_type", "continues_with"),
+        [(["--release-type", "all"], "--page"), ([], "--after")],
+        ids=["server-side", "filtered"],
+    )
+    def test_continuation_repeats_every_new_filter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        release_type: list[str],
+        continues_with: str,
+    ) -> None:
+        api = _FakeAPI(monkeypatch, _Catalogue())
+        argv = [
+            "search",
+            *("--title", _TRICKY, "--credit", _TRICKY),
+            *("--track", _TRICKY, "--anv", _TRICKY),
+            *release_type,
+            *("--limit", "2", "--", "Spiral"),
+        ]
+        first = CliRunner().invoke(cli, argv)
+        assert first.exit_code == 0, first.output
+        match = _FOOTER.search(first.stdout)
+        assert match, first.output
+        emitted = shlex.split(match.group(1))
+        assert "--release-title" not in emitted
+        for flag in ("--title", "--credit", "--track", "--anv"):
+            assert emitted[emitted.index(flag) + 1] == _TRICKY
+        assert continues_with in emitted
+
+        second = CliRunner().invoke(cli, emitted[1:])
+        assert second.exit_code == 0, second.output
+        sent = [params for path, params in api.sends if path == "/database/search"]
+        assert len({json.dumps({**p, "page": None}, sort_keys=True) for p in sent}) == 1
+        assert {"release_title", "credit", "track", "anv"} <= sent[-1].keys()
+        assert sent[-1]["release_title"] == _TRICKY
+
+
 _NEWEST_ADDED = datetime(2026, 10, 1, 12, tzinfo=timezone(timedelta(hours=-7)))
 
 
@@ -756,3 +921,18 @@ class TestAddedSince:
         error = json.loads(result.stdout)["error"]
         assert error["code"] == "bad_response"
         assert "not sorted by date_added" in error["message"]
+
+    def test_new_filters_reach_the_date_sorted_search(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch)
+        argv = [*_ADDED, "--credit", "Rudy Van Gelder", "--title", "Blue", "--json"]
+        result, _ = self._run(*argv)
+        assert result.exit_code == 0, result.output
+        search = next(p for path, p in self.api.sends if path == "/database/search")
+        assert (search["credit"], search["release_title"]) == (
+            "Rudy Van Gelder",
+            "Blue",
+        )
+        assert (search["sort"], search["sort_order"]) == ("date_added", "desc")
+        assert "title" not in search
