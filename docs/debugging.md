@@ -21,7 +21,7 @@ cache     ~/.cache/agent-discogs  540.0 KB  ttl 1h
 output    494 chars, 9 lines, ≈123 tokens
 ```
 
-The `--owned` collection read shows in the panel as a `scan` row too, since it goes through the same scan machinery; its rows fetched and kept are equal.
+The `--owned` collection read of `search` and `get inventory` shows in the panel as a `scan` row too, since it goes through the same scan machinery; its rows fetched and kept are equal. `get versions` and `get releases` read no collection for `--owned`, so it adds no row there.
 
 The `get wantlist --for-sale` scan has a `scan` row as well: its API calls are the wants pages (100 wants each), its rows fetched every want on those pages (checked or not), and its rows kept the wants it kept. Each want's Marketplace stats lookup is a `GET /marketplace/stats/{id}` row of its own, which the scan row's API calls do not count.
 

@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from agent_discogs import markup, sanitize, style
-from agent_discogs.collection import CustomField, field_values, is_release_row
+from agent_discogs.collection import (
+    CustomField,
+    field_values,
+    is_release_row,
+    stat_copies,
+)
 from agent_discogs.config import CACHE_TTL_LABEL
 from agent_discogs.inventory import GRADES, release_id, short_grade
 from agent_discogs.markup import Part, plain
@@ -519,6 +524,15 @@ def _owned(ownership: Ownership | None, row: Any) -> Span | None:
     return _owned_mark(ownership.owned(row.id))
 
 
+def _stat_owned(owned: bool, row: Any) -> Span | None:
+    """The `--owned` mark of a `get versions` or `get releases` release row,
+    from the count its own stats carry (`owned ?` without one); nothing
+    otherwise."""
+    if not owned or not is_release_row(row):
+        return None
+    return _owned_mark(stat_copies(row))
+
+
 def _owned_mark(copies: int | None) -> Span:
     """The `--owned` mark for a release with `copies` (None: undecided)."""
     if copies is None:
@@ -1012,7 +1026,7 @@ def format_label_releases(
     stop: ScanStop | None = None,
     dropped: int = 0,
     header_resent: bool = False,
-    ownership: Ownership | None = None,
+    owned: bool = False,
 ) -> str:
     """Format a label's catalogue (client-side `--year` scans are `filtered`),
     noting the `dropped` rows that repeated the row before them."""
@@ -1045,11 +1059,10 @@ def format_label_releases(
             catno=getattr(rel, "catalog_number", None),
             fmt=getattr(rel, "format", None),
             **_community_counts(rel),
-            owned=_owned(ownership, rel),
+            owned=_stat_owned(owned, rel),
         )
         for rel in releases
     )
-    lines.extend(_ownership_note(ownership))
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
@@ -1065,7 +1078,7 @@ def format_artist_releases(
     filtered: bool = False,
     stop: ScanStop | None = None,
     header_resent: bool = False,
-    ownership: Ownership | None = None,
+    owned: bool = False,
 ) -> str:
     """Format artist releases/discography."""
     counts = _page_counts(
@@ -1097,11 +1110,10 @@ def format_artist_releases(
             fmt=getattr(rel, "format", None),
             role=getattr(rel, "role", None),
             **_community_counts(rel),
-            owned=_owned(ownership, rel),
+            owned=_stat_owned(owned, rel),
         )
         for rel in releases
     )
-    lines.extend(_ownership_note(ownership))
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 
@@ -1180,7 +1192,7 @@ def format_master_versions(
     filtered: bool = False,
     stop: ScanStop | None = None,
     header_resent: bool = False,
-    ownership: Ownership | None = None,
+    owned: bool = False,
 ) -> str:
     """Format master release versions (`--release-type` scans are `filtered`)."""
     counts = _page_counts(
@@ -1211,12 +1223,10 @@ def format_master_versions(
             catno=getattr(ver, "catalog_number", None),
             fmt=getattr(ver, "format", None),
             **_community_counts(ver),
-            owned=_owned(ownership, ver),
+            owned=_stat_owned(owned, ver),
         )
         for ver in versions
     )
-
-    lines.extend(_ownership_note(ownership))
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
 

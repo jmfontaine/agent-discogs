@@ -34,23 +34,34 @@ class _Account:
     "Unofficial Release", which a versions `format` filter matches); the
     "All" folder holds `size` records, all of other releases except release 2
     once (record 10), release 3 twice (records 20 and 150, the second on page
-    2) and release 6 once, in no folder Discogs named (record 30). `throttle`
-    answers with a 429: `"identity"` the username, `"collection:N"` collection
-    page N, and `"search:2"` a second search page (the search then has two).
-    With `label_repeats`, a label catalogue sends releases 2 and 3 twice in a
-    row each."""
+    2) and release 6 once, in no folder Discogs named (record 30). Version,
+    label and artist rows carry Discogs' `stats`, the user's `in_collection`
+    being the copies the folder holds, except the row of release `unstated`,
+    whose `stats.user` is null. `throttle` answers with a 429: `"identity"`
+    the username, `"collection:N"` collection page N, and `"search:2"` a
+    second search page (the search then has two). With `label_repeats`, a
+    label catalogue sends releases 2 and 3 twice in a row each."""
 
     def __init__(
         self,
         size: int = 250,
         *,
         throttle: tuple[str, ...] = (),
+        unstated: int | None = None,
         label_repeats: bool = False,
     ) -> None:
-        self.size, self.throttle = size, throttle
+        self.size, self.throttle, self.unstated = size, throttle, unstated
         self.label_repeats = label_repeats
         # record: (release id, folder id)
         self.copies = {10: (2, 1), 20: (3, 5), 30: (6, None), 150: (3, 1)}
+
+    def _stats(self, release_id: int) -> dict[str, Any]:
+        held = sum(rid == release_id for rid, _ in self.copies.values())
+        user = {"in_collection": held, "in_wantlist": 0}
+        return {
+            "community": {"in_collection": 9, "in_wantlist": 3},
+            "user": None if release_id == self.unstated else user,
+        }
 
     def __call__(self, path: str, params: dict[str, str]) -> object:
         if path == "/oauth/identity":
@@ -75,12 +86,15 @@ class _Account:
         rows: list[dict[str, Any]] = [
             {"id": i, "title": f"Title {i}"} for i in range(1, 6)
         ]
+        if key in ("versions", "releases"):
+            for row in rows:
+                row["stats"] = self._stats(row["id"])
         if key == "versions":
             for row in rows:
                 unofficial = row["id"] in (2, 3)
                 row["format"] = "CD, Unofficial Release" if unofficial else "CD"
             # The community's counts, which the row shows before the mark.
-            rows[1]["stats"] = {"community": {"in_collection": 41, "in_wantlist": 284}}
+            rows[1]["stats"]["community"] = {"in_collection": 41, "in_wantlist": 284}
             if "format" in params:
                 rows = [r for r in rows if params["format"] in r["format"].split(", ")]
             return {"pagination": _one_page(len(rows)), "versions": rows}
@@ -356,35 +370,84 @@ class TestOwnedRows:
         assert document["collection"]["stop_reason"] == "rate_limited"
         assert document["collection"]["retry_after"] == 30
 
-    def test_the_cap_counts_the_text_header_first(
+    def test_full_rows_carry_owned(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch, _Account())
+        result, _ = h.run(*_SEARCH, "--owned", "--json", "--full")
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.stdout)["results"]
+        assert [row["owned"] for row in rows] == [0, 1, 2, 0, 0]
+
+    def test_cached_with_nothing_cached_is_a_miss(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         h = _Harness(monkeypatch, _Account())
-        result, sent = h.run("get", "versions", "@m1", "--owned", "--max-requests", "3")
-        assert sent == ["/masters/1", "/masters/1/versions", "/oauth/identity"]
-        assert _marks(result)["@r1"] == "owned ?"
+        result, sent = h.run("--cached", *_SEARCH, "--owned", "--json")
+        assert json_error(result)["code"] == "cache_miss"
+        assert sent == []
+
+        h.run(*_SEARCH)  # only the listing is cached
+        result, sent = h.run("--cached", *_SEARCH, "--owned", "--json")
+        assert json_error(result)["code"] == "cache_miss"
+        assert sent == []
 
     @pytest.mark.parametrize(
-        ("argv", "marked"),
+        "argv",
         [
-            (("get", "versions", "@m1"), ["@r1", "@r2", "@r3", "@r4", "@r5"]),
-            (("get", "releases", "@l1"), ["@r1", "@r2", "@r3", "@r4", "@r5"]),
-            (("get", "releases", "@a1"), ["@r1", "@r2", "@r3", "@r5"]),
+            "search artist x --owned",
+            "search label x --owned",
+            "search master x --owned",
+            "search release x --owned --added-since 2024-01-01",
+            "get versions @m1 --max-requests 3",
+            "get versions @m1 --owned --max-requests 3",
+            "get versions @m1 @m2 --owned --release-type official --max-requests 3",
+            "get releases @a1 --max-requests 3",
+            "get releases @a1 --owned --max-requests 3",
+            "get releases @l1 --owned --max-requests 3",
+            "get release @r1 --owned",
+            "get owned @r1 --owned",
         ],
     )
-    def test_get_listings_mark_release_rows(
-        self, monkeypatch: pytest.MonkeyPatch, argv: tuple[str, ...], marked: list[str]
+    def test_misplaced_flags_fail_before_any_request(
+        self, monkeypatch: pytest.MonkeyPatch, argv: str
     ) -> None:
         h = _Harness(monkeypatch, _Account())
-        result, _ = h.run(*argv, "--owned", "--json")
-        owned = _owned(result)
-        assert [ref for ref, n in owned.items() if n != "absent"] == marked
-        assert owned["@r3"] == 2
-        text, _ = h.run(*argv, "--owned")
-        assert _marks(text)["@r3"] == "owned x2"
-        # A master row has no ownership mark: the collection holds releases.
-        if "@m4" in text.stdout:
-            assert _marks(text)["@m4"] == "none"
+        result, sent = h.run(*argv.split(), "--json")
+        assert json_error(result)["code"] == "invalid_argument"
+        assert sent == []
+
+
+# A listing's path, and the header lookup its text view reads.
+_LISTINGS = {
+    "get versions @m1": ("/masters/1/versions", "/masters/1"),
+    "get releases @l1": ("/labels/1/releases", "/labels/1"),
+    "get releases @a1": ("/artists/1/releases", "/artists/1"),
+}
+
+
+class TestOwnedFromStats:
+    """`get versions` and `get releases` rows carry the user's own count,
+    `stats.user.in_collection`: `--owned` reads no collection there."""
+
+    @pytest.mark.parametrize("argv", list(_LISTINGS))
+    def test_get_listings_mark_release_rows(
+        self, monkeypatch: pytest.MonkeyPatch, argv: str
+    ) -> None:
+        listing, header = _LISTINGS[argv]
+        h = _Harness(monkeypatch, _Account())
+        result, sent = h.run(*argv.split(), "--owned", "--json")
+        assert sent == [listing]
+        owned = {"@r1": 0, "@r2": 1, "@r3": 2, "@r4": 0, "@r5": 0}
+        if argv.endswith("@a1"):  # the artist's row 4 is a master: no mark
+            owned = {"@r1": 0, "@r2": 1, "@r3": 2, "@m4": "absent", "@r5": 0}
+        assert _owned(result) == owned
+        assert "collection" not in json.loads(result.stdout)
+
+        h = _Harness(monkeypatch, _Account())
+        text, sent = h.run(*argv.split(), "--owned")
+        assert sorted(sent) == sorted([listing, header])
+        marks = {ref: "not owned" if n == 0 else "none" for ref, n in owned.items()}
+        assert _marks(text) == {**marks, "@r2": "owned", "@r3": "owned x2"}
+        assert "Owned:" not in text.stdout
 
     def test_the_mark_ends_the_row_after_the_community_counts(
         self, monkeypatch: pytest.MonkeyPatch
@@ -414,55 +477,80 @@ class TestOwnedRows:
         ]
         assert sum(line.startswith("@r") for line in text.stdout.splitlines()) == 5
 
-    def test_several_refs_read_the_collection_once(
+    @pytest.mark.parametrize("argv", list(_LISTINGS))
+    def test_a_row_without_user_stats_is_undecided(
+        self, monkeypatch: pytest.MonkeyPatch, argv: str
+    ) -> None:
+        listing, _ = _LISTINGS[argv]
+        h = _Harness(monkeypatch, _Account(unstated=3))
+        result, sent = h.run(*argv.split(), "--owned", "--json")
+        assert sent == [listing]
+        assert _owned(result)["@r3"] is None
+        assert _owned(result)["@r2"] == 1
+        text, sent = h.run(*argv.split(), "--owned")
+        assert listing not in sent  # cached; only the header may be read
+        assert _marks(text)["@r3"] == "owned ?"
+        assert "Owned:" not in text.stdout
+
+    def test_full_records_carry_owned(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch, _Account())
+        result, _ = h.run("get", "versions", "@m1", "--owned", "--json", "--full")
+        assert result.exit_code == 0, result.output
+        document = json.loads(result.stdout)
+        assert [row["owned"] for row in document["results"]] == [0, 1, 2, 0, 0]
+        assert document["results"][2]["stats"]["user"]["in_collection"] == 2
+        assert "collection" not in document
+
+    def test_several_refs_send_no_identity_and_no_collection_page(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         h = _Harness(monkeypatch, _Account())
         result, sent = h.run("--fresh", "get", "versions", "@m1", "@m2", "--owned")
         assert result.exit_code == 0, result.output
-        assert sent.count("/oauth/identity") == 1
-        assert h.pages() == [1, 2, 3]
+        assert sorted(sent) == sorted(
+            ["/masters/1/versions", "/masters/1", "/masters/2/versions", "/masters/2"]
+        )
 
-    def test_full_rows_carry_owned(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        h = _Harness(monkeypatch, _Account())
-        result, _ = h.run(*_SEARCH, "--owned", "--json", "--full")
-        assert result.exit_code == 0, result.output
-        rows = json.loads(result.stdout)["results"]
-        assert [row["owned"] for row in rows] == [0, 1, 2, 0, 0]
-
-    def test_cached_with_nothing_cached_is_a_miss(
+    def test_cached_marks_come_from_the_cached_listing(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         h = _Harness(monkeypatch, _Account())
-        result, sent = h.run("--cached", *_SEARCH, "--owned", "--json")
-        assert json_error(result)["code"] == "cache_miss"
+        h.run("get", "versions", "@m1", "--json")
+        cached, sent = h.run("--cached", "get", "versions", "@m1", "--owned", "--json")
         assert sent == []
+        assert _owned(cached)["@r3"] == 2
+        fresh, sent = h.run("--fresh", "get", "versions", "@m1", "--owned", "--json")
+        assert sent == ["/masters/1/versions"]
+        assert fresh.stdout == cached.stdout
 
-        h.run(*_SEARCH)  # only the listing is cached
-        result, sent = h.run("--cached", *_SEARCH, "--owned", "--json")
-        assert json_error(result)["code"] == "cache_miss"
-        assert sent == []
+    def test_the_cap_with_owned_caps_the_scan_alone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The text header is read before a scan, so it counts first."""
+        argv = ["get", "versions", "@m1", "--owned", "--release-type", "official"]
+        h = _Harness(monkeypatch, _Account())
+        result, sent = h.run(*argv, "--max-requests", "1")
+        assert result.exit_code == 0, result.output
+        assert sent == ["/masters/1"]
 
-    @pytest.mark.parametrize(
-        "argv",
-        [
-            "search artist x --owned",
-            "search label x --owned",
-            "search master x --owned",
-            "search release x --owned --added-since 2024-01-01",
-            "get versions @m1 --max-requests 3",
-            "get versions @m1 @m2 --owned --max-requests 3",
-            "get releases @a1 --max-requests 3",
-            "get release @r1 --owned",
-            "get owned @r1 --owned",
-        ],
-    )
-    def test_misplaced_flags_fail_before_any_request(
+        h = _Harness(monkeypatch, _Account())
+        result, sent = h.run(*argv, "--max-requests", "2")
+        assert sent == ["/masters/1", "/masters/1/versions"]
+        assert _marks(result) == {
+            "@r1": "not owned",
+            "@r4": "not owned",
+            "@r5": "not owned",
+        }
+
+    @pytest.mark.parametrize("argv", list(_LISTINGS))
+    def test_max_requests_with_owned_alone_has_nothing_to_cap(
         self, monkeypatch: pytest.MonkeyPatch, argv: str
     ) -> None:
         h = _Harness(monkeypatch, _Account())
-        result, sent = h.run(*argv.split(), "--json")
-        assert json_error(result)["code"] == "invalid_argument"
+        result, sent = h.run(*argv.split(), "--owned", "--max-requests", "3", "--json")
+        error = json_error(result)
+        assert error["code"] == "invalid_argument"
+        assert "--owned" not in error["message"]
         assert sent == []
 
 

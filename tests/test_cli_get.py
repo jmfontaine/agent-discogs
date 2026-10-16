@@ -119,7 +119,7 @@ class TestVersionsRequest:
     def test_a_failing_listing_costs_one_request(
         self, monkeypatch: pytest.MonkeyPatch, policy: list[str]
     ) -> None:
-        """Without --owned the header title is read only after the listing
+        """Without a scan the header title is read only after the listing
         succeeded: a missing master costs its one request, and --cached names
         the versions listing it could not serve."""
 

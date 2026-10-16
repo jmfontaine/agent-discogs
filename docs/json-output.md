@@ -33,16 +33,17 @@ For example, the second page of `get releases @l647 --year 1994 --limit 2 --json
 
 ## Owned rows
 
-Under `--owned` (`search`, `get versions`, `get releases`, `get inventory`; see [Marking rows with --owned](commands.md#marking-rows-with---owned)), each release row gets `owned`, and the document gets `collection` next to `pagination`:
+Under `--owned` (`search`, `get versions`, `get releases`, `get inventory`; see [Marking rows with --owned](commands.md#marking-rows-with---owned)), each release row gets `owned`. On `search` and `get inventory`, which read your collection to decide, the document also gets `collection` next to `pagination`:
 
 ```json
 {"pagination":{...},"results":[{"ref":"@r352665","title":"...","have":812,"want":95,"owned":2},{"ref":"@r847868","title":"...","have":40,"want":3,"owned":0}],"collection":{"complete":true,"records_read":250,"total_records":250}}
 ```
 
-- `owned` is an integer, the number of copies you own, `0` when you own none, or `null` when the collection read stopped before it could tell. It is an exception to omitted empty fields: `0` and `null` are always present. `have` and `want` are Discogs' community counts, not yours.
-- `0` is reported only when the whole collection was read. After a partial read, a release found in the part read shows the count found so far (it may be short) and every other row is `null`.
+- `owned` is an integer, the number of copies you own, `0` when you own none, or `null` when it is undecided. It is an exception to omitted empty fields: `0` and `null` are always present. `have` and `want` are Discogs' community counts, not yours.
+- On `get versions` and `get releases`, `owned` is the count Discogs sends on the row itself for the authenticated user, and `null` on a row that carries none; no collection is read, so the document has no `collection` object. Its absence means there is no partial read to account for.
+- On `search` and `get inventory`, `0` is reported only when the whole collection was read. After a partial read, a release found in the part read shows the count found so far (it may be short) and every other row is `null`.
 - Only release rows carry `owned`; a master, artist or label row has none. Under `--full` it is added to each release record the SDK returns.
-- `collection` is `{"complete": bool, "records_read": int, "total_records": int|null}`. A read that stopped early adds `stop_reason` (`"max_requests"` or `"rate_limited"`) and, for a 429 when Discogs sent a usable `Retry-After`, `retry_after`; `total_records` is `null` when nothing was read. A 429 on the username or the first collection page, or a listing scan that already stopped on one, reads nothing: `{"complete":false,"records_read":0,"total_records":null,"stop_reason":"rate_limited","retry_after":30}` and every release row has `owned: null`. A page with no release row has neither `owned` nor `collection`.
+- `collection` (`search` and `get inventory`) is `{"complete": bool, "records_read": int, "total_records": int|null}`. A read that stopped early adds `stop_reason` (`"max_requests"` or `"rate_limited"`) and, for a 429 when Discogs sent a usable `Retry-After`, `retry_after`; `total_records` is `null` when nothing was read. A 429 on the username or the first collection page, or a listing scan that already stopped on one, reads nothing: `{"complete":false,"records_read":0,"total_records":null,"stop_reason":"rate_limited","retry_after":30}` and every release row has `owned: null`. A page with no release row has neither `owned` nor `collection`.
 
 `get owned @r... --json` prints `{"ref":"@r352665","owned":2,"folders":["Vinyl","Uncategorized"]}`, or `{"ref":"@r847868","owned":0}` when not owned. Several refs give a list, with `{"ref","error"}` items for failures. `--full` prints `{"instances":[...]}`, your collection records for the release as the SDK normalizes them (their folders by id, not name).
 
