@@ -14,9 +14,9 @@ A master groups every version of one album; each version is a release, one produ
 
 ## Telling releases apart
 
-- **Versions** — `get versions @m...` lists one row per pressing; `--sort released` puts the earliest first, and `--country`, `--format`, `--label` and `--year` narrow it. Unlike `search`, its `--release-type` defaults to `all`, so unofficial versions are listed too: pass `--release-type official` to drop them.
+- **Versions** — `get versions @m...` lists one row per pressing, with Discogs' community counts (`have N · want N`); `--sort released` puts the earliest first, and `--country`, `--format`, `--label` and `--year` narrow it. Unlike `search`, its `--release-type` defaults to `all`, so unofficial versions are listed too: pass `--release-type official` to drop them.
 - **Catalog number and barcode** — `search release --catno ...` and `search release --barcode ...` are the most precise searches. Several rows with the same catalog number are variants of one pressing: compare them with `get release` and `get identifiers`.
-- **Identifiers** — `get identifiers @r...` prints barcodes, matrix/runout etchings, label codes and rights societies. The matrix and runout are what usually tells apart pressings that share a catalog number.
+- **Identifiers** — `get identifiers @r...` prints barcodes, matrix/runout etchings, label codes and rights societies. The matrix and runout are what usually tells apart pressings that share a catalog number. To find a pressing from its runout etching, see "Find by barcode or runout" below.
 - **Several at once** — `get release @r... @r... -c` compares formats, labels, countries and dates without the tracklists; add `-v` for notes, credits and identifiers.
 - **Credits** — `get credits @r...` groups the people by role (Producer, Engineer, Mastered By, ...), with the tracks each worked on.
 - **What makes a release unique**, and how formats, descriptions and identifiers are written on Discogs: [references/discogs-domain.md](references/discogs-domain.md).
@@ -31,10 +31,10 @@ Bootlegs, counterfeits and pirate copies all carry the format description "Unoff
 |------|----------|
 | Compare pressings | `search master "<title>"` → `get versions @m...` |
 | Release → all its pressings | Copy `→ @m...` from any release row → `get versions @m...` |
-| Get original pressing | `search master "<title>"` → `get versions @m... --sort released` → `get release @r...` |
-| Pick among look-alike rows | Compare catalog number and `have N` in the row itself; `have` is how many Discogs users own it (popularity, not yours, not identification). Same catno on several rows means variants: see `get release @r...` |
+| Get original pressing | `search master "<title>"` → `get versions @m... --sort released` → `get release @r...`. From a release, `get release @r... --master-year` first gives the work's year (`Master: @m3719 (1994)`, 1 more request) |
+| Pick among look-alike rows | Compare catalog number, `have N` and `want N` in the row itself; `have` is how many Discogs users own it and `want` how many want it (the community's, not yours, not identification). Many wants against few haves is a scarce pressing; few wants against many haves, a common one. Same catno on several rows means variants: see `get release @r...` |
 | Identify by catalog number | `search release --catno "INT-92346"` → `get release @r...` |
-| Find by barcode | `search release --barcode "606949235024"` |
+| Find by barcode or runout | `search release --barcode "606949235024"` (digits, no spaces); `search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all` (runout etching; try `TOWN HOUSE` too) → `get identifiers @r...` |
 | Compare several pressings cheaply | `get release @r... @r... @r... -c` in one command; `tracks @r...` only when the tracklist matters |
 | Identify the disc in hand (same catno, several pressings) | `get identifiers @r... @r...` and compare Matrix / Runout |
 | Bootlegs only (not counterfeits) | `search release --artist "<name>" --release-type unofficial`, then drop rows whose `→ @m...` master has official versions (`get versions @m... --release-type official --limit 5 --json`: any row whose format does not list "Partially Unofficial"; if every row shown lists it, continue with `--after <next_cursor>`). Keep the rest (no master, or a master with no official versions), but check each against the traps in [Unofficial Releases](references/discogs-domain.md#unofficial-releases-bootlegs-counterfeits-pirates): a counterfeit or pirate can lack a master, and a compilation of officially released tracks is a pirate. Not a flag: a judgement call |

@@ -38,6 +38,28 @@ A **version** is simply a release that belongs to a master. When you list versio
 3. Look for the earliest year and original country
 4. Get details: `get release @r847868`
 
+## Catalog Number, Barcode and Runout Searches
+
+When you have a catalog number, a barcode or a runout etching, these are the most precise search methods:
+
+```bash
+# Catalog number — often printed on the spine/label of a record
+agent-discogs search release --catno "INT-92346"
+
+# Barcode — digits from the packaging, without spaces
+agent-discogs search release --barcode "606949235024"
+
+# Runout — text etched in the vinyl's matrix/runout area
+agent-discogs search release --artist "Human League" --barcode "A3 TOWNHOUSE" --country UK --format LP --release-type all
+```
+
+`--barcode` is matched against a release's identifier text, not only as a UPC/EAN: it finds pressings by their matrix/runout etching too, the one search that does. Other identifier types (label codes, for instance) have not been checked.
+
+- **Type a barcode without spaces** (`602527826486`): `"6 02527 82648 6"` also matched an unrelated release. The value is matched as text, so the barcode without its check digit found the same releases.
+- **Try each spelling of an etching**: Discogs writes some in more than one way (`TOWNHOUSE` and `TOWN HOUSE`), and one spelling can miss releases the other finds.
+
+A catalog number or barcode usually returns very few results; a runout can match several pressings, so confirm with `get identifiers @r...`.
+
 ## Common Pressing Attributes
 
 - **Country**: The distribution/sales market (not the manufacturing location)
