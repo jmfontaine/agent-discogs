@@ -44,6 +44,13 @@ def _ref(n: int) -> str:
     return f"@r{_Collection.record(n)['id']}"
 
 
+def _with(n: int, **information: object) -> dict[str, object]:
+    """Record `n`, with `information` replacing parts of its
+    `basic_information`."""
+    record = _Collection.record(n)
+    return {**record, "basic_information": record["basic_information"] | information}
+
+
 class TestUnfiltered:
     def test_reads_page_one_then_the_page_of_the_pick(
         self, monkeypatch: pytest.MonkeyPatch
@@ -301,6 +308,35 @@ class TestFiltered:
         argv = ["get", "collection", "--style", "Techno", "--random", "--json"]
         assert json_error(h.run(*argv)[0])["code"] == "rate_limited"
 
+    @pytest.mark.parametrize(
+        ("argv", "kept"),
+        [(["--artist", "guest"], [20, 150]), (["--title", "blue*"], [30, 140, 160])],
+    )
+    def test_a_filter_on_artist_or_title(
+        self, monkeypatch: pytest.MonkeyPatch, argv: list[str], kept: list[int]
+    ) -> None:
+        # Records 20 and 150 credit Guest beside Artist; records 30, 140
+        # and 160 have a Blue title.
+        guest = [
+            {"id": 4242, "name": "Artist", "join": "&"},
+            {"id": 5, "name": "Guest", "join": ""},
+        ]
+        odd = {n: _with(n, artists=guest) for n in (20, 150)}
+        odd |= {n: _with(n, title=f"Blue {n}") for n in (30, 140, 160)}
+        calls = _draw(monkeypatch, 1)
+        h = _Harness(monkeypatch, _Collection(odd=odd))
+        result, sent = h.run("get", "collection", *argv, "--random", "--json")
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, *[_RECORDS] * 3]
+        assert calls == [(len(kept), 1)]
+        document = _document(result)
+        assert document["random"] == {"requested": 1, "population": len(kept)}
+        assert _refs(result) == [_ref(kept[1])]
+        assert document["collection"]["complete"] is True
+
+        _draw(monkeypatch, *range(len(kept)))
+        result, _ = h.run("get", "collection", *argv, "--random", "50", "--json")
+        assert _refs(result) == [_ref(n) for n in kept]
+
 
 class TestFolderAndFields:
     def test_one_folder(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -318,8 +354,42 @@ class TestFolderAndFields:
             'Collection: me folder="to sell" random 1 (1 of 3 records)'
         )
 
-        result, _ = h.run("get", "collection", "--folder", "Jazz", "--random", "--json")
+        result, sent = h.run(
+            "--fresh", "get", "collection", "--folder", "Jazz", "--random", "--json"
+        )
         assert json_error(result)["code"] == "invalid_argument"
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST]
+
+    def test_one_folder_with_a_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Records 0 to 149 are in To Sell: two pages, 6 of them Techno.
+        odd = {n: {**_Collection.record(n), "folder_id": 7} for n in range(150)}
+        techno = [n for n in _TECHNO if n < 150]
+        calls = _draw(monkeypatch, 4)
+        h = _Harness(monkeypatch, _Collection(odd=odd))
+        argv = ["get", "collection", "--folder", "To Sell", "--style", "Techno"]
+        result, sent = h.run(*argv, "--random", "--json")
+        # 2 + ceil(150 / 100) requests: the username, the folder list and
+        # the folder's two pages, nothing of the other folders.
+        assert _paths(sent) == [
+            "/oauth/identity",
+            _FOLDER_LIST,
+            _folder(7),
+            _folder(7),
+        ]
+        assert calls == [(len(techno), 1)]
+        document = _document(result)
+        assert document["random"] == {"requested": 1, "population": 6}
+        assert _refs(result) == [_ref(techno[4])]
+        assert document["collection"] == {
+            "complete": True,
+            "records_read": 150,
+            "total_records": 150,
+        }
+        text, _ = h.run(*argv, "--random")
+        assert text.stdout.splitlines()[0] == (
+            'Collection: me folder="To Sell" style=Techno random 1 '
+            "(1 of 6 matching records)"
+        )
 
     def test_fields(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _draw(monkeypatch, 3)
