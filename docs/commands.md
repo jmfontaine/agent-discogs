@@ -362,6 +362,21 @@ Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) a
 
 `versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`. All of them are sent to Discogs.
 
+#### Repeated rows in a label catalogue
+
+Discogs sends some rows of a label catalogue twice (or three times) in a row, identical in every field: on Blue Note, about one row in five. `get releases @l...` drops a row equal to the row Discogs sent just before it, so a run of equal rows shows once, and says how many it dropped in the header:
+
+```
+Releases on @l281 "Blue Note" (page 1, 2 of 40,221 results; 1 repeated row dropped)
+```
+
+- **Server-side pages** (`--page`, the default): the rule applies to the one page Discogs returned, so a page can show fewer rows than `--limit`. The total is Discogs' own and still counts the repeats; `Next page:` is `--page N+1`, and dropping a row costs no request.
+- **The `--year` scan** drops a repeat as it reads, comparing each row with the row before it in the listing, whatever its year, so the page still fills with `--limit` distinct matches. The note counts the dropped repeats of matching rows; the cursor names the next row to scan and the cost is the scan's (1 request per 100 rows), as without repeats.
+- A release listed twice with a different catalogue number or format is two rows, and both stay. Artist discographies are not affected: a release on several rows there carries a different `role` on each.
+- Only a repeat within one page is seen: when the two rows of a pair fall on either side of a page break, the next page starts with the last row of the page before (about one page in five at the default `--limit 5`; `--limit 100` nearly always avoids it). A `--year` page that fills on the first of two equal rows likewise leaves the second to start the next page.
+
+Under `--json`, `pagination` adds `duplicates_dropped` when the page dropped any row (see [Pagination](json-output.md#pagination)). `--owned` marks the rows that remain.
+
 #### --release-type
 
 `get versions @m... --release-type official|unofficial|all` filters on the format description "Unofficial Release", which Discogs gives bootlegs, counterfeits and pirate copies alike, the same rule `search --release-type` uses. A version row's format lists its descriptions (`LP, Album, Unofficial Release`), and the match is on the whole description, so a "Partially Unofficial" version counts as official.

@@ -374,6 +374,10 @@ Paging:
   total_items is the unfiltered total (the ≤N in the header) and total_pages
   counts Discogs' 100-row pages, so neither tells how many pages of matches
   remain. Continue until no command is printed (JSON: next_cursor null).
+  A label catalogue (get releases @l...) drops a row equal to the row Discogs
+  sent just before it, so a page without --year can be shorter than --limit:
+  the header says 'N repeated rows dropped' (JSON:
+  pagination.duplicates_dropped).
 
 Budget:
   After any command that talks to the API, stderr ends with a budget line, e.g.

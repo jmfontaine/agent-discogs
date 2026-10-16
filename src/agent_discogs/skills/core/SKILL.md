@@ -78,7 +78,7 @@ Color is off when stdout is a pipe, and a `--json` command is never colored. If 
 |------|----------|
 | Find a specific pressing | `search release "<title>" --year --country` → `get release @r...` |
 | Explore discography | `search artist "<name>"` → `get releases @a... --sort year` |
-| Label catalogue | `get releases @l...` — copy `@l...` from a release's `Label:` line |
+| Label catalogue | `get releases @l...` — copy `@l...` from a release's `Label:` line; a page can be short: [repeated rows dropped](references/commands.md#get) |
 | Band → member → solo work | `get artist @a...` → copy a `[@a...]` from `Members:` → `get releases @a...` |
 | Narrow release search | `search release "<title>" --artist "<name>"` |
 | Newest additions first | `search release --artist "<name>" --sort date_added --desc` (release searches only; undocumented by Discogs) |
@@ -160,7 +160,7 @@ Refs encode entity type and Discogs ID: `@a3857` (artist), `@r847868` (release),
 
 ## Token Efficiency
 
-Prefer the most specific command: `tracks @r...` over `get release @r...` when you only need the tracklist, and `price @r...` over `get release @r...` when you only need pricing. This reduces output tokens and avoids unnecessary data.
+Prefer the most specific command: `tracks @r...` over `get release @r...` when you only need the tracklist, and `price @r...` over `get release @r...` when you only need pricing.
 
 ## Budget
 

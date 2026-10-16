@@ -970,10 +970,13 @@ def format_label_releases(
     *,
     filtered: bool = False,
     stop: ScanStop | None = None,
+    dropped: int = 0,
     header_resent: bool = False,
     ownership: Ownership | None = None,
 ) -> str:
-    """Format a label's catalogue (client-side `--year` scans are `filtered`)."""
+    """Format a label's catalogue (client-side `--year` scans are `filtered`),
+    noting the `dropped` rows that repeated the row before them."""
+    noun = "row" if dropped == 1 else "rows"
     counts = _page_counts(
         page,
         len(releases),
@@ -982,6 +985,7 @@ def format_label_releases(
         filtered=filtered,
         stop=stop,
         header_resent=header_resent,
+        note=f"{dropped:,} repeated {noun} dropped" if dropped else None,
     )
     lines: list[Line] = [
         [

@@ -52,6 +52,7 @@ from agent_discogs.inventory import GRADES, Filter, grade, read_wantlist, releas
 from agent_discogs.json_output import Mode, dump, full_dump
 from agent_discogs.pagination import (
     DEFAULT_LIMIT,
+    DropRepeats,
     PageResult,
     fetch_filtered_page,
     fetch_page,
@@ -61,6 +62,7 @@ from agent_discogs.pagination import (
     parse_cursor,
     sort_params,
     unscanned,
+    without_repeats,
 )
 from agent_discogs.projections import (
     drop_empty,
@@ -344,7 +346,9 @@ def _get_label_releases(
     mode: Mode,
 ) -> Any:
     """A label's catalogue. The API has no filters or sorting here, so `--year`
-    is a client-side scan with cursor continuation (like `--role`)."""
+    is a client-side scan with cursor continuation (like `--role`). Discogs
+    sends some rows twice in a row: a row equal to the one before it is
+    dropped, on the page or as the scan reads it, and counted."""
     # A lazy proxy: reading .name sends the request, so only the text header
     # pays for it. It is read before the scan so that, under --max-requests,
     # the lookup the output needs counts first.
@@ -353,15 +357,19 @@ def _get_label_releases(
     label_ref = make_ref("label", entity_id)
 
     if year:
+        keep = DropRepeats(lambda item: str(getattr(item, "year", None) or "") == year)
         result = fetch_filtered_page(
             label.releases.list,
             limit=limit,
-            keep=lambda item: str(getattr(item, "year", None) or "") == year,
+            keep=keep,
             cursor=after,
             max_requests=max_requests,
         )
+        result.duplicates_dropped = keep.dropped
     else:
-        result = fetch_page(label.releases.list, page=page or 1, per_page=limit)
+        result = without_repeats(
+            fetch_page(label.releases.list, page=page or 1, per_page=limit)
+        )
 
     ownership = _ownership(client, result, owned=owned, max_requests=max_requests)
     if mode.json:
@@ -384,6 +392,7 @@ def _get_label_releases(
         footer_cmd,
         filtered=result.filtered,
         stop=result.stop,
+        dropped=result.duplicates_dropped,
         header_resent=_fresh(),
         ownership=ownership,
     )
