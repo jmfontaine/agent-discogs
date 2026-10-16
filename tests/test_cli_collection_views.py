@@ -241,6 +241,74 @@ class TestCountBy:
         assert _paths(sent) == ["/oauth/identity"]
         assert _document(result)["collection"]["total_records"] is None
 
+    def test_a_title_filter_counts_all_of_a_kept_record(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        odd = {
+            0: _record(0, title="Blue Train", genres=["Jazz", "Blues"]),
+            1: _record(1, title="Blue Monday", genres=["Electronic"]),
+            2: _record(2, title="Train", genres=["Rock"]),
+        }
+        h = _Harness(monkeypatch, _Collection(4, odd=odd))
+        argv = ["get", "collection", "--title", "blue*", "--count-by", "genre"]
+        result, _ = h.run(*argv, "--json")
+        assert _counts(result) == [("Blues", 1), ("Electronic", 1), ("Jazz", 1)]
+        assert _document(result)["records"] == 2
+        text, _ = h.run(*argv)
+        assert text.stdout.splitlines()[0] == (
+            "Collection: me title=blue* by genre (2 of 4 records)"
+        )
+
+    def test_one_folder_with_a_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Techno record 5 is moved to To Sell, so Uncategorized holds 248
+        # records, 11 of them Techno, on three pages.
+        moved = {**_Collection.record(5), "folder_id": 7}
+        h = _Harness(monkeypatch, _Collection(odd={5: moved}))
+        argv = ["get", "collection", "--folder", "Uncategorized", "--style", "Techno"]
+        result, sent = h.run(*argv, "--count-by", "label", "--json")
+        assert _paths(sent) == [
+            "/oauth/identity",
+            _FOLDER_LIST,
+            _folder(1),
+            _folder(1),
+            _folder(1),
+        ]
+        assert [params["page"] for _, params in sent[2:]] == ["1", "2", "3"]
+        document = _document(result)
+        assert _counts(result) == [("Tresor", 11)]
+        assert document["records"] == 11
+        assert document["collection"] == {
+            "complete": True,
+            "records_read": 248,
+            "total_records": 248,
+        }
+        text, _ = h.run(*argv, "--count-by", "label")
+        assert text.stdout.splitlines()[0] == (
+            "Collection: me folder=Uncategorized style=Techno by label "
+            "(11 of 248 records)"
+        )
+
+    def test_a_folder_and_a_cap_spent_before_the_scan(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "collection", "--folder", "Vinyl", "--count-by", "label"]
+        text, sent = h.run(*argv, "--max-requests", "2")
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST]
+        assert text.exit_code == 0, text.output
+        assert text.stdout == (
+            "Collection: me folder=Vinyl by label "
+            "(--max-requests 2 ran out before the scan started)\n"
+        )
+        result, sent = h.run("--fresh", *argv, "--max-requests", "2", "--json")
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST]
+        assert _document(result)["collection"] == {
+            "complete": False,
+            "records_read": 0,
+            "total_records": None,
+            "stop_reason": "max_requests",
+        }
+
     def test_max_requests_gives_partial_counts(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
