@@ -1,5 +1,6 @@
-"""Tests for `get stats`, a release's community and Marketplace numbers,
-against the real SDK client over a mock transport."""
+"""Tests for `get stats`, a release's community and Marketplace numbers, and
+`get versions --market`, each listed pressing's Marketplace numbers, against
+the real SDK client over a mock transport."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from agent_discogs import cli
-from tests.conftest import _FakeAPI, json_error, text_error
+from tests.conftest import _FakeAPI, _too_many, json_error, text_error
 
 _STATS = "/marketplace/stats/"
 
@@ -51,6 +52,8 @@ _RELEASES: dict[int, dict[str, Any]] = {
         "artists": _NIN,
         "community": {"have": 3, "want": 1, "rating": {"count": 0, "average": 0}},
     },
+    # A pressing of master 1, "Blue Train".
+    10: {"title": "Blue Train", "year": 1958, "artists": _NIN, "master_id": 1},
 }
 
 # Release id: (num_for_sale, lowest price, blocked_from_sale), as sent.
@@ -61,7 +64,54 @@ _MARKET: dict[int, tuple[int | None, float | None, bool]] = {
     2: (None, None, True),
     3: (3, None, False),
     4: (1, 5.0, False),
+    # The versions of master 1: priced, priced, nothing for sale, no price,
+    # blocked, and the unofficial one.
+    11: (6, 427.5, False),
+    12: (2, 2429.99, False),
+    13: (None, None, False),
+    14: (3, None, False),
+    15: (None, None, True),
+    16: (1, 9.0, False),
 }
+
+_VERSIONS = "/masters/1/versions"
+_VERSION_IDS = range(11, 17)
+
+
+def _version(release_id: int) -> dict[str, Any]:
+    """A version row of master 1, as Discogs sends it; 16 is unofficial, and
+    the token's user owns one copy of 11."""
+    unofficial = release_id == 16
+    return {
+        "id": release_id,
+        "title": "Blue Train",
+        "released": "1958",
+        "country": "US",
+        "label": "Blue Note",
+        "catno": "BLP 1577",
+        "format": "LP, Unofficial Release" if unofficial else "LP, Album, Mono",
+        "stats": {
+            "community": {"in_collection": 100 + release_id, "in_wantlist": release_id},
+            "user": {"in_collection": int(release_id == 11), "in_wantlist": 0},
+        },
+    }
+
+
+def _versions_page(params: dict[str, str]) -> dict[str, Any]:
+    """A page of master 1's versions; like Discogs, `format` keeps the rows
+    that list it as a whole description."""
+    rows = [_version(i) for i in _VERSION_IDS]
+    if "format" in params:
+        rows = [r for r in rows if params["format"] in r["format"].split(", ")]
+    page, per = int(params["page"]), int(params["per_page"])
+    pagination = {
+        "page": page,
+        "pages": max(1, -(-len(rows) // per)),
+        "items": len(rows),
+        "per_page": per,
+    }
+    return {"pagination": pagination, "versions": rows[(page - 1) * per : page * per]}
+
 
 _FIRST = (
     '@r847868 "The Downward Spiral" by Nine Inch Nails 1994 · have 7,618 · '
@@ -76,16 +126,28 @@ _SECOND = (
 class _Discogs:
     """`/releases/{id}` and `/marketplace/stats/{id}` for `_RELEASES` and
     `_MARKET`, priced in the `curr_abbr` asked for (EUR, the account's, by
-    default). A path in `status` answers with that status."""
+    default), and master 1 with its versions. A path in `status` answers with
+    that status; with `limited_page`, the versions list claims that many
+    pages and that page answers 429."""
 
     def __init__(self, status: dict[str, int] | None = None) -> None:
         self.status = status or {}
+        self.limited_page: int | None = None
 
     def __call__(self, path: str, params: dict[str, str]) -> object:
+        if path == _VERSIONS and self.limited_page == int(params["page"]):
+            return _too_many()
         if path in self.status:
             code = self.status[path]
             headers = {"Retry-After": "30"} if code == 429 else {}
             return httpx2.Response(code, json={"message": "Nope."}, headers=headers)
+        if path == "/masters/1":
+            return {"id": 1, "title": "Blue Train"}
+        if path == _VERSIONS:
+            page = _versions_page(params)
+            if self.limited_page is not None:
+                page["pagination"]["pages"] = self.limited_page
+            return page
         release_id = int(path.rsplit("/", 1)[-1])
         if path.startswith("/releases/"):
             return {"id": release_id, **_RELEASES[release_id]}
@@ -107,7 +169,8 @@ class _Harness:
     def __init__(
         self, monkeypatch: pytest.MonkeyPatch, status: dict[str, int] | None = None
     ) -> None:
-        self.api = _FakeAPI(monkeypatch, _Discogs(status))
+        self.discogs = _Discogs(status)
+        self.api = _FakeAPI(monkeypatch, self.discogs)
 
     def run(self, *args: str) -> tuple[Result, list[tuple[str, dict[str, str]]]]:
         start = len(self.api.sends)
@@ -365,3 +428,352 @@ class TestGetStats:
         h = _Harness(monkeypatch)
         _, sent = h.run("get", "stats", "@r847868", "--json")
         assert "/oauth/identity" not in _paths(sent)
+
+
+def _stats_ids(sent: list[tuple[str, dict[str, str]]]) -> list[int]:
+    """The release ids of the stats requests sent, in order."""
+    return [int(p.removeprefix(_STATS)) for p in _paths(sent) if p.startswith(_STATS)]
+
+
+def _markets(document: dict[str, Any]) -> list[Any]:
+    return [row.get("market", "absent") for row in document["results"]]
+
+
+def _rows(result: Result) -> list[str]:
+    return [line for line in result.stdout.splitlines() if line.startswith("@r")]
+
+
+_ROW_11 = (
+    "@r11 1958 US · Blue Note BLP 1577 · LP, Album, Mono · have 111 · want 11 "
+    "· for sale: 6 from EUR 427.50"
+)
+_EUR_11 = {"for_sale": 6, "lowest": 427.5, "currency": "EUR"}
+_EUR_12 = {"for_sale": 2, "lowest": 2429.99, "currency": "EUR"}
+
+
+class TestVersionsMarket:
+    """`get versions --market`: each listed pressing's Marketplace numbers,
+    one `/marketplace/stats/{id}` lookup per row after the listing."""
+
+    def test_json_one_lookup_per_row_after_the_page(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", "versions", "@m1", "--market", "--limit", "3")
+        assert result.exit_code == 0, result.output
+        assert _paths(sent)[:2] == ["/masters/1", _VERSIONS]
+
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--market", "--limit", "3", "--json"]
+        result, sent = h.run(*argv)
+        assert _paths(sent) == [_VERSIONS, *(f"{_STATS}{i}" for i in (11, 12, 13))]
+        assert all(params == {} for path, params in sent if path.startswith(_STATS))
+        document = _document(result)
+        assert _markets(document) == [_EUR_11, _EUR_12, {"for_sale": 0}]
+        assert document["market_read"] == {"complete": True, "rows_read": 3, "rows": 3}
+
+        # A rerun is served from the cache; --fresh sends it all again.
+        again, sent = h.run(*argv)
+        assert sent == []
+        assert again.stdout == result.stdout
+        _, sent = h.run("--fresh", *argv)
+        assert _paths(sent) == [_VERSIONS, *(f"{_STATS}{i}" for i in (11, 12, 13))]
+
+    def test_text_rows_end_in_the_market_tail(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", "versions", "@m1", "--market", "--limit", "5")
+        assert result.exit_code == 0, result.output
+        # The header goes first, as for a scan, so --max-requests counts it.
+        assert _paths(sent) == [
+            "/masters/1",
+            _VERSIONS,
+            *(f"{_STATS}{i}" for i in range(11, 16)),
+        ]
+        assert result.stdout.splitlines()[0].startswith('Versions of @m1 "Blue Train"')
+        rows = _rows(result)
+        assert rows[0] == _ROW_11
+        assert [row.split(" · want ")[1] for row in rows[1:]] == [
+            "12 · for sale: 2 from EUR 2429.99",
+            "13 · for sale: 0",
+            "14 · for sale: 3",
+            "15 · for sale: 0",
+        ]
+        assert "Market:" not in result.stdout
+
+    def test_a_release_ref_finds_its_master_first(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@r10", "--market", "--limit", "1"]
+        _, sent = h.run(*argv, "--json")
+        assert _paths(sent) == ["/releases/10", _VERSIONS, f"{_STATS}11"]
+        h = _Harness(monkeypatch)
+        result, sent = h.run(*argv)
+        assert _paths(sent) == ["/releases/10", _VERSIONS, f"{_STATS}11"]
+        assert _rows(result) == [_ROW_11]
+
+    def test_currency_prices_every_lookup(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--market", "--limit", "2"]
+        result, sent = h.run(*argv, "--currency", "usd")
+        assert result.exit_code == 0, result.output
+        assert [params for path, params in sent if path.startswith(_STATS)] == [
+            {"curr_abbr": "USD"},
+            {"curr_abbr": "USD"},
+        ]
+        assert _rows(result)[0].endswith("· for sale: 6 from USD 427.50")
+        # The cache entry is keyed by URL: EUR rows are other requests.
+        document = _document(h.run(*argv, "--currency", "EUR", "--json")[0])
+        assert _markets(document) == [_EUR_11, _EUR_12]
+
+    def test_null_numbers_and_blocked(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--market", "--limit", "5", "--json"]
+        document = _document(h.run(*argv)[0])
+        assert _markets(document)[2:] == [
+            {"for_sale": 0},
+            {"for_sale": 3},
+            {"for_sale": 0, "blocked": True},
+        ]
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            "get versions @m1 --market --currency XXX",
+            "get versions @m1 --currency EUR",
+            "get versions @m1 --market --max-price 5 --currency EUR",
+            "get releases @a1 --market",
+            "get stats @r1 --market",
+            "get versions @m1 @m2 --market --max-requests 5",
+        ],
+    )
+    def test_rejected_before_any_request(
+        self, monkeypatch: pytest.MonkeyPatch, argv: str
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run(*argv.split(), "--json")
+        assert json_error(result)["code"] == "invalid_argument"
+        assert sent == []
+
+    def test_currency_needs_market(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        result, _ = h.run("get", "versions", "@m1", "--currency", "EUR")
+        assert text_error(result).startswith(
+            "✗ --currency needs --market with get versions."
+        )
+
+    def test_max_requests_stops_the_lookups(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--market", "--limit", "5"]
+        result, sent = h.run(*argv, "--max-requests", "4", "--json")
+        assert _paths(sent) == [_VERSIONS, *(f"{_STATS}{i}" for i in (11, 12, 13))]
+        document = _document(result)
+        assert _markets(document)[3:] == [None, None]
+        assert document["market_read"] == {
+            "complete": False,
+            "rows_read": 3,
+            "rows": 5,
+            "stop_reason": "max_requests",
+        }
+
+        h = _Harness(monkeypatch)
+        result, sent = h.run(*argv, "--max-requests", "4")
+        assert result.exit_code == 0, result.output
+        assert _paths(sent) == ["/masters/1", _VERSIONS, f"{_STATS}11", f"{_STATS}12"]
+        rows = _rows(result)
+        assert "for sale:" in rows[1]
+        assert "for sale:" not in rows[2]
+        assert (
+            "Market: the lookups stopped at --max-requests 4 (2 of 5 rows "
+            'checked): rows without "for sale:" were not checked.'
+        ) in result.stdout.splitlines()
+
+    def test_a_cap_of_one_sends_the_page_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--market", "--max-requests", "1"]
+        result, sent = h.run(*argv, "--json")
+        assert _paths(sent) == [_VERSIONS]
+        assert set(_markets(_document(result))) == {None}
+        h = _Harness(monkeypatch)
+        result, sent = h.run(*argv)
+        assert result.exit_code == 0, result.output
+        assert _paths(sent) == ["/masters/1", _VERSIONS]
+
+    def test_cached_header_leaves_the_budget_to_the_lookups(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        h.run("get", "master", "@m1")  # only the master is cached
+        argv = ["get", "versions", "@m1", "--market", "--max-requests", "4"]
+        result, sent = h.run(*argv)
+        assert result.exit_code == 0, result.output
+        assert _paths(sent) == [_VERSIONS, *(f"{_STATS}{i}" for i in (11, 12, 13))]
+
+    def test_a_scan_shares_the_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--release-type", "official", "--market"]
+        result, sent = h.run(*argv, "--max-requests", "5", "--json")
+        # The scan's one page, then four lookups: the fifth row is unchecked.
+        assert _paths(sent) == [_VERSIONS, *(f"{_STATS}{i}" for i in range(11, 15))]
+        document = _document(result)
+        assert [row["ref"] for row in document["results"]] == [
+            f"@r{i}" for i in range(11, 16)
+        ]
+        assert document["market_read"]["rows_read"] == 4
+        assert document["market_read"]["stop_reason"] == "max_requests"
+
+    def test_a_429_keeps_the_rows_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        h = _Harness(monkeypatch, status={f"{_STATS}13": 429})
+        argv = ["get", "versions", "@m1", "--market", "--limit", "5", "--json"]
+        result, sent = h.run(*argv)
+        assert _stats_ids(sent) == [11, 12, 13]
+        document = _document(result)
+        assert _markets(document) == [_EUR_11, _EUR_12, None, None, None]
+        assert document["market_read"] == {
+            "complete": False,
+            "rows_read": 2,
+            "rows": 5,
+            "stop_reason": "rate_limited",
+            "retry_after": 30,
+        }
+        text, _ = h.run(*argv[:-1])
+        assert text.exit_code == 0, text.output
+        assert (
+            "Market: a lookup was rate limited, retry in 30s (2 of 5 rows "
+            'checked): rows without "for sale:" were not checked.'
+        ) in text.stdout.splitlines()
+
+        # After the wait, the rerun sends only the lookups not read yet.
+        h.discogs.status = {}
+        result, sent = h.run(*argv)
+        assert _stats_ids(sent) == [13, 14, 15]
+        assert _document(result)["market_read"]["complete"] is True
+
+    def test_a_429_on_the_page_is_an_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, status={_VERSIONS: 429})
+        result, sent = h.run("get", "versions", "@m1", "--market", "--json")
+        assert json_error(result)["code"] == "rate_limited"
+        assert _stats_ids(sent) == []
+
+    def test_a_scan_stopped_by_a_429_sends_no_lookup(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        h.discogs.limited_page = 2
+        argv = ["get", "versions", "@m1", "--release-type", "official", "--market"]
+        result, sent = h.run(*argv, "--limit", "6", "--json")
+        assert result.exit_code == 0, result.output
+        assert _paths(sent) == [_VERSIONS, _VERSIONS]
+        document = _document(result)
+        assert _markets(document) == [None] * 5
+        assert document["market_read"] == {
+            "complete": False,
+            "rows_read": 0,
+            "rows": 5,
+            "stop_reason": "rate_limited",
+            "retry_after": 30,
+        }
+        result, sent = h.run(*argv, "--limit", "6")
+        assert _paths(sent) == ["/masters/1", _VERSIONS]
+        assert (
+            "Market: the listing was rate limited, retry in 30s (0 of 5 rows "
+            'checked): rows without "for sale:" were not checked.'
+        ) in result.stdout.splitlines()
+
+    def test_another_lookup_failure_fails_the_command(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, status={f"{_STATS}12": 500})
+        result, _ = h.run("get", "versions", "@m1", "--market", "--json")
+        assert json_error(result)["status"] == 500
+
+    def test_cached_marks_the_rows_not_cached(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--limit", "3"]
+        h.run(*argv, "--json")  # only the page is cached
+        result, sent = h.run("--cached", *argv, "--market", "--json")
+        assert sent == []
+        assert result.exit_code == 1
+        document = json.loads(result.stdout)
+        assert [row["error"]["code"] for row in document["results"]] == [
+            "cache_miss"
+        ] * 3
+        assert "market" not in document["results"][0]
+
+        # As text the header must be cached too, else the command fails.
+        assert "Not cached: GET /masters/1" in text_error(
+            h.run("--cached", *argv, "--market")[0]
+        )
+        h.run(*argv)  # now the header is cached
+        result, sent = h.run("--cached", *argv, "--market")
+        assert sent == []
+        assert result.exit_code == 1
+        assert _rows(result)[0].endswith("· ✗ Not cached: GET /marketplace/stats/11")
+        assert "Rerun without --cached to check the rows marked ✗." in result.stdout
+
+        # After a full run everything is cached: nothing sent, exit 0.
+        h.run(*argv, "--market", "--json")
+        result, sent = h.run("--cached", *argv, "--market", "--json")
+        assert sent == []
+        assert _markets(_document(result)) == [_EUR_11, _EUR_12, {"for_sale": 0}]
+
+    def test_the_continuation_repeats_market_and_currency(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--market", "--currency", "EUR"]
+        result, _ = h.run(*argv, "--limit", "2", "--max-requests", "9")
+        assert result.exit_code == 0, result.output
+        assert result.stdout.splitlines()[-1] == (
+            "Next page: agent-discogs get versions @m1 --market --currency EUR "
+            "--max-requests 9 --limit 2 --page 2"
+        )
+
+    def test_owned_marks_come_before_the_market_tail(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DISCOGS_TOKEN", "test-token")
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--owned", "--wanted", "--market"]
+        result, _ = h.run(*argv, "--limit", "2")
+        assert result.exit_code == 0, result.output
+        assert [row.split(" · want ")[1] for row in _rows(result)] == [
+            "11 · owned · not wanted · for sale: 6 from EUR 427.50",
+            "12 · not owned · not wanted · for sale: 2 from EUR 2429.99",
+        ]
+
+    def test_full_records_get_their_market(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        argv = ["get", "versions", "@m1", "--market", "--limit", "2"]
+        document = _document(h.run(*argv, "--json", "--full")[0])
+        assert document["results"][0]["id"] == 11
+        assert _markets(document) == [_EUR_11, _EUR_12]
+        assert document["market_read"]["complete"] is True
+
+    def test_several_refs_each_read_their_own_rows(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch)
+        h.run("get", "versions", "@m1", "--limit", "1", "--json")
+        argv = ["get", "versions", "@m1", "@r10", "--market", "--limit", "1", "--json"]
+        result, sent = h.run("--cached", *argv)
+        assert sent == []
+        # A row not cached fails the command, not its ref.
+        assert result.exit_code == 1
+        first, second = json.loads(result.stdout)
+        assert first["results"][0]["error"]["code"] == "cache_miss"
+        assert second["error"]["code"] == "cache_miss"  # /releases/10

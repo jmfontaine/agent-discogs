@@ -96,7 +96,7 @@ from agent_discogs.projections import (
     project_want,
 )
 from agent_discogs.refs import make_ref, parse_ref
-from agent_discogs.wantlist import ForSale, market_of
+from agent_discogs.wantlist import ForSale, MarketRead, market_of, read_markets
 
 # Which entity type each noun expects
 NOUN_EXPECTED_TYPE = {
@@ -632,9 +632,14 @@ def _get_versions(
     after: str | None,
     owned: bool,
     wanted: bool,
+    market: bool,
+    currency: CurrencyCode | None,
     max_requests: int | None,
     mode: Mode,
-) -> Any:
+) -> tuple[Any, bool]:
+    """A master's versions, one page; under `--market` each row's
+    Marketplace numbers too. Returns the text or JSON document, and whether
+    a row's lookup was a `--cached` miss."""
     master_id = entity_id
 
     # Smart resolution: release ref → look up its master_id, which selects the
@@ -656,10 +661,10 @@ def _get_versions(
 
     master_ref = make_ref("master", master_id)
     scan = _versions_scan(release_type, format)
-    # Before a scan the header goes first, so --max-requests counts it first;
-    # otherwise it stays lazy, read only once the listing succeeded, so a
-    # listing that fails costs its one request.
-    early_title = titled.title if scan and not mode.json else None
+    # Before a scan or the --market lookups the header goes first, so
+    # --max-requests counts it first; otherwise it stays lazy, read only once
+    # the listing succeeded, so a listing that fails costs its one request.
+    early_title = titled.title if (scan or market) and not mode.json else None
 
     # The SDK drops the filters left unset; `released` is the API's year filter.
     # Discogs filters `unofficial` itself, on the whole description, so it
@@ -684,11 +689,28 @@ def _get_versions(
         )
     else:
         result = fetch_page(listing, page=page or 1, per_page=limit)
+    # The lookups get what the listing left of the cap, and nothing after
+    # the scan's own 429.
+    read = (
+        read_markets(
+            client,
+            result.items,
+            currency=currency,
+            max_requests=max_requests,
+            listing_stop=result.stop,
+        )
+        if market
+        else None
+    )
+    missed = read is not None and bool(read.misses)
 
     if mode.json:
-        return _page_json(
+        document = _page_json(
             result, project_master_version, owned=owned, wanted=wanted, mode=mode
         )
+        if read is not None:
+            _mark_markets(document, result.items, read)
+        return document, missed
 
     footer_cmd = next_page_cmd(
         ["get", "versions", master_ref],
@@ -703,10 +725,13 @@ def _get_versions(
         desc=desc,
         owned=owned,
         wanted=wanted,
+        market=market,
+        currency=currency,
         max_requests=max_requests,
     )
 
-    return format_master_versions(
+    misses = {} if read is None else read.misses
+    text = format_master_versions(
         result.items,
         master_ref,
         titled.title if early_title is None else early_title,
@@ -718,7 +743,27 @@ def _get_versions(
         header_resent=_fresh(),
         owned=owned,
         wanted=wanted,
+        market=read,
+        misses={rid: classify(exc).message for rid, exc in misses.items()},
     )
+    return text, missed
+
+
+def _mark_markets(document: dict[str, Any], items: list[Any], read: MarketRead) -> None:
+    """Give each row of a `get versions --market` document (projected or
+    `--full`) its `market` object, `null` when not checked, or the `error` of
+    its `--cached` miss; and the document its `market_read` object."""
+    for row, version in zip(document["results"], items, strict=True):
+        if version.id in read.misses:
+            context = f"Market {make_ref('release', version.id)}"
+            row["error"] = error_document(read.misses[version.id], context)
+        elif version.id in read.markets:
+            row["market"] = project_market(
+                read.markets[version.id], blocked=version.id in read.blocked
+            )
+        else:
+            row["market"] = None
+    document["market_read"] = read.document()
 
 
 def _amount(value: float) -> str:
@@ -1094,10 +1139,12 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
         {
             "after",
             "country",
+            "currency",
             "desc",
             "format_",
             "label",
             "limit",
+            "market",
             "max_requests",
             "owned",
             "page",
@@ -1314,6 +1361,7 @@ def _flag_error(
     max_requests: int | None,
     owned: bool,
     for_sale: bool,
+    market: bool,
     max_price: float | None,
     currency: str | None,
     collection_filters: dict[str, str],
@@ -1354,7 +1402,9 @@ def _flag_error(
         )
         if inventory_error:
             return inventory_error
-    if noun == "stats":
+    if noun == "versions" and currency is not None and not market:
+        return "--currency needs --market with get versions."
+    if noun in ("stats", "versions"):
         price_error = _price_error(None, currency)
         if price_error:
             return price_error
@@ -1409,13 +1459,16 @@ def _flag_error(
             f"({len(refs)} given)."
         )
     # --owned and --wanted read nothing on these nouns (each row carries the
-    # user's own counts), so only a scan is left to cap.
-    if max_requests is not None and noun in ("releases", "versions") and not filtered:
+    # user's own counts), so only a scan or the --market lookups are left to
+    # cap.
+    capped = filtered or (noun == "versions" and market)
+    if max_requests is not None and noun in ("releases", "versions") and not capped:
         if noun == "versions":
             return (
                 "--max-requests caps a client-side filtered scan (get versions "
-                "--release-type official, or unofficial with --format). This "
-                "listing pages server-side and sends one request per page."
+                "--release-type official, or unofficial with --format) or the "
+                "--market lookups. This listing pages server-side and sends one "
+                "request per page."
             )
         return (
             "--max-requests caps a client-side filtered scan (get releases "
@@ -1521,30 +1574,55 @@ def _run_one(
     verbose: bool,
     compact: bool,
     master_year: bool,
+    market: bool,
     currency: CurrencyCode | None,
     mode: Mode,
-) -> Any:
-    """One noun for one ref: text, or the JSON document."""
+) -> tuple[Any, bool]:
+    """One noun for one ref: text, or the JSON document, and whether it
+    reports a failure of its own (a `get versions --market` row not cached)."""
     entity_type, entity_id = _resolve_ref(ref, noun)
 
+    if noun == "versions":
+        return _get_versions(
+            client,
+            entity_type,
+            entity_id,
+            ref,
+            page=page,
+            limit=limit,
+            country=country,
+            format=format,
+            label=label,
+            year=year,
+            sort=sort,
+            desc=desc,
+            release_type=release_type,
+            after=after,
+            owned=owned,
+            wanted=wanted,
+            market=market,
+            currency=currency,
+            max_requests=max_requests,
+            mode=mode,
+        )
     if noun == "artist":
-        return _get_artist(client, entity_id, mode)
+        return _get_artist(client, entity_id, mode), False
     if noun == "credits":
-        return _get_credits(client, entity_id, mode)
+        return _get_credits(client, entity_id, mode), False
     if noun == "identifiers":
-        return _get_identifiers(client, entity_id, mode)
+        return _get_identifiers(client, entity_id, mode), False
     if noun == "master":
-        return _get_master(client, entity_id, mode)
+        return _get_master(client, entity_id, mode), False
     if noun == "label":
-        return _get_label(client, entity_id, mode)
+        return _get_label(client, entity_id, mode), False
     if noun == "list":
-        return _get_list(client, entity_id, mode)
+        return _get_list(client, entity_id, mode), False
     if noun == "owned":
-        return _get_owned(client, entity_type, entity_id, mode)
+        return _get_owned(client, entity_type, entity_id, mode), False
     if noun == "price":
-        return _get_price(client, entity_id, mode)
+        return _get_price(client, entity_id, mode), False
     if noun == "release":
-        return _get_release(
+        output = _get_release(
             client,
             entity_id,
             verbose=verbose,
@@ -1552,8 +1630,9 @@ def _run_one(
             master_year=master_year,
             mode=mode,
         )
+        return output, False
     if noun == "releases":
-        return _get_releases(
+        output = _get_releases(
             client,
             entity_type,
             entity_id,
@@ -1569,30 +1648,10 @@ def _run_one(
             wanted=wanted,
             mode=mode,
         )
+        return output, False
     if noun == "stats":
-        return _get_stats(client, entity_id, currency=currency, mode=mode)
-    if noun == "tracklist":
-        return _get_tracklist(client, entity_id, mode)
-    return _get_versions(
-        client,
-        entity_type,
-        entity_id,
-        ref,
-        page=page,
-        limit=limit,
-        country=country,
-        format=format,
-        label=label,
-        year=year,
-        sort=sort,
-        desc=desc,
-        release_type=release_type,
-        after=after,
-        owned=owned,
-        wanted=wanted,
-        max_requests=max_requests,
-        mode=mode,
-    )
+        return _get_stats(client, entity_id, currency=currency, mode=mode), False
+    return _get_tracklist(client, entity_id, mode), False
 
 
 def _dispatch(
@@ -1616,6 +1675,7 @@ def _dispatch(
     owned: bool,
     wanted: bool,
     for_sale: bool,
+    market: bool,
     max_price: float | None,
     currency: str | None,
     value: bool,
@@ -1638,7 +1698,8 @@ def _dispatch(
     pressings" is one command. Output is one block per ref in ref order,
     blank-line separated, on stdout: a failing ref contributes its `✗` error
     block and the rest still run; JSON becomes a list with `{"ref", "error"}`
-    items for failures. Exit 1 if any ref failed. With one ref the shape is
+    items for failures. Exit 1 if any ref failed, or a `get versions --market`
+    row was not cached. With one ref the shape is
     unchanged, including the single-error path (`fail()`: stderr text or a
     JSON envelope). `collection`, `lists` and `wantlist` take no ref and
     `inventory` one username; each prints one document.
@@ -1674,6 +1735,7 @@ def _dispatch(
         max_requests=max_requests,
         owned=owned,
         for_sale=for_sale,
+        market=market,
         max_price=max_price,
         currency=currency,
         collection_filters=collection_filters,
@@ -1796,32 +1858,33 @@ def _dispatch(
     for ref in refs:
         context = f"{noun.title()} {ref}"
         try:
-            blocks.append(
-                _run_one(
-                    client,
-                    noun,
-                    ref,
-                    page=page,
-                    after=after,
-                    limit=limit,
-                    country=country,
-                    format=format,
-                    label=label,
-                    year=year,
-                    sort=sort,
-                    desc=desc,
-                    release_type=release_type,
-                    role=role,
-                    max_requests=max_requests,
-                    owned=owned,
-                    wanted=wanted,
-                    verbose=verbose,
-                    compact=compact,
-                    master_year=master_year,
-                    currency=_currency(currency) if currency else None,
-                    mode=mode,
-                )
+            output, missed = _run_one(
+                client,
+                noun,
+                ref,
+                page=page,
+                after=after,
+                limit=limit,
+                country=country,
+                format=format,
+                label=label,
+                year=year,
+                sort=sort,
+                desc=desc,
+                release_type=release_type,
+                role=role,
+                max_requests=max_requests,
+                owned=owned,
+                wanted=wanted,
+                verbose=verbose,
+                compact=compact,
+                master_year=master_year,
+                market=market,
+                currency=_currency(currency) if currency else None,
+                mode=mode,
             )
+            blocks.append(output)
+            failed = failed or missed
         except Exception as e:  # noqa: BLE001
             if single:
                 fail(e, context, json_output=mode.json)
@@ -1897,9 +1960,10 @@ def _json_options(command: Any) -> Any:
     "--currency",
     metavar="CODE",
     shell_complete=_complete_currency,
-    help=f"{'|'.join(CURRENCIES)}, any case. wantlist --for-sale, stats: the "
-    "currency of the Marketplace prices (sent as curr_abbr); inventory: with "
-    "--max-price, keep listings priced in it (matched client-side, never sent)",
+    help=f"{'|'.join(CURRENCIES)}, any case. wantlist --for-sale, stats, versions "
+    "--market: the currency of the Marketplace prices (sent as curr_abbr); "
+    "inventory: with --max-price, keep listings priced in it (matched "
+    "client-side, never sent)",
 )
 @click.option(
     "--desc", is_flag=True, default=False, help="With --sort: descending order"
@@ -1962,11 +2026,18 @@ def _json_options(command: Any) -> Any:
     "master, shared with get master)",
 )
 @click.option(
+    "--market",
+    is_flag=True,
+    default=False,
+    help="versions: add each row's Marketplace numbers, copies for sale and the "
+    "lowest price (one stats request per row)",
+)
+@click.option(
     "--max-requests",
     type=int,
-    help="releases --role / @l --year, versions --release-type official, a "
-    "collection filter (not --folder alone), wantlist --for-sale, or an inventory "
-    "filter or --owned: cap the command's HTTP sends (default: no cap)",
+    help="releases --role / @l --year, versions --release-type official or "
+    "--market, a collection filter (not --folder alone), wantlist --for-sale, or "
+    "an inventory filter or --owned: cap the command's HTTP sends (default: no cap)",
 )
 @click.option(
     "--owned",
@@ -2068,6 +2139,7 @@ def get(
     in_wantlist: bool,
     label: str | None,
     limit: int,
+    market: bool,
     master_year: bool,
     max_price: float | None,
     max_requests: int | None,
@@ -2122,6 +2194,7 @@ def get(
         owned=owned,
         wanted=wanted,
         for_sale=for_sale,
+        market=market,
         max_price=max_price,
         currency=currency,
         value=value,
@@ -2161,6 +2234,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         owned=False,
         wanted=False,
         for_sale=False,
+        market=False,
         max_price=None,
         currency=None,
         value=False,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from discogs_sdk import (
     MarketplaceReleaseStats,
     Master,
@@ -43,7 +44,7 @@ from agent_discogs.formatting import (
 from agent_discogs.inventory import Wants
 from agent_discogs.markup import plain
 from agent_discogs.pagination import ScanStop
-from agent_discogs.wantlist import Market
+from agent_discogs.wantlist import Market, MarketRead
 from tests.conftest import fake
 
 
@@ -628,6 +629,61 @@ class TestFormatMasterVersions:
         assert "@r9876543 2017 US · Interscope · Vinyl, 2xLP, 180g" in lines
         assert "[release]" not in output
         assert "Next page:" in output
+
+    @staticmethod
+    def _market_rows(read: MarketRead, misses: dict[int, str] | None = None) -> str:
+        versions = [
+            MasterVersion.model_validate({"id": i, "title": "A", "released": "1958"})
+            for i in (1, 2, 3)
+        ]
+        return format_master_versions(
+            versions, "@m1", "A", 1, 3, None, market=read, misses=misses
+        )
+
+    def test_market_tail_ends_each_row_read(self) -> None:
+        read = MarketRead(
+            3, {1: Market(6, Price(currency="EUR", value=427.5)), 2: Market(0, None)}
+        )
+        assert self._market_rows(read).splitlines()[2:] == [
+            "@r1 1958 · for sale: 6 from EUR 427.50",
+            "@r2 1958 · for sale: 0",
+            "@r3 1958",
+        ]
+
+    @pytest.mark.parametrize(
+        ("stop", "why"),
+        [
+            (
+                ScanStop("max_requests", max_requests=4),
+                "the lookups stopped at --max-requests 4",
+            ),
+            (
+                ScanStop("rate_limited", retry_after=30),
+                "a lookup was rate limited, retry in 30s",
+            ),
+            (ScanStop("rate_limited"), "a lookup was rate limited"),
+        ],
+    )
+    def test_a_stopped_read_says_which_rows_were_not_checked(
+        self, stop: ScanStop, why: str
+    ) -> None:
+        read = MarketRead(3, {1: Market(1, None)}, stop=stop)
+        lines = self._market_rows(read).splitlines()
+        assert lines[-2:] == [
+            "",
+            (
+                f'Market: {why} (1 of 3 rows checked): rows without "for sale:" '
+                "were not checked."
+            ),
+        ]
+
+    def test_a_cached_miss_marks_its_row(self) -> None:
+        read = MarketRead(3, {1: Market(1, None)})
+        message = "Not cached: GET /marketplace/stats/2"
+        lines = self._market_rows(read, {2: message}).splitlines()
+        assert lines[3] == f"@r2 1958 · ✗ {message}"
+        assert lines[-1] == "Rerun without --cached to check the rows marked ✗."
+        assert not any(line.startswith("Market:") for line in lines)
 
 
 class TestWantedMarks:

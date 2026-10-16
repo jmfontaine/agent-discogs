@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from agent_discogs.collection import Copies, MasterCopies, Ownership
     from agent_discogs.inventory import Wants
     from agent_discogs.pagination import ScanStop
-    from agent_discogs.wantlist import Market
+    from agent_discogs.wantlist import Market, MarketRead
 
 # A view line is plain text, or a list of parts (`markup.Part`): text (which
 # may hold Discogs values), `Span`s of CLI framing color may paint, and
@@ -1301,8 +1301,13 @@ def format_master_versions(
     header_resent: bool = False,
     owned: bool = False,
     wanted: bool = False,
+    market: MarketRead | None = None,
+    misses: dict[int, str] | None = None,
 ) -> str:
-    """Format master release versions (`--release-type` scans are `filtered`)."""
+    """Format master release versions (`--release-type` scans are `filtered`).
+    Under `--market` each row read ends in its Marketplace numbers, or in the
+    `--cached` miss that left it unchecked (`misses`, by release id, the error
+    message); a read that stopped short says which rows were not checked."""
     counts = _page_counts(
         page,
         len(versions),
@@ -1322,6 +1327,7 @@ def format_master_versions(
         "",
     ]
 
+    misses = misses or {}
     lines.extend(
         _release_row(
             ref=_ref("release", ver.id),
@@ -1333,11 +1339,50 @@ def format_master_versions(
             **_community_counts(ver),
             owned=_stat_owned(owned, ver),
             wanted=_stat_wanted(wanted, ver),
+            tail=_market_or_miss(market, misses, ver.id),
         )
         for ver in versions
     )
+    lines.extend(_market_note(market))
+    if misses:
+        lines += ["", "Rerun without --cached to check the rows marked ✗."]
     lines.extend(_footer(next_page_cmd, capped=stop is not None))
     return _text(lines)
+
+
+def _market_or_miss(
+    market: MarketRead | None, misses: dict[int, str], row_id: int
+) -> list[Part] | None:
+    """A `--market` row's tail: its numbers, its `--cached` miss, or nothing
+    for a row not checked."""
+    if row_id in misses:
+        return [Span("· ✗", "error"), f" {misses[row_id]}"]
+    if market is not None and row_id in market.markets:
+        return _market_tail(market.markets[row_id])
+    return None
+
+
+def _market_note(market: MarketRead | None) -> list[Line]:
+    """Why some `--market` rows have no numbers: the lookups stopped short."""
+    if market is None or market.stop is None:
+        return []
+    if market.unsent:
+        who = "the listing"
+    elif market.stop.reason == "rate_limited":
+        who = "a lookup"
+    else:
+        who = "the lookups"
+    checked = f"{market.rows_read:,} of {market.rows:,} rows checked"
+    return [
+        "",
+        [
+            _label("Market"),
+            (
+                f" {who} {_stopped(market.stop)} ({checked}): "
+                'rows without "for sale:" were not checked.'
+            ),
+        ],
+    ]
 
 
 def _price(price: Any) -> str | None:

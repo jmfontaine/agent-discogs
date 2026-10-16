@@ -257,7 +257,10 @@ Options:
                    server-side listing page is always sent, then the username
                    and the pages while the cap allows. get releases and get
                    versions read neither, so --owned or --wanted alone takes
-                   no cap there
+                   no cap there. get versions --market: the text header and
+                   the listing page are always sent, then each row's lookup
+                   while the sends are below N (rows not reached are not
+                   checked, with a 'Market:' note; a scan shares the cap)
   --release-type T get versions: all (the default, unlike search's official)
                    lists every version; unofficial keeps those whose format
                    lists "Unofficial Release", filtered by Discogs (exact
@@ -324,6 +327,20 @@ Options:
                    never re-checks one. --cached: a want whose stats are not
                    cached is a row with its cache_miss error (JSON error),
                    exit 1
+  --market         get versions: end each row with its Marketplace numbers,
+                   '· for sale: 6 from EUR 427.50' ('· for sale: 0' when none
+                   is for sale or the release is blocked from sale; no 'from'
+                   without a price), after the --owned and --wanted marks. 1
+                   request per row on top of the listing (its Marketplace
+                   stats, cached 1h; a text header is read first): a page of N
+                   rows is 1+N requests with --json, 2+N as text. No user
+                   needed. --json: each row's market (for_sale, lowest,
+                   currency; blocked true when blocked from sale), null when
+                   not checked, plus a market_read object (complete,
+                   rows_read, rows; stop_reason, retry_after). A 429 on a
+                   lookup stops the lookups, keeps the rows read and exits 0;
+                   another failure fails the command. --cached: a row whose
+                   stats are not cached ends '· ✗ <why>' (JSON error), exit 1
   --max-price N    get wantlist --for-sale: keep wants whose lowest price is at
                    most N (exactly N is kept; no price is dropped). Needs
                    --currency. get inventory: keep listings priced in
@@ -331,10 +348,11 @@ Options:
                    dropped); a listing in another currency is dropped and
                    counted (header 'N listings in other currencies skipped';
                    JSON skipped_currency). Needs --currency
-  --currency CODE  get wantlist --for-sale and get stats: prices in USD, GBP,
-                   EUR, CAD, AUD, JPY, CHF, MXN, BRL, NZD, SEK or ZAR (any
-                   case; another code is invalid_argument); without it Discogs
-                   uses the account's currency (sent as curr_abbr on the stats
+  --currency CODE  get wantlist --for-sale, get stats and get versions --market
+                   (only with --market there): prices in USD, GBP, EUR, CAD,
+                   AUD, JPY, CHF, MXN, BRL, NZD, SEK or ZAR (any case; another
+                   code is invalid_argument); without it Discogs uses the
+                   account's currency (sent as curr_abbr on the stats
                    requests). get inventory: only with --max-price; matched
                    client-side against each listing's price currency, never
                    sent (sellers price in their own currency, so pick theirs)
@@ -403,8 +421,10 @@ Get flags by noun (any other get flag fails with invalid_argument):
   releases @l      --limit, --page, --year, --owned, --wanted, --after and
                    --max-requests (with --year)
   versions         --limit, --page, --country, --format, --label, --year,
-                   --sort, --desc, --release-type, --owned, --wanted, --after
-                   and --max-requests (with a --release-type scan)
+                   --sort, --desc, --release-type, --owned, --wanted, --market,
+                   --currency (with --market), --after (with a --release-type
+                   scan) and --max-requests (with a --release-type scan or
+                   --market)
   collection       no ref; --limit, --page, --sort, --desc, --format, --genre,
                    --style, --year, --label, --artist, --title, --folder,
                    --fields, --after and --max-requests (with a filter, not
@@ -441,6 +461,7 @@ Environment:
 Paging:
   Lists end with a 'Next page:' or 'Continue scan:' command. Paste it unchanged:
   it repeats --cached or --fresh, --max-requests, --owned, --wanted, for get
+  versions --market and --currency, for get
   collection and get inventory --limit, its filters (get collection also
   --folder, not a filter, and --fields), --sort and --desc (inventory also
   --in-wantlist), and, for get lists and get wantlist, --limit (and
@@ -534,6 +555,7 @@ Examples:
   agent-discogs search release --artist Wire --limit 20 --owned
   agent-discogs get owned @r847868 @m3719
   agent-discogs get versions @m3719 --owned --wanted
+  agent-discogs get versions @m3719 --market --currency EUR --limit 10
   agent-discogs get collection --style Techno --format 12\\" --max-requests 20
   agent-discogs get collection --value
   agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
