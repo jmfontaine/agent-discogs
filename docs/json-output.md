@@ -114,6 +114,19 @@ With `--for-sale` (a filtered scan, so `pagination` carries `filtered`, `capped`
 - `--full` prints the list record as the SDK normalizes it, its `items` with `display_title`, `comment`, `uri`, `resource_url` and `image_url`.
 - A list with no items has no `items` key, like any empty field.
 
+## Master year
+
+`get release --master-year --json` adds `master_year` right after `master` (see [release](commands.md#release)):
+
+```json
+{"ref":"@r352665","title":"...","master":"@m3719","master_year":1994,...}
+```
+
+- When the master was not read, `master_year` is absent and `master_year_error` takes its place: `{"code":"cache_miss","message":"Not cached: GET /masters/3719"}` under `--cached`, or `"code":"not_found"` for a deleted master, with `hint` when there is one. The release document is complete either way.
+- A release with no master, or a master year Discogs does not know, has neither key.
+- `--json --full` adds a top-level `master_year` (or `master_year_error`) beside the release record's own keys, as `get price --full` adds `marketplace_stats`.
+- Without `--master-year`, neither key appears in any shape.
+
 ## --full
 
 ```bash

@@ -776,7 +776,7 @@ class TestGetCommand:
                 ["get", "release", "@r847868", "--limit", "5"],
                 (
                     "--limit does not apply to 'get release'. "
-                    "'get release' takes --compact, --verbose."
+                    "'get release' takes --compact, --master-year, --verbose."
                 ),
             ),
             (

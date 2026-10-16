@@ -238,7 +238,7 @@ class TestFormatRelease:
             labels=[label],
             formats=[fmt],
             genres=["Electronic", "Rock"],
-            styles=["Industrial"],
+            styles=["Industrial", "Alternative Rock"],
             num_for_sale=1247,
             lowest_price=5.00,
             master_id=4917,
@@ -252,7 +252,8 @@ class TestFormatRelease:
         )
         assert "Label: Nothing Records (INT-92346)" in output
         assert "Format: Vinyl (LP, Album)" in output
-        assert "Genres: Electronic, Rock" in output
+        assert "Genres: Electronic; Rock" in output
+        assert "Styles: Industrial; Alternative Rock" in output
         assert "Rating: 4.38/5 (4,521 votes)" in output
         assert "Have: 89,234" in output
         assert "Master: @m4917" in output
@@ -276,6 +277,38 @@ class TestFormatRelease:
         )
         output = format_release(release)
         assert '@r99999 [release] "Unknown" by Unknown Artist' in output
+
+    def test_genre_with_commas_is_one_entry(self) -> None:
+        # Discogs' genre "Folk, World, & Country" holds commas itself.
+        release = Release.model_validate(
+            {
+                "id": 1,
+                "title": "T",
+                "genres": ["Rock", "Folk, World, & Country"],
+                "styles": ["Folk Rock", "Folk"],
+            }
+        )
+        lines = format_release(release).splitlines()
+        assert "Genres: Rock; Folk, World, & Country" in lines
+        assert "Styles: Folk Rock; Folk" in lines
+
+    def test_single_genre_and_no_styles(self) -> None:
+        release = Release.model_validate(
+            {"id": 1, "title": "T", "genres": ["Rock"], "styles": []}
+        )
+        lines = format_release(release).splitlines()
+        assert "Genres: Rock" in lines
+        assert not [line for line in lines if line.startswith("Styles:")]
+
+    def test_master_year_ends_the_master_line(self) -> None:
+        release = Release.model_validate({"id": 1, "title": "T", "master_id": 5460})
+        lines = format_release(release, master_year=1959).splitlines()
+        assert "Master: @m5460 (1959)" in lines
+        lines = format_release(
+            release, master_year=1959, master_error="Not cached: GET /masters/5460"
+        ).splitlines()
+        assert "Master: @m5460 · ✗ Not cached: GET /masters/5460" in lines
+        assert "Master: @m5460" in format_release(release).splitlines()
 
 
 class TestFormatArtist:
@@ -316,7 +349,7 @@ class TestFormatMaster:
             year=1994,
             artists=[artist],
             genres=["Electronic", "Rock"],
-            styles=["Industrial"],
+            styles=["Industrial", "Alternative Rock"],
             main_release=367113,
             num_for_sale=5476,
             lowest_price=0.36,
@@ -327,7 +360,28 @@ class TestFormatMaster:
             '@m4917 [master] "The Downward Spiral" by Nine Inch Nails (1994)' in output
         )
         assert "Main release: @r367113" in output
+        assert "Genres: Electronic; Rock" in output
+        assert "Styles: Industrial; Alternative Rock" in output
         assert "1. Mr. Self Destruct (4:09)" in output
+
+    def test_genre_with_commas_is_one_entry(self) -> None:
+        master = Master.model_validate(
+            {
+                "id": 375249,
+                "title": "Every Kingdom",
+                "genres": ["Rock", "Folk, World, & Country"],
+                "styles": ["Alternative Rock", "Acoustic", "Folk Rock", "Folk"],
+            }
+        )
+        lines = format_master(master).splitlines()
+        assert "Genres: Rock; Folk, World, & Country" in lines
+        assert "Styles: Alternative Rock; Acoustic; Folk Rock; Folk" in lines
+
+    def test_single_genre_and_no_styles(self) -> None:
+        master = Master.model_validate({"id": 1, "title": "T", "genres": ["Rock"]})
+        lines = format_master(master).splitlines()
+        assert "Genres: Rock" in lines
+        assert not [line for line in lines if line.startswith("Styles:")]
 
     def test_lowest_price_is_a_bare_amount(self) -> None:
         # Master.lowest_price is a bare float and Discogs takes no currency

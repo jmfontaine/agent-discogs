@@ -43,9 +43,7 @@ agent-discogs search release --artist "Nine Inch Nails" --release-type all --add
 agent-discogs search release --artist "Nine Inch Nails" --release-type unofficial --added-since 2025-10-09
 ```
 
-`--added-since` is experimental; its cost, the `--max-requests` cap and its failures are under [`--added-since`](commands.md#search). It is complete only while Discogs keeps the order it walks, and rerunning with a higher cap, or after a `rate_limited` failure, reuses every cached lookup. It misses releases where the artist has only track-level or secondary credits (`artist=` does not match them) and, under `--release-type unofficial`, unofficial releases not tagged "Unofficial Release".
-
-`--release-type unofficial` returns every unofficial release: bootlegs, counterfeits and pirates alike, since Discogs tags all three the same way. For bootlegs only, check each row's `→ @m...` master as Unofficial Releases in the pressings skill describes (`agent-discogs skills get pressings --full`), and drop the rows whose master has official versions.
+`--added-since` is experimental; its cost, the `--max-requests` cap and its failures are under [`--added-since`](commands.md#search). It is complete only while Discogs keeps the order it walks. It misses releases where the artist has only track-level or secondary credits (`artist=` does not match them) and, under `--release-type unofficial`, unofficial releases not tagged "Unofficial Release"; for bootlegs only, see the `--release-type` row there.
 
 ## Filter Combinations
 
@@ -59,19 +57,20 @@ Effective filter combinations for narrowing results:
 | Region-specific | `--country US` or `--country UK` or `--country Japan` |
 | Genre exploration | `--genre "Electronic" --style "Industrial"` (Electronic requires a style) |
 
-## Catalog Number and Barcode Searches
+## Catalog Number, Barcode and Runout Searches
 
-When you have a catalog number or barcode, these are the most precise search methods:
+`search release --catno "INT-92346"` and `search release --barcode "606949235024"` are the most precise searches. `--barcode` matches identifier text, runout etchings included: how to type it and confirm a match is in `agent-discogs skills get pressings --full`, section Catalog Number, Barcode and Runout Searches.
+
+## Credit, Track and Title Searches
 
 ```bash
-# Catalog number — often printed on the spine/label of a record
-agent-discogs search release --catno "INT-92346"
-
-# Barcode — UPC/EAN from the packaging
-agent-discogs search release --barcode "606949235024"
+agent-discogs search release --credit "Rudy Van Gelder" --artist "Horace Silver"   # what an engineer worked on
+agent-discogs search release --track "So What" --artist "Miles Davis"   # a track title, not every field
+agent-discogs search release --title "Kind of Blue"   # not artists or labels of that name
+agent-discogs search artist --anv "Trane"   # artists credited under that name variation
 ```
 
-These typically return very few results (often exactly 1), making them ideal for identifying a specific pressing.
+`--credit` is broad: quoting the name does not make it a phrase match and a role word (`"Rudy Van Gelder Engineer"`) returns nothing, so narrow it with `--artist`, `--genre`, `--format` or `--year`. `get releases @a... --role Engineer` can match nothing (discography rows carry few roles); `get credits @r...` shows who did what on one release. Discogs answers a filter it cannot match with an empty page, so `--credit` or `--track` on `search artist|label` and `--anv` on `search release|master|label` fail with `invalid_argument` before any request.
 
 ## Handling Ambiguous Results
 
@@ -88,5 +87,5 @@ When a search returns many similar results (common for popular albums with hundr
 - Use `--limit 10` or `--limit 20` when browsing larger result sets
 - Always prefer adding filters over paginating through hundreds of results
 - Discogs does not paginate beyond 10,000 results. If a query is that broad, add filters to narrow it.
-- Paste the `Next page:` / `Continue scan:` command shown under the results to continue; do not compute `--page` values for the default filtered search. `--page N` works with `--release-type all`, `--release-type unofficial` (unless combined with `--format`), and artist/label searches. The printed command keeps `--cached`/`--fresh` and `--max-requests`, and puts the type and query after `--`, so a query such as `-ambient` survives.
-- A `≤N` total is the unfiltered upper bound of a client-side scan (`--release-type official`, or `unofficial` with `--format`); `--release-type unofficial` on its own is filtered by Discogs, so its total is exact and it never shows `Continue scan:`. How a scan reads 100-row pages, stops at `--max-requests N` (cap it under a tool-call time limit) or on a 429, and continues: [Client-side scans](commands.md#client-side-scans). A rare filter over a broad query can take tens of requests; narrowing the query beats capping it.
+- Paste the `Next page:` / `Continue scan:` command shown under the results to continue; do not compute `--page` values for the default filtered search. `--page N` works with `--release-type all`, `--release-type unofficial` (unless combined with `--format`), and artist/label searches.
+- A `≤N` total is the unfiltered upper bound of a client-side scan (`--release-type official`, or `unofficial` with `--format`); `--release-type unofficial` on its own is filtered by Discogs, so its total is exact. Scans, their `--max-requests` cap and a 429 stop: [Client-side scans](commands.md#client-side-scans). Narrowing a broad query beats capping it.
