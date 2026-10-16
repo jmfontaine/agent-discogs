@@ -18,9 +18,11 @@ from agent_discogs.client import get_client
 from agent_discogs.collection import (
     ALL_FOLDER,
     COUNT_KEYS,
+    DUPLICATE_KINDS,
     copies,
     count_records,
     custom_fields,
+    find_duplicates,
     folder_id,
     folder_names,
     mark_rows,
@@ -42,6 +44,7 @@ from agent_discogs.formatting import (
     format_artist_releases,
     format_collection,
     format_collection_counts,
+    format_collection_duplicates,
     format_collection_value,
     format_credits,
     format_identifiers,
@@ -84,6 +87,7 @@ from agent_discogs.projections import (
     project_artist,
     project_artist_release,
     project_credits,
+    project_duplicate,
     project_identifiers,
     project_label,
     project_label_release,
@@ -933,6 +937,68 @@ def _get_collection_counts(
     )
 
 
+def _get_collection_duplicates(
+    client: Discogs,
+    *,
+    kind: str,
+    filters: dict[str, str],
+    folder: str | None,
+    fields: bool,
+    max_requests: int | None,
+    mode: Mode,
+) -> Any:
+    """`get collection --duplicates`: the releases, or masters (`kind`),
+    owned more than once, from one read of the whole collection, or of
+    `folder`, 100 records a request, unsorted (the pages `--owned` reads).
+    Only the records the filters keep are checked; a read `--max-requests`
+    or a 429 stopped gives the groups of the part read, flagged incomplete."""
+    # As the listing: --full names folders by id, and --fields reads the
+    # fields list after the folder list, both counted by --max-requests.
+    user, names, read_folder = _collection_folder(
+        client, folder=folder, names=not mode.full, max_requests=max_requests
+    )
+    custom = None
+    if read_folder is None:
+        read = unread(ScanStop("max_requests", max_requests=max_requests))
+    else:
+        if fields and not _cap_spent(max_requests):
+            custom = custom_fields(user)
+        read = read_whole(records(user, folder=read_folder), max_requests=max_requests)
+    keep = record_filter(filters)
+    found = find_duplicates(
+        [record for record in read.records if keep is None or keep(record)], kind
+    )
+    if mode.json:
+        document: dict[str, Any] = {"duplicates": kind}
+        if mode.full:
+            document["groups"] = [
+                {
+                    "ref": make_ref(kind, group.id),
+                    "instances": [full_dump(r) for r in group.records],
+                }
+                for group in found.groups
+            ]
+        else:
+            document["groups"] = [
+                project_duplicate(group, kind, names, custom) for group in found.groups
+            ]
+        document["records"] = found.records
+        if kind == "master":
+            document["without_master"] = found.without_master
+        document["collection"] = read.document()
+        return document
+    shown = {"folder": folder, **filters} if folder is not None else filters
+    return format_collection_duplicates(
+        account.username(client),
+        kind,
+        found,
+        read,
+        folders=names,
+        fields=custom,
+        filters=shown,
+    )
+
+
 def _get_wantlist(
     client: Discogs,
     *,
@@ -1148,6 +1214,7 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
             "artist",
             "count_by",
             "desc",
+            "duplicates",
             "fields",
             "folder",
             "format_",
@@ -1371,14 +1438,16 @@ def _collection_error(
     folder: str | None,
     max_requests: int | None,
     count_by: str | None,
+    duplicates: str | None,
     top: int | None,
     full: bool,
 ) -> str | None:
     """What `get collection` cannot take: a ref, any other flag with
-    --value, a page flag, --fields or --json --full with --count-by, --top
+    --value, two views of the whole collection (--count-by, --duplicates),
+    a page flag with one, --fields or --json --full with --count-by, --top
     without it or below 1, --fields with --json --full, an empty filter (it
     would match nothing) or folder name, or --max-requests without a filter
-    or --count-by, which leaves no scan to cap (`--folder` alone pages
+    or a view, which leaves no read to cap (`--folder` alone pages
     server-side)."""
     if refs:
         return "get collection takes no ref: it lists your own collection."
@@ -1388,12 +1457,22 @@ def _collection_error(
             f"--value takes no other get collection flag ({', '.join(others)} "
             "given): it prints your collection's value, not a listing."
         )
+    views = [
+        flag
+        for flag, value in (("--count-by", count_by), ("--duplicates", duplicates))
+        if value is not None
+    ]
+    if len(views) > 1:
+        return (
+            f"{' and '.join(views)} each replace the listing with a view of the "
+            "whole collection: give only one."
+        )
     if count_by is None and "top" in explicit:
         return "--top needs --count-by KEY: it keeps the N largest counts."
     paging = sorted(_option_flag(name) for name in explicit & _PAGE_FLAGS)
-    if count_by is not None and paging:
+    if views and paging:
         return (
-            "--count-by reads the whole collection, so it takes no --limit, "
+            f"{views[0]} reads the whole collection, so it takes no --limit, "
             f"--page, --after, --sort or --desc ({', '.join(paging)} given)."
         )
     if count_by is not None and (full or "fields" in explicit):
@@ -1418,12 +1497,12 @@ def _collection_error(
         return (
             "--folder needs a folder name, as get collection prints it (· folder Jazz)."
         )
-    if max_requests is not None and not filters and count_by is None:
+    if max_requests is not None and not filters and not views:
         return (
             "--max-requests caps a filtered get collection scan (--format, "
             "--genre, --style, --year, --label, --artist or --title) or a "
-            "--count-by read; get collection alone, or with --folder alone, "
-            "pages server-side and sends one request per page."
+            "--count-by or --duplicates read; get collection alone, or with "
+            "--folder alone, pages server-side and sends one request per page."
         )
     return None
 
@@ -1455,6 +1534,7 @@ def _flag_error(
     in_wantlist: bool,
     folder: str | None,
     count_by: str | None,
+    duplicates: str | None,
     top: int | None,
     full: bool,
 ) -> str | None:
@@ -1512,6 +1592,7 @@ def _flag_error(
             folder=folder,
             max_requests=max_requests,
             count_by=count_by,
+            duplicates=duplicates,
             top=top,
             full=full,
         )
@@ -1776,6 +1857,7 @@ def _dispatch(
     folder: str | None,
     fields: bool,
     count_by: str | None,
+    duplicates: str | None,
     top: int | None,
     verbose: bool,
     compact: bool,
@@ -1831,6 +1913,7 @@ def _dispatch(
         collection_filters=collection_filters,
         folder=folder,
         count_by=count_by,
+        duplicates=duplicates,
         top=top,
         condition=condition,
         sleeve=sleeve,
@@ -1881,6 +1964,17 @@ def _dispatch(
                     top=top,
                     filters=collection_filters,
                     folder=folder,
+                    max_requests=max_requests,
+                    mode=mode,
+                )
+                failed = False
+            elif noun == "collection" and duplicates:
+                output = _get_collection_duplicates(
+                    client,
+                    kind=duplicates,
+                    filters=collection_filters,
+                    folder=folder,
+                    fields=fields,
                     max_requests=max_requests,
                     mode=mode,
                 )
@@ -2079,6 +2173,13 @@ def _json_options(command: Any) -> Any:
     "--desc", is_flag=True, default=False, help="With --sort: descending order"
 )
 @click.option(
+    "--duplicates",
+    type=click.Choice(DUPLICATE_KINDS),
+    help="collection: list the releases, or masters, you own more than once "
+    "instead of the listing (reads the whole collection, 100 records a "
+    "request; filters choose the records checked)",
+)
+@click.option(
     "--format",
     "format_",
     help="versions: filter by format; collection: keep records with this format "
@@ -2146,9 +2247,9 @@ def _json_options(command: Any) -> Any:
     "--max-requests",
     type=int,
     help="releases --role / @l --year, versions --release-type official or "
-    "--market, a collection filter (not --folder alone) or --count-by, wantlist "
-    "--for-sale, or an inventory filter or --owned: cap the command's HTTP sends "
-    "(default: no cap)",
+    "--market, a collection filter (not --folder alone), --count-by or "
+    "--duplicates, wantlist --for-sale, or an inventory filter or --owned: cap "
+    "the command's HTTP sends (default: no cap)",
 )
 @click.option(
     "--owned",
@@ -2274,6 +2375,7 @@ def get(
     folder: str | None,
     fields: bool,
     count_by: str | None,
+    duplicates: str | None,
     top: int | None,
     verbose: bool,
     wanted: bool,
@@ -2322,6 +2424,7 @@ def get(
         folder=folder,
         fields=fields,
         count_by=count_by,
+        duplicates=duplicates,
         top=top,
         condition=condition,
         sleeve=sleeve,
@@ -2364,6 +2467,7 @@ def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -
         folder=None,
         fields=False,
         count_by=None,
+        duplicates=None,
         top=None,
         condition=None,
         sleeve=None,

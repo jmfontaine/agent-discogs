@@ -96,6 +96,17 @@ Under `--wanted` (`search`, `get versions`, `get releases`; see [Marking rows wi
 - `collection` is the object `--owned` documents (see [Owned rows](#owned-rows)): `complete`, `records_read` (every record read, kept by the filters or not; `0` when the cap was spent before the first page), `total_records` (the collection's size, or the folder's with `--folder`; `null` when no page was read) and, when the read stopped early, `stop_reason` (`"max_requests"` or `"rate_limited"`) and, for a 429 that said, `retry_after`. A stopped read's counts are those of the records read, a lower bound.
 - There is no `--full`: `--count-by --json --full` fails with `invalid_argument`.
 
+`get collection --duplicates release|master --json` is the groups of copies (see [--duplicates](commands.md#--duplicates)), with no `pagination`:
+
+```json
+{"duplicates":"master","groups":[{"ref":"@m3719","copies":3,"releases":[{"ref":"@r847868","title":"Nine Inch Nails - The Downward Spiral","year":1994,"label":"Nothing Records","catno":"92346-2","format":"CD (Album)","master":"@m3719","copies":2,"folders":["Vinyl","To Sell"]},{"ref":"@r352665",...,"copies":1,"folders":["Vinyl"]}]}],"records":250,"without_master":4,"collection":{"complete":true,"records_read":250,"total_records":250}}
+```
+
+- `duplicates` is the kind. `groups` is ordered by copies, most first. A release group, and each entry of a master group's `releases`, is the [collection row](#collection) of its first copy without `folder`, `added` and `rating`, plus `copies` (how many records) and `folders` (the folders they are in, each once, in the order of the copies); `fields` is there with `--fields`, from the first copy. A master group is `{"ref", "copies", "releases"}`.
+- `records` is the records checked, after the filters. `without_master` (master only) is the records with no master, not checked (`0` is kept).
+- `collection` is the object `--count-by` prints. When the read stopped early, a group may lack copies and some groups may be missing.
+- `--json --full` gives each group as `{"ref", "instances"}`, `instances` being its collection records as the SDK normalizes them (`CollectionItem`), with the other keys unchanged; it reads no folder list (folders are `folder_id`s) unless `--folder` is given, and does not take `--fields`.
+
 ## Stats
 
 `get stats @r... --json` prints one object per release (see [stats](commands.md#stats)); with several refs, a list in ref order, with `{"ref","error"}` items for the refs that failed:

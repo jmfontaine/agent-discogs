@@ -14,6 +14,7 @@ from agent_discogs import markup, sanitize, style
 from agent_discogs.collection import (
     CustomField,
     field_values,
+    folders_of,
     stat_copies,
     stat_wanted,
 )
@@ -28,7 +29,13 @@ if TYPE_CHECKING:
 
     from discogs_sdk import AuthMode
 
-    from agent_discogs.collection import Copies, Counts, MasterCopies, Ownership
+    from agent_discogs.collection import (
+        Copies,
+        Counts,
+        Duplicates,
+        MasterCopies,
+        Ownership,
+    )
     from agent_discogs.inventory import Wants
     from agent_discogs.pagination import ScanStop
     from agent_discogs.wantlist import Market, MarketRead
@@ -899,23 +906,22 @@ def _records(count: int) -> str:
     return f"{count:,} record{'' if count == 1 else 's'}"
 
 
-def _whole_read(counted: int, read: Ownership) -> str:
+def _whole_read(counted: int, read: Ownership, lead: str = "") -> str:
     """The header counts of a view of the whole collection: `(250 records)`,
     `(12 of 250 records)` when filters kept 12 or the read stopped short,
-    then why it stopped and after how many records; or that `--max-requests`
-    ran out before the first page."""
+    then why it stopped and after how many records, each after `lead`; or
+    that `--max-requests` ran out before the first page."""
     total = read.total_records
     if total is None:
         cap = "" if read.stop is None else f" {read.stop.max_requests}"
         return f"(--max-requests{cap} ran out before the scan started)"
     shown = _records(total) if counted == total else f"{counted:,} of {_records(total)}"
     if read.stop is None:
-        return f"({shown})"
+        return f"({lead}{shown})"
     # `scan stopped: rate limited, retry in 30s, after ...`
     sep = "," if read.stop.reason == "rate_limited" else ""
-    return (
-        f"({shown}; {_scan_note(read.stop)}{sep} after {_records(read.records_read)})"
-    )
+    after = _records(read.records_read)
+    return f"({lead}{shown}; {_scan_note(read.stop)}{sep} after {after})"
 
 
 def format_collection_counts(
@@ -957,6 +963,100 @@ def format_collection_counts(
         verb = "has" if missing == 1 else "have"
         noun = "year" if key == "decade" else key
         lines += ["", f"{_records(missing)} {verb} no {noun}"]
+    return _text(lines)
+
+
+def _duplicate_row(
+    copies: list[Any], folders: dict[int, str], fields: dict[int, CustomField] | None
+) -> list[Part]:
+    """A `--duplicates` release: the `get collection` row of its first copy,
+    without the copy's folder, day added and rating, then how many copies
+    and the folders they are in, and the first copy's `--fields`."""
+    record = copies[0]
+    release = getattr(record, "basic_information", None)
+    labels = getattr(release, "labels", None) or []
+    first = labels[0] if labels else None
+    names = folders_of(folders, copies)
+    values = {} if fields is None else field_values(record, fields)
+    tail = []
+    if names:
+        tail.append(f"· folder{'s' if len(names) > 1 else ''} {', '.join(names)}")
+    tail += [f"· {name}: {value}" for name, value in values.items()]
+    return _release_row(
+        ref=_ref("release", record.id),
+        title=artist_title(release),
+        year=getattr(release, "year", None),
+        label=getattr(first, "name", None),
+        catno=getattr(first, "catalog_number", None),
+        fmt=_format_string(getattr(release, "formats", None)) or None,
+        owned=_owned_mark(len(copies)),
+        tail=[" ".join(tail)] if tail else None,
+    )
+
+
+# The last line of a `--duplicates` view whose read stopped short.
+_DUPLICATES_PARTIAL = (
+    "Copies and groups may be missing: only part of the collection was read."
+)
+
+
+def format_collection_duplicates(
+    username: str,
+    kind: str,
+    found: Duplicates,
+    read: Ownership,
+    *,
+    folders: dict[int, str],
+    fields: dict[int, CustomField] | None,
+    filters: dict[str, str],
+) -> str:
+    """`get collection --duplicates`: each release owned more than once as
+    its row, or each master as `@m123 owned in 2 releases` (with the count
+    of copies) and a row per release, indented; then, by master, the records
+    with no master and, when the read stopped short, a note that copies and
+    groups may be missing."""
+    groups = found.groups
+    if groups:
+        copies = sum(len(group.records) for group in groups)
+        many = f"{len(groups):,} {kind}{'' if len(groups) == 1 else 's'}"
+        lead = f"{many} owned more than once, {copies:,} copies, in "
+    else:
+        lead = "none in " if read.complete else "none found so far in "
+    subject = " ".join(
+        p for p in (username, _format_filters(filters), f"by {kind}") if p
+    )
+    lines: list[Line] = [
+        [
+            _label("Duplicates"),
+            f" {subject} ",
+            Span(_whole_read(found.records, read, lead), "dim"),
+        ],
+    ]
+    if groups:
+        lines.append("")
+    for group in groups:
+        if kind == "release":
+            lines.append(_duplicate_row(group.records, folders, fields))
+            continue
+        n = len(group.releases)
+        lines.append(
+            [
+                _ref("master", group.id),
+                f" {_copies(len(group.records))} in {n} release{'' if n == 1 else 's'}",
+            ]
+        )
+        lines.extend(
+            ["  ", *_duplicate_row(release, folders, fields)]
+            for release in group.releases
+        )
+    missing = found.without_master
+    if missing:
+        one = missing == 1
+        verbs = "has no master and is" if one else "have no master and are"
+        note = f"{_records(missing)} {verbs} not checked"
+        lines += ["", f"{note} (--duplicates release looks at their copies)."]
+    if not read.complete:
+        lines += ["", _DUPLICATES_PARTIAL]
     return _text(lines)
 
 

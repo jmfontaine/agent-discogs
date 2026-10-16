@@ -138,6 +138,25 @@ Get Collection:
                --page, --after, --sort, --desc, --fields or --full (--json:
                count_by, records, without_value, distinct, counts of value,
                ref, count, and the collection object of --owned).
+               get collection --duplicates release|master instead lists the
+               releases (or masters) you own more than once, most copies
+               first: each release as its collection row ending '· owned \u00d72
+               · folders Vinyl, To Sell'; each master as '@m3719 owned \u00d73 in
+               2 releases' then a row per release, indented, and how many
+               records have no master (not checked). Header: 'Duplicates: me
+               by release (1 release owned more than once, 2 copies, in 250
+               records)' or '(none in 250 records)'. The filters choose the
+               records checked; --folder checks one folder only; --fields
+               adds the first copy's fields. Same read and cost as --count-by
+               plus the folder list (none with --json --full unless
+               --folder); --max-requests or a 429 after the first page gives
+               the groups of the part read, with a last line 'Copies and
+               groups may be missing: only part of the collection was read.'
+               No --limit, --page, --after, --sort, --desc or --count-by
+               (--json: duplicates, groups of ref, title, ..., copies,
+               folders, or for a master ref, copies, releases; records,
+               without_master, collection; --json --full: each group's ref
+               and instances).
                get collection --value instead prints its value from Discogs'
                Marketplace sales in your profile's currency, as 'Collection
                value (EUR): min 75.50 · median 100.25 · max 250.00' (--json:
@@ -257,12 +276,13 @@ Options:
                    --owned and --wanted reads or get wantlist --for-sale:
                    search or get versions with --release-type official, or
                    unofficial with --format; get releases --role / @l --year;
-                   get collection with a filter or --count-by, not --folder
-                   alone (its username, folder list and --fields list count
-                   first); search with --owned or --wanted; get inventory with
-                   --owned; get wantlist --for-sale; get inventory with a
-                   filter (--in-wantlist's wantlist read counts too; about 1
-                   request per 100 listings, so a 50,000-listing seller is 500:
+                   get collection with a filter, --count-by or --duplicates,
+                   not --folder alone (its username, folder list and --fields
+                   list count first); search with --owned or --wanted; get
+                   inventory with --owned; get wantlist --for-sale; get
+                   inventory with a filter (--in-wantlist's wantlist read
+                   counts too; about 1 request per 100 listings, so a
+                   50,000-listing seller is 500:
                    always pass it); one ref only. Default: no cap, the
                    scan runs until the page fills or the list ends (--for-sale:
                    about 1 request per want, 500 wants = ~9 minutes of the
@@ -428,6 +448,10 @@ Options:
                    genre, style or artist instead of the listing, largest
                    first; reads the whole collection (see Get Collection)
   --top N          get collection --count-by: only the N largest counts
+  --duplicates release|master
+                   get collection: the releases or masters you own more than
+                   once instead of the listing; reads the whole collection
+                   (see Get Collection)
   --credit, --track, --title, --anv
                    search: match a person credited on a release or master, a
                    track title, the release title (sent as release_title; on
@@ -452,7 +476,9 @@ Get flags by noun (any other get flag fails with invalid_argument):
                    --style, --year, --label, --artist, --title, --folder,
                    --fields, --after and --max-requests (with a filter, not
                    --folder alone); or --count-by with --top, the filters,
-                   --folder and --max-requests; or --value alone
+                   --folder and --max-requests; or --duplicates with the
+                   filters, --folder, --fields and --max-requests; or --value
+                   alone
   lists            no ref; --limit, --page
   stats            --currency
   wantlist         no ref; --limit, --page, --for-sale, --max-price and
@@ -582,6 +608,7 @@ Examples:
   agent-discogs get versions @m3719 --market --currency EUR --limit 10
   agent-discogs get collection --style Techno --format 12\\" --max-requests 20
   agent-discogs get collection --count-by genre --top 10
+  agent-discogs get collection --duplicates master --format Vinyl
   agent-discogs get collection --value
   agent-discogs get wantlist --for-sale --max-price 20 --currency EUR --max-requests 60
   agent-discogs get inventory <seller> --in-wantlist --condition VG+ --max-requests 60
