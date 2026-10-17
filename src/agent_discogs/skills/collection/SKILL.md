@@ -134,7 +134,7 @@ agent-discogs search master "The Downward Spiral" --artist "Nine Inch Nails"
 agent-discogs get owned @m3719
 ```
 
-`@m3719 owned ×3 in 2 releases`, each release with its folders, or `@m3719 not owned`, however many versions the album has.
+`@m3719 owned ×3 in 2 releases`, each release with its folders, or `@m3719 not owned`, however many versions the album has. The search only finds the master: with its `@m...` at hand (a release row's `→ @m...`), `get owned` alone answers.
 
 Cost: 1 (the search), then 1 (the username) + 1 per 100 collection records + 1 (the folder list, when a copy is found).
 
@@ -186,6 +186,8 @@ Status: works
 ```bash
 agent-discogs get collection --sort added --desc
 ```
+
+Newest additions first, one row per copy with its `added` day; paste the printed `Next page:` for more.
 
 Cost: 3 (the username, the folder list and the page).
 

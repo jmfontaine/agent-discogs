@@ -209,4 +209,4 @@ agent-discogs --fresh price @r847868      # bypass the cache; the response is no
 | [references/json-output.md](references/json-output.md) | `--json` and `--full` documents |
 | [references/search-patterns.md](references/search-patterns.md) | Effective search strategies |
 | [references/discogs-domain.md](references/discogs-domain.md) | Discogs data model: genres, country, artists, titles, labels, release dates |
-| [references/tasks.md](references/tasks.md) | Tasks F3-I2: recipes, costs and limits for the requests of this skill |
+| [references/tasks.md](references/tasks.md) | The core tasks (F3, F4, G1, G2, G3, H1, I1, I2): recipes, costs and limits |
