@@ -17,6 +17,8 @@ conventional_commits = true
 filter_unconventional = true
 split_commits = false
 commit_parsers = [
+    # The version-change commits the release recipes make are housekeeping.
+    { message = "^chore\\(release\\): (bump version to|start .+ development)", skip = true },
     { message = "^feat", group = "Features" },
     { message = "^fix", group = "Bug Fixes" },
     { message = "^doc", group = "Documentation" },
