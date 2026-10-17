@@ -360,6 +360,19 @@ class TestArguments:
         )
         assert sent == []
 
+    @pytest.mark.parametrize("desc", [[], ["--desc"]])
+    def test_an_empty_sort_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, desc: list[str]
+    ) -> None:
+        h = _Harness(monkeypatch)
+        result, sent = h.run("get", "collection", "--sort", "", *desc, "--json")
+        assert json_error(result) == {
+            "code": "invalid_argument",
+            "message": "--sort '' is not valid for 'get collection'. Keys: label, "
+            "artist, title, catno, format, rating, added, year.",
+        }
+        assert sent == []
+
     @pytest.mark.parametrize("value", ["", "  "])
     def test_an_empty_folder_is_rejected(
         self, monkeypatch: pytest.MonkeyPatch, value: str

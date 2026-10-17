@@ -540,6 +540,8 @@ Paginated nouns (`releases`, `versions`) support `--limit` (1-100, default: 5) a
 
 `versions` accepts `--country`, `--format`, `--label`, `--year`, and `--sort released|title|format|label|catno|country`; add `--desc` to any `--sort`. All of them are sent to Discogs.
 
+A blank value (empty, or only spaces) of `--role`, `--year`, `--country`, `--format`, `--label` or `--sort` is `invalid_argument` before any request, rather than dropped: `--year needs a year, such as 1999 ('' given).`; a blank `--sort` gets the unknown-key message (`--sort '' is not valid for 'get releases'. Keys: year, title, format.`).
+
 Each row of `versions` and of both `releases` listings ends in Discogs' community counts, `· have N · want N` (how many Discogs users own the release and how many want it), before the `--owned` mark. They come with the listing page, so they cost no request and need no credentials (`--json`: `have`, `want`). A count Discogs did not send is left out; `0` is shown.
 
 ```

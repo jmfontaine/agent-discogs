@@ -661,6 +661,21 @@ class TestFlags:
         assert "username" in text_error(result)
         assert sent == []
 
+    @pytest.mark.parametrize("desc", [[], ["--desc"]])
+    def test_an_empty_sort_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, desc: list[str]
+    ) -> None:
+        h = _Harness(monkeypatch, _Seller())
+        result, sent = h.run(
+            "get", "inventory", "seller", "--sort", "", *desc, "--json"
+        )
+        assert json_error(result) == {
+            "code": "invalid_argument",
+            "message": "--sort '' is not valid for 'get inventory'. Keys: listed, "
+            "price, item, artist, label, catno.",
+        }
+        assert sent == []
+
     @pytest.mark.parametrize("country", ["", " "])
     def test_a_blank_country_fails(
         self, monkeypatch: pytest.MonkeyPatch, country: str

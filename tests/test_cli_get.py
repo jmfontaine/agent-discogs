@@ -20,6 +20,7 @@ from agent_discogs.pagination import PageResult
 from tests.conftest import (
     ServePage,
     UseClient,
+    _Catalogue,
     _empty_listing,
     _FakeAPI,
     fake,
@@ -136,6 +137,24 @@ class TestVersionsRequest:
         else:
             assert [path for path, _ in api.sends] == ["/masters/55/versions"]
             assert "not found" in stderr
+
+    @pytest.mark.parametrize("json_mode", [False, True], ids=["text", "json"])
+    def test_a_blank_filter_sends_nothing(
+        self, monkeypatch: pytest.MonkeyPatch, json_mode: bool
+    ) -> None:
+        api = _FakeAPI(monkeypatch, _Catalogue())
+        args = ["get", "versions", "@m1", "--country", ""]
+        result = CliRunner().invoke(cli, [*args, *(["--json"] if json_mode else [])])
+        message = "--country needs a country, as Discogs names it ('' given)."
+        if json_mode:
+            assert json_error(result) == {
+                "code": "invalid_argument",
+                "message": message,
+            }
+        else:
+            # No request, so no budget footer either.
+            assert text_error(result) == f"✗ {message}\n"
+        assert api.sends == []
 
 
 _NO_MASTER = (
@@ -777,6 +796,98 @@ class TestGetCommand:
             (
                 ["get", "releases", "@l647", "--after", "2:0"],
                 "--after only continues a client-side filtered listing",
+            ),
+            *(
+                ([*argv, blank], message.format(given=repr(blank)))
+                for blank in ("", " ")
+                for argv, message in [
+                    (
+                        ["get", "releases", "@a3857", "--role"],
+                        (
+                            "--role needs a credit role, such as Main or Remix "
+                            "({given} given)."
+                        ),
+                    ),
+                    (
+                        ["get", "releases", "@l647", "--year"],
+                        "--year needs a year, such as 1999 ({given} given).",
+                    ),
+                    (
+                        ["get", "versions", "@m3719", "--country"],
+                        (
+                            "--country needs a country, as Discogs names it "
+                            "({given} given)."
+                        ),
+                    ),
+                    (
+                        ["get", "versions", "@m3719", "--format"],
+                        "--format needs a format, such as Vinyl or CD ({given} given).",
+                    ),
+                    (
+                        ["get", "versions", "@m3719", "--label"],
+                        "--label needs a label name ({given} given).",
+                    ),
+                    (
+                        ["get", "versions", "@m3719", "--year"],
+                        "--year needs a year, such as 1999 ({given} given).",
+                    ),
+                    (
+                        ["get", "releases", "@a3857", "--year"],
+                        "--year filters versions and label catalogues",
+                    ),
+                    (
+                        ["get", "releases", "@l647", "--role"],
+                        "Label catalogues cannot be role-filtered or sorted",
+                    ),
+                ]
+            ),
+            *(
+                (["get", noun, ref, "--sort", "", *desc], message)
+                for desc in ([], ["--desc"])
+                for noun, ref, message in [
+                    (
+                        "releases",
+                        "@a3857",
+                        (
+                            "--sort '' is not valid for 'get releases'. "
+                            "Keys: year, title, format."
+                        ),
+                    ),
+                    (
+                        "releases",
+                        "@l647",
+                        (
+                            "--sort '' is not valid for 'get releases'. "
+                            "Keys: year, title, format."
+                        ),
+                    ),
+                    (
+                        "versions",
+                        "@m3719",
+                        (
+                            "--sort '' is not valid for 'get versions'. "
+                            "Keys: released, title, format, label, catno, country."
+                        ),
+                    ),
+                ]
+            ),
+            (
+                ["get", "releases", "@a3857", "--role", "", "--max-requests", "5"],
+                "--role needs a credit role, such as Main or Remix ('' given).",
+            ),
+            (
+                [
+                    "get",
+                    "versions",
+                    "@m3719",
+                    "--release-type",
+                    "unofficial",
+                    "--format",
+                    "",
+                    "--max-requests",
+                    "5",
+                ],
+                "--format needs a format, such as Vinyl or CD ('' given).",
             ),
         ],
     )
