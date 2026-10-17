@@ -173,8 +173,13 @@ def _file_size(path: Path) -> int:
 
 
 def _cache_size(cache_dir: Path) -> str:
-    # SQLite may leave -wal/-shm beside the database file.
-    size = sum(_file_size(p) for p in cache_dir.glob("cache.db*"))
+    # SQLite may leave -wal/-shm beside the database file. A file that cannot
+    # be stat'ed (a directory that can be listed but not searched) makes the
+    # size unknown: a partial sum would read as the total.
+    try:
+        size = sum(_file_size(p) for p in cache_dir.glob("cache.db*"))
+    except OSError:
+        return "unknown"
     if size < _KB:
         return f"{size} B"
     if size < _KB * _KB:
