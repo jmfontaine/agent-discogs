@@ -36,7 +36,7 @@ For example, the second page of `get releases @l647 --year 1994 --limit 2 --json
 `search release ... --added-since YYYY-MM-DD --json` (see [Releases added since a date](commands.md#releases-added-since-a-date)) returns the whole window at once, with no `pagination`, no `next_cursor` and no `--page`: there is nothing to continue.
 
 ```json
-{"complete":true,"total":7,"results":[{"ref":"@r847868","url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral","title":"Nine Inch Nails - The Downward Spiral","year":1994,"country":"US","label":"Nothing Records","catno":"92346-2","formats":"CD (Album)","added":"2026-09-01T10:15:00-07:00","master":"@m3719"}]}
+{"complete":true,"total":1,"results":[{"ref":"@r847868","url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral","title":"Nine Inch Nails - The Downward Spiral","year":1994,"country":"US","label":"Nothing Records","catno":"92346-2","formats":"CD (Album)","added":"2026-09-01T10:15:00-07:00","master":"@m3719"}]}
 ```
 
 - `complete` is `false` when `--max-requests` stopped the walk before it reached the first release older than the cutoff, so releases may be missing.
