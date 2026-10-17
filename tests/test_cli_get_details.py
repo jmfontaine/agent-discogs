@@ -409,6 +409,37 @@ class TestIndexTracks:
         assert data["tracks"] == "3 (12:00)"
 
 
+class TestUnreadableDuration:
+    """A duration `int()` cannot read is untimed: it never fails the view."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_get(self, use_client: UseClient) -> None:
+        release = Release.model_validate(
+            {
+                "id": 1,
+                "title": "T",
+                "tracklist": [
+                    {"position": "1", "title": "X", "duration": "4:²"},
+                    {"position": "2", "title": "Y", "duration": "3:00"},
+                ],
+            }
+        )
+        use_client(fake_client(releases_get=lambda _id: release))
+
+    def test_compact_gives_the_count_alone(self) -> None:
+        text = CliRunner().invoke(cli, ["get", "release", "-c", "@r1"])
+        assert text.exit_code == 0
+        assert "Tracks: 2\n" in text.stdout
+        data = CliRunner().invoke(cli, ["get", "--json", "release", "-c", "@r1"])
+        assert data.exit_code == 0
+        assert json.loads(data.stdout)["tracks"] == "2"
+
+    def test_tracklist_shows_the_duration_as_sent(self) -> None:
+        result = CliRunner().invoke(cli, ["get", "release", "@r1"])
+        assert result.exit_code == 0
+        assert "1. X (4:²)" in result.stdout
+
+
 def _credited_release(release_credits: list[dict[str, object]]) -> Release:
     """A real SDK release whose tracks and sub-tracks carry their own credits.
 

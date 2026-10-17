@@ -23,6 +23,9 @@ class TestLinks:
             # Discogs' title-only form, by ID too.
             ("[r=847868]", "@r847868"),
             ("[m=3719]", "@m3719"),
+            # The longest id a ref tag takes.
+            ("[a" + "1" * 18 + "]", "@a" + "1" * 18),
+            ("[r=" + "1" * 18 + "]", "@r" + "1" * 18),
         ],
     )
     def test_entity_ids_become_refs(self, markup: str, converted: str) -> None:
@@ -69,7 +72,12 @@ class TestLinks:
             "[1]",
             "[]",
             "[a123",
+            # An id longer than 18 digits is no Discogs id.
+            "[a" + "1" * 19 + "]",
+            "[r" + "1" * 4301 + "]",
+            "[m=" + "1" * 4301 + "]",
         ],
+        ids=lambda markup: markup if len(markup) < 30 else f"{markup[:3]}…",
     )
     def test_anything_else_in_brackets_is_unchanged(self, markup: str) -> None:
         assert parse(f"x {markup} y") == [f"x {markup} y"]
@@ -189,8 +197,15 @@ class TestTruncate:
         assert plain(profile("[b]" + "x " * 148 + "[/b]")) == ("x " * 148).rstrip()
         # The limit falls inside a converted ref: the cut goes back to the
         # space before it, never into the [l…] tag it came from.
-        text = "x" * 280 + " [b]bold[/b] [l123456789012345678901234567890]"
+        text = "x" * 280 + " [b]bold[/b] [l123456789012345678]"
         assert plain(profile(text)) == "x" * 280 + " bold..."
+
+    def test_an_oversized_tag_past_the_limit_is_cut_as_text(self) -> None:
+        """A tag the parser keeps as text is cut like any text."""
+        text = "Hi [a" + "1" * 4301 + "] there"
+        assert plain(profile(text)) == "Hi..."
+        long = "x " * 160 + "[r" + "1" * 4301 + "]"
+        assert plain(profile(long)) == "x " * 149 + "x..."
 
     def test_a_styled_run_is_cut_and_stays_closed(self) -> None:
         result = truncate(["y" * 290, Styled(" bold words here", ("bold",))])

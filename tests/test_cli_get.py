@@ -12,7 +12,7 @@ from discogs_sdk import (
     MarketplaceReleaseStats,
     PriceSuggestions,
 )
-from discogs_sdk.models import LabelRelease
+from discogs_sdk.models import Artist, Label, LabelRelease
 
 from agent_discogs import cli
 from agent_discogs.pagination import PageResult
@@ -174,6 +174,41 @@ class TestGetCommand:
         result = CliRunner().invoke(cli, ["get", "label", "@l2919"])
         assert result.exit_code == 0
         assert "Nothing Records" in result.stdout
+
+    @pytest.mark.parametrize("output", ["text", "json"])
+    def test_an_oversized_ref_tag_is_cut_as_text(self, output: str) -> None:
+        """`int()` refuses 4,301 digits; the tag is no ref, so the profile
+        is cut as any long profile is, with no error."""
+        markup = "Hi [a" + "1" * 4301 + "] there"
+        artist = Artist.model_validate({"id": 1, "name": "A", "profile": markup})
+        self._set_client(fake_client(artists_get=lambda _id: artist))
+        flags = ["--json"] if output == "json" else []
+        result = CliRunner().invoke(cli, ["get", *flags, "artist", "@a1"])
+        assert result.exit_code == 0
+        if output == "json":
+            assert json.loads(result.stdout)["profile"] == "Hi..."
+        else:
+            assert "Hi...\n" in result.stdout
+
+    def test_an_oversized_ref_tag_stays_as_written(self) -> None:
+        tag = "[r" + "1" * 19 + "]"
+        label = Label.model_validate({"id": 1, "name": "L", "profile": f"See {tag}."})
+        self._set_client(fake_client(labels_get=lambda _id: label))
+        text = CliRunner().invoke(cli, ["get", "label", "@l1"])
+        assert text.exit_code == 0
+        assert f"See {tag}." in text.stdout
+        data = CliRunner().invoke(cli, ["get", "--json", "label", "@l1"])
+        assert data.exit_code == 0
+        assert json.loads(data.stdout)["profile"] == f"See {tag}."
+
+    def test_full_keeps_an_oversized_ref_tag_raw(self) -> None:
+        markup = "Hi [a" + "1" * 4301 + "] there"
+        artist = Artist.model_validate({"id": 1, "name": "A", "profile": markup})
+        self._set_client(fake_client(artists_get=lambda _id: artist))
+        args = ["get", "--json", "--full", "artist", "@a1"]
+        result = CliRunner().invoke(cli, args)
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["profile"] == markup
 
     def test_get_master(self) -> None:
         artist = fake(name="NIN", join=None)

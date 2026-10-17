@@ -35,10 +35,17 @@ class _Wantlist:
     by Artist on Label (`CAT<id>`), want 2 with notes and a rating. Their
     Marketplace stats follow `_MARKET`, priced in the `curr_abbr` asked for
     (USD by default); every other release has none for sale. The stats
-    requests numbered in `throttle` (1-based) are answered with a 429."""
+    requests numbered in `throttle` (1-based) are answered with a 429.
+    `titles` replaces the title of the wants it numbers."""
 
-    def __init__(self, size: int = 10, *, throttle: tuple[int, ...] = ()) -> None:
-        self.size, self.throttle = size, throttle
+    def __init__(
+        self,
+        size: int = 10,
+        *,
+        throttle: tuple[int, ...] = (),
+        titles: dict[int, str | None] | None = None,
+    ) -> None:
+        self.size, self.throttle, self.titles = size, throttle, titles or {}
         self.stats_sent = 0
 
     def __call__(self, path: str, params: dict[str, str]) -> object:
@@ -72,7 +79,7 @@ class _Wantlist:
                 "rating": 0,
                 "basic_information": {
                     "id": i,
-                    "title": f"Album {i}",
+                    "title": self.titles.get(i, f"Album {i}"),
                     "year": 1990,
                     "artists": [{"name": "Artist", "join": ""}],
                     "labels": [{"name": "Label", "catno": f"CAT{i}"}],
@@ -171,6 +178,17 @@ class TestWantlist:
         again, sent = h.run("get", "wantlist", "--limit", "100", "--json")
         assert sent == []
         assert again.stdout == result.stdout
+
+    @pytest.mark.parametrize("title", [None, ""])
+    def test_a_want_without_a_title_is_titled_by_its_artist(
+        self, monkeypatch: pytest.MonkeyPatch, title: str | None
+    ) -> None:
+        h = _Harness(monkeypatch, _Wantlist(2, titles={1: title}))
+        result, _ = h.run("get", "wantlist")
+        assert result.exit_code == 0, result.output
+        assert '@r1 "Artist" 1990 · ' in result.stdout
+        rows = _document(h.run("get", "wantlist", "--json")[0])["results"]
+        assert [row["title"] for row in rows] == ["Artist", "Artist - Album 2"]
 
     def test_text_rows(self, monkeypatch: pytest.MonkeyPatch) -> None:
         h = _Harness(monkeypatch, _Wantlist(150))
