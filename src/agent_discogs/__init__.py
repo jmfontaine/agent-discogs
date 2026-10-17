@@ -244,15 +244,17 @@ drops a zero month or day (1994-05-00 prints as 1994-05, 1994-00-00 as 1994).
 
 Text output:
   Discogs text never prints raw: line breaks and tabs in a field become spaces,
-  other control and bidi characters print as escapes (\\x1b, \\u202e). Notes
-  and list descriptions keep their line breaks, indented under 'Notes:' or
-  'Description:'. --json keeps values exact, except Discogs markup in
-  profiles, notes and list descriptions, converted in text and --json
-  (not --full): [l647] prints as the ref @l647, [a=Name] as Name, a [url] as
-  'text (host)', [b]/[i]/[u]/[s] as their text. Color marks only the CLI's
-  own framing (refs, labels, the error mark, the budget warning, dimmed counts
-  and prefixes) and that markup's text attributes (never a color); by default
-  a pipe gets none (--color).
+  other control and bidi characters print as escapes (\\x1b, \\u202e), and so
+  do invisible ones such as \\u200b and tag characters (\\U000e0041); the
+  joiners U+200C and U+200D print as they are. Notes and list descriptions
+  keep their line breaks, indented under 'Notes:' or 'Description:'. --json
+  keeps values exact, except Discogs markup in profiles, notes and list
+  descriptions, converted in text and --json (not --full): [l647] prints as
+  the ref @l647, [a=Name] as Name, a [url] as 'text (host)', [b]/[i]/[u]/[s]
+  as their text. Color marks only the CLI's own framing (refs, labels, the
+  error mark, the budget warning, dimmed counts and prefixes) and that
+  markup's text attributes (never a color); by default a pipe gets none
+  (--color).
 
 Options:
   --cached         Serve only from the cache; a miss fails (cache_miss), spends
