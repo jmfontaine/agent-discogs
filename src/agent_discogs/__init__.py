@@ -510,6 +510,9 @@ Get flags by noun (any other get flag fails with invalid_argument):
   any other noun   none beyond --json and --full (list and owned included)
   --after and --max-requests continue or cap one listing, so they take exactly
   one ref.
+  A blank --role, --year, --country, --format, --label or --sort value on
+  releases or versions (or --sort on collection and inventory) fails with
+  invalid_argument.
 
 Environment:
   DISCOGS_TOKEN        Personal access token (60 req/min; price data needs it

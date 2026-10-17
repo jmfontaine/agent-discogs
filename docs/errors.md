@@ -99,6 +99,10 @@ Under `--for-sale`, a 429 on a stats request ends the scan with the rows kept in
 
 Before any request, `get stats` rejects with `invalid_argument` (no budget footer): an unknown `--currency` code (`--currency must be one of USD, GBP, EUR, CAD, AUD, JPY, CHF, MXN, BRL, NZD, SEK, ZAR ('xyz' given).`), any flag but `--currency`, `--json` and `--full` (`--limit does not apply to 'get stats'. 'get stats' takes --currency.`), and more than 10 refs (`At most 10 refs per command (11 given).`). A ref that is not a release fails that ref only, with no request for it: `@m3719 is a master, not a release. Use a release ref or ID with 'get stats'.` A 404, a 429 or a `--cached` miss on a ref's release or Marketplace stats fails that ref too, never printing half its numbers; the other refs still run, and the command exits 1 (see [stats](commands.md#stats)).
 
+## get releases and get versions argument errors
+
+Before any request, with `invalid_argument` (no budget footer): a blank value (empty, or only spaces) of `--role`, `--year`, `--country`, `--format` or `--label` (`--year needs a year, such as 1999 ('' given).`; when several are blank, the first of that list is reported), and a blank or unknown `--sort` key (`--sort '' is not valid for 'get releases'. Keys: year, title, format.`, also on `get collection` and `get inventory`). A flag the noun or ref does not take is reported as such first: `get releases @l647 --role ''` gets the label catalogue message, `get releases @a3857 --year ''` the `--year filters versions and label catalogues` one.
+
 ## get versions --market argument errors
 
 Before any request, with `invalid_argument` (no budget footer): `--currency` without `--market` (`--currency needs --market with get versions.`), an unknown `--currency` code (the message `get stats` gives), `--max-price` (`get versions` takes none), `--market` on any other noun, and `--max-requests` with more than one ref. During the lookups, a 429 is no error: the rows read keep their numbers, the rest are unchecked, and the command exits 0 (see [--market](commands.md#--market)); any other failure of a lookup is the usual error for the whole command.

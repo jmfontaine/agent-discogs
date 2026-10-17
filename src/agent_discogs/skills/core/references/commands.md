@@ -192,6 +192,8 @@ Discogs writes links into artist and label profiles and release notes as markup,
 | `--desc` | With `--sort` (so `releases @a...` only): descending |
 | `--year` | Label catalogues only: keep releases from this year. Client-side scan (the API has no filters or sorting for `/labels/{id}/releases`), continues via `--after`. Artist discographies: use `--sort year` instead. |
 
+A blank value (empty, or only spaces) of any of these is `invalid_argument` before any request, not ignored (`--role needs a credit role, such as Main or Remix ('' given).`; a blank `--sort` gets the unknown-key message).
+
 ### Additional flags for `versions`
 
 | Flag | Description |
@@ -204,6 +206,8 @@ Discogs writes links into artist and label profiles and release notes as markup,
 | `--desc` | With `--sort`: descending |
 | `--release-type` | `all` (default, unlike `search`, whose default is `official`): every version, unofficial ones included. `unofficial`: the versions whose format lists "Unofficial Release", filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` a client-side scan instead. `official`: drops them in a client-side scan, `≤N` total, continues via `--after`, takes `--max-requests` (`--page` is `invalid_argument`). The match is on the whole description, so "Partially Unofficial" counts as official. Bootlegs, counterfeits and pirates all carry it: see Unofficial Releases in the pressings skill (`agent-discogs skills get pressings --full`). |
 | `--market` | Each row ends in its Marketplace numbers, `· for sale: 6 from EUR 427.50` or `· for sale: 0`: 1 request per row on top of the listing, no user needed; `--currency CODE` (only with `--market`) prices them. Takes `--max-requests` (rows past the cap stay unchecked). Details: `agent-discogs skills get marketplace`. |
+
+A blank `--country`, `--format`, `--label`, `--year` or `--sort` is `invalid_argument` before any request, not ignored (`--country needs a country, as Discogs names it ('' given).`).
 
 ### Which flags apply where
 
