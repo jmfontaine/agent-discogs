@@ -326,15 +326,19 @@ Options:
                    counts as official. With --format, unofficial is a scan too
   --added-since D  search release only (experimental): releases added to Discogs
                    on or after D (YYYY-MM-DD, from midnight UTC), newest first,
-                   each with its added day in UTC (--json: added; complete:
-                   false when --max-requests stopped it). Walks Discogs'
-                   undocumented date_added sort and looks up every release the
-                   search matches: one request per release in the window, plus
-                   one per 100 results and one to end the scan; a repeat within
-                   1h is free. A 429 partway fails it (a rerun reuses the cached
-                   lookups). Whole window unless you pass --limit; not with
-                   --sort, --desc, --page, --after. --release-type filters on the
-                   looked-up formats (unofficial asks Discogs, unless --format)
+                   each with its added day in UTC (--json: {complete, total,
+                   results}, no pagination; added; complete: false when
+                   --max-requests stopped it). Walks Discogs' undocumented
+                   date_added sort and looks up every release the search
+                   matches: one request per release in the window, plus one
+                   per 100 results and one to end the scan; lookups still
+                   cached (1h from storage) are free, so a repeat of a
+                   finished run costs nothing and one stopped by
+                   --max-requests or a 429 continues past them. A 429 partway
+                   fails it. Whole window unless you pass --limit; not with
+                   --sort, --desc, --page, --after. --release-type filters on
+                   the looked-up formats (unofficial asks Discogs, unless
+                   --format)
   --owned          Mark each release row with the copies in your own
                    collection: '· owned' (one copy), '· owned \u00d72' (two or
                    more), '· not owned', or '· owned ?' (undecided). search,
@@ -388,16 +392,19 @@ Options:
                    '· for sale: 6 from EUR 427.50' ('· for sale: 0' when none
                    is for sale or the release is blocked from sale; no 'from'
                    without a price), after the --owned and --wanted marks. 1
-                   request per row on top of the listing (its Marketplace
-                   stats, cached 1h; a text header is read first): a page of N
-                   rows is 1+N requests with --json, 2+N as text. No user
-                   needed. --json: each row's market (for_sale, lowest,
-                   currency; blocked true when blocked from sale), null when
-                   not checked, plus a market_read object (complete,
-                   rows_read, rows; stop_reason, retry_after). A 429 on a
-                   lookup stops the lookups, keeps the rows read and exits 0;
-                   another failure fails the command. --cached: a row whose
-                   stats are not cached ends '· ✗ <why>' (JSON error), exit 1
+                   request per row shown (its Marketplace stats, cached 1h) on
+                   top of the listing's own cost: a server-side page of N rows
+                   is 1+N requests with --json, 2+N as text (the header is
+                   read first) and 2+N with @r in either mode (the release
+                   lookup); a scan reads its S pages first: S+N with --json,
+                   1+S+N as text or with @r. No user needed. --json: each
+                   row's market (for_sale, lowest, currency; blocked true when
+                   blocked from sale), null when not checked, plus a
+                   market_read object (complete, rows_read, rows;
+                   stop_reason, retry_after). A 429 on a lookup stops the
+                   lookups, keeps the rows read and exits 0; another failure
+                   fails the command. --cached: a row whose stats are not
+                   cached ends '· ✗ <why>' (JSON error), exit 1
   --max-price N    get wantlist --for-sale: keep wants whose lowest price is at
                    most N (exactly N is kept; no price is dropped). Needs
                    --currency. get inventory: keep listings priced in

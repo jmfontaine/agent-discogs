@@ -83,7 +83,7 @@ agent-discogs get releases @a20661 --role Producer --max-requests 60 --limit 100
 agent-discogs get releases @a20661 --role Producer --max-requests 60 --limit 100 --after 2:5900
 ```
 
-The first stops with `scan stopped at --max-requests 60` and prints the second as its `Continue scan:`, with the cursor where it stopped; wait ~60s before pasting it. Repeats within the hour are free, and `--cached` sends nothing at all.
+The first stops with `scan stopped at --max-requests 60` and prints the second as its `Continue scan:`, with the cursor where it stopped; wait ~60s before pasting it. Pages whose responses are still cached (one hour from when each was stored) are free, so repeating a capped command spends its cap on the pages not read yet; `--cached` sends nothing at all.
 
 Cost: each run its cap at most; the header lookup is cached after the first.
 

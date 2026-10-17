@@ -795,6 +795,20 @@ class TestAddedSince:
             "Stopped at --max-requests 3: the result may be incomplete."
         )
 
+    def test_a_capped_rerun_continues_past_the_cached_lookups(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._api(monkeypatch)
+        argv = [*_ADDED, "--release-type", "all", "--max-requests", "3", "--json"]
+        first, sent = self._run(*argv)
+        assert len(sent) == 3
+        assert json.loads(first.stdout)["total"] == 2
+        # The search page and the lookups already made are cache hits, so the
+        # cap goes on lookups the first run did not reach.
+        second, sent = self._run(*argv)
+        assert len(sent) == 3
+        assert json.loads(second.stdout)["total"] == 5
+
     def test_cached_window_is_complete_within_one_request(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

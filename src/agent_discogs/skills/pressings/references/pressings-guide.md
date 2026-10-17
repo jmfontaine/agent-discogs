@@ -7,7 +7,7 @@ Discogs organizes music data in a three-level hierarchy:
 ### Master Release
 A **master** represents the canonical album — one per album regardless of how many times it has been pressed, reissued, or reformatted.
 
-- Example: "The Downward Spiral" by Nine Inch Nails (master ID 4917)
+- Example: "The Downward Spiral" by Nine Inch Nails (master ref `@m3719`)
 - Contains: title, artists, genres, styles, tracklist
 - Links to all its versions (releases)
 

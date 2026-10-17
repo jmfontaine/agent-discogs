@@ -433,6 +433,9 @@ class TestUncappedScan:
             "get releases @l1",
             "get releases @a1 @a2 --role Main",
             "get releases @l1 @l2 --year 1999",
+            # Nothing left to cap: Discogs filters, and --owned reads nothing.
+            "get versions @m1 --release-type unofficial",
+            "get versions @m1 --owned",
         ],
     )
     def test_max_requests_needs_one_scan(
@@ -445,6 +448,41 @@ class TestUncappedScan:
         assert error["code"] == "invalid_argument"
         assert "--max-requests" in error["message"]
         assert sent == []
+
+    @pytest.mark.parametrize(
+        ("argv", "cap"),
+        [
+            # The --market lookups, and the unofficial --format scan.
+            ("get versions @m1 --market", "2"),
+            ("get versions @m1 --release-type unofficial --format LP", "1"),
+        ],
+    )
+    def test_max_requests_caps_market_lookups_and_unofficial_scans(
+        self, monkeypatch: pytest.MonkeyPatch, argv: str, cap: str
+    ) -> None:
+        api = _FakeAPI(monkeypatch, _Catalogue())
+        args = [*argv.split(), "--max-requests", cap, "--json"]
+        result = CliRunner().invoke(cli, args)
+        assert result.exit_code == 0, result.output
+        assert len(api.sends) == int(cap)
+
+    def test_a_capped_rerun_reads_further(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Cache hits are free, so a rerun spends its cap on the pages the run
+        before did not reach, until nothing is left to send."""
+        api = _FakeAPI(monkeypatch, _Catalogue())
+        argv = ["get", "releases", "@a1", "--role", "Main", "--limit", "50"]
+        argv += ["--max-requests", "2", "--json"]
+        runs = []
+        for _ in range(3):
+            start = len(api.sends)
+            result = CliRunner().invoke(cli, argv)
+            assert result.exit_code == 0, result.output
+            document = json.loads(result.stdout)
+            capped = document["pagination"]["capped"]
+            runs.append((len(api.sends) - start, len(document["results"]), capped))
+        assert runs == [(2, 4, True), (1, 6, False), (0, 6, False)]
 
     def test_header_lookup_counts_first(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._api(monkeypatch)

@@ -20,7 +20,7 @@ Errors under `--json` are described in [Errors](errors.md#errors-under---json).
 
 ## Pagination
 
-Lists are wrapped as `{"pagination":{...},"results":[...]}`. The `pagination` envelope is the exception to omitted empty fields:
+A page of a listing is wrapped as `{"pagination":{...},"results":[...]}`. Two documents have their own shape instead: [`get collection --random`](#collection) (`{"random":{...},"results":[...]}`) and [`search release ... --added-since`](#releases-added-since-a-date) (`{"complete","total","results"}`). The `pagination` envelope is the exception to omitted empty fields:
 
 - `page`, `total_items` and `total_pages` are always present, with `null` totals only when a scan stopped before reading any page;
 - a filtered list always adds `filtered`, `capped` and `next_cursor`, `null` when nothing remains;
@@ -30,6 +30,19 @@ Lists are wrapped as `{"pagination":{...},"results":[...]}`. The `pagination` en
 In a filtered list, the totals describe the listing before the filter, not your pages: `page` counts pages of `--limit` matching rows, while `total_items` is the unfiltered total (the `≤N` of the text header) and `total_pages` counts the 100-row pages the scan reads from Discogs.
 
 For example, the second page of `get releases @l647 --year 1994 --limit 2 --json` reported `"page":2,"total_items":2723,"total_pages":28`: 28 is the number of Discogs pages a full scan reads, not the number of pages of matches, which nothing tells in advance. Continue with `next_cursor` until it is `null`.
+
+## Releases added since a date
+
+`search release ... --added-since YYYY-MM-DD --json` (see [Releases added since a date](commands.md#releases-added-since-a-date)) returns the whole window at once, with no `pagination`, no `next_cursor` and no `--page`: there is nothing to continue.
+
+```json
+{"complete":true,"total":7,"results":[{"ref":"@r847868","url":"https://www.discogs.com/release/847868-Nine-Inch-Nails-The-Downward-Spiral","title":"Nine Inch Nails - The Downward Spiral","year":1994,"country":"US","label":"Nothing Records","catno":"92346-2","formats":"CD (Album)","added":"2026-09-01T10:15:00-07:00","master":"@m3719"}]}
+```
+
+- `complete` is `false` when `--max-requests` stopped the walk before it reached the first release older than the cutoff, so releases may be missing.
+- `total` counts the rows found, after `--release-type`, before an explicit `--limit`, which cuts `results` only.
+- A row is `ref`, `url`, `title` (`Artist - Title`), `year`, `country`, `label`, `catno`, `formats`, `added` and `master`, with empty fields dropped. `formats` is one string, as `get release` gives it, not the `format` array of a search row; `added` is the full RFC 3339 timestamp of when the release was added to Discogs.
+- Under `--json --full` each row is the SDK's release record.
 
 ## Owned rows
 

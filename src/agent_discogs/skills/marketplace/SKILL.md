@@ -48,7 +48,7 @@ What these commands cost; the footer, `--cached` and the per-minute budget are i
 |---|---|
 | `price` | 3 per ref (`--json --full`: 2) |
 | `get stats` | 2 per ref (the release, then its Marketplace stats); a release that does not exist costs 1. Another `--currency` is another stats request |
-| `get versions --market` | on top of the listing (1 with `--json`, 2 as text): 1 per row shown, so `--limit 100` is 101 requests with `--json`. Rows read within the hour are free on a rerun; another `--currency` is another request per row. Pass `--max-requests` |
+| `get versions --market` | the listing's own cost, then 1 per row shown (N rows): a server-side page is 1 + N with `--json` and `@m...`, 2 + N as text, 2 + N from `@r...` in either mode, so `--limit 100` is 101 requests with `--json`; a scan of S pages (`--release-type official`, or `unofficial` with `--format`) is S + N with `--json`, 1 + S + N as text or from `@r...`. Rows read within the hour are free on a rerun; another `--currency` is another request per row. Pass `--max-requests` |
 | `get wantlist` | 1 for the username + 1 per page of up to 100 wants (`--limit`) |
 | `get wantlist --for-sale` | on top of that: 1 per want checked (its Marketplace stats), wants read 100 per request; ~1 request per want when few are for sale. Pass `--max-requests` |
 | `get inventory <username>` | 1 per page of up to 100 listings (`--limit`); no username request |

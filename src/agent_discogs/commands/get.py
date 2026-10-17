@@ -2416,10 +2416,11 @@ class _GetCommand(click.Command):
 @click.option(
     "--max-requests",
     type=int,
-    help="releases --role / @l --year, versions --release-type official or "
-    "--market, a collection filter (not --folder alone; with --random too), "
-    "--count-by or --duplicates, wantlist --for-sale, or an inventory filter or "
-    "--owned: cap the command's HTTP sends (default: no cap)",
+    help="releases --role / @l --year, versions --release-type official (or "
+    "unofficial with --format) or --market, a collection filter (not --folder "
+    "alone; with --random too), --count-by or --duplicates, wantlist --for-sale, "
+    "or an inventory filter or --owned: cap the command's HTTP sends (default: "
+    "no cap)",
 )
 @click.option(
     "--owned",
