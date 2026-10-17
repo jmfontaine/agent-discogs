@@ -134,7 +134,7 @@ agent-discogs get wantlist --limit 100
 agent-discogs get wantlist --json --full --limit 100
 ```
 
-`get wantlist` has no filter: read every page (`--page 2`, ... up to `pagination.pages`) with `--json`, whose rows have `year`, `label`, `catno` and `format`, and keep the matches yourself; `--json --full` rows also carry `basic_information.genres` and `styles`.
+`get wantlist` has no filter: read every page (`--page 2`, ... up to `pagination.total_pages`) with `--json`, whose rows have `year`, `label`, `catno` and `format`, and keep the matches yourself; `--json --full` rows also carry `basic_information.genres` and `styles`.
 
 Cost: 1 (the username) + 1 per 100 wants.
 

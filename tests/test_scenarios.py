@@ -53,7 +53,7 @@ _HEADING = re.compile(r"^#{1,3} ")
 _ENTRY = re.compile(r"^### ([A-Z]\d+) \S")
 _STATUS = re.compile(r"^(works, costly|works|not possible)(?: \(([^()]+)\))?$")
 # A `#` that starts an issue reference: not a heading, link anchor or code.
-_ISSUE = re.compile(r"(?<![\w.#/-])#(\S*)")
+_ISSUE = re.compile(r"(?<![\w.#/-])#(\w*)")
 
 
 class Task(NamedTuple):
@@ -166,11 +166,11 @@ def wanted(release_id: int) -> bool:
 
 
 def for_sale(release_id: int) -> int:
-    return release_id % 4
+    return 45 if release_id == 847868 else release_id % 4
 
 
 def lowest(release_id: int) -> float:
-    return 5.0 + release_id % 40
+    return 0.8 if release_id == 847868 else 5.0 + release_id % 40
 
 
 def _page(items: list[Any], params: dict[str, str], key: str) -> dict[str, Any]:
@@ -231,9 +231,15 @@ def jazz(n: int) -> bool:
     return copy_of(n) not in VERSIONS and n % 10 == 5
 
 
+def cd(n: int) -> bool:
+    """Whether copy `n` is one of the Jazz CDs, which `--format Vinyl` drops."""
+    return jazz(n) and n % 20 == 15
+
+
 def _record(n: int) -> dict[str, Any]:
-    """Copy `n`: one of the three Downward Spiral copies, else a vinyl LP
-    by one of 40 artists, Jazz when n % 10 == 5, one year a copy from 1960."""
+    """Copy `n`: one of the three Downward Spiral copies, else an LP by one
+    of 40 artists, Jazz when n % 10 == 5 (a CD when n % 20 == 15), one year a
+    copy from 1960."""
     release_id, folder = COPIES.get(n, (2000 + n, 1))
     info = (
         _tds(release_id)
@@ -244,7 +250,9 @@ def _record(n: int) -> dict[str, Any]:
             "year": year_of(n),
             "artists": [{**artist_of(n), "join": ""}],
             "labels": [{**label_of(n), "catno": f"CAT{n}"}],
-            "formats": [{"name": "Vinyl", "descriptions": ["LP"]}],
+            "formats": [
+                {"name": "CD"} if cd(n) else {"name": "Vinyl", "descriptions": ["LP"]}
+            ],
             "genres": ["Jazz"] if jazz(n) else ["Electronic"],
             "styles": ["Hard Bop"] if jazz(n) else ["House"],
         }
@@ -678,8 +686,8 @@ def test_b1_records_by_genre_and_format(discogs: World) -> None:
     (scan,) = commands("B1")
     run = discogs.run(scan)
     assert len(run.sent) == 2 + pages(COLLECTION)
-    refs = run.refs()
-    assert refs == [f"@r{copy_of(n)}" for n in range(COLLECTION) if jazz(n)]
+    vinyl_jazz = [n for n in range(COLLECTION) if jazz(n) and not cd(n)]
+    assert run.refs() == [f"@r{copy_of(n)}" for n in vinyl_jazz]
 
 
 @recipe("B2", "works")
@@ -727,7 +735,9 @@ def test_b4_duplicates(discogs: World) -> None:
 @recipe("B5", "works")
 def test_b5_any_pressing_owned(discogs: World) -> None:
     search, owned_pressings = commands("B5")
-    assert discogs.run(search).row("@m3719")
+    run = discogs.run(search)
+    assert len(run.sent) == 1
+    assert run.row("@m3719")
     run = discogs.run(owned_pressings)
     assert len(run.sent) == 1 + pages(COLLECTION) + 1
     assert run.stdout.startswith("@m3719 owned ×3 in 2 releases\n")  # noqa: RUF001
@@ -876,7 +886,7 @@ def test_c5_for_sale_count_and_lowest_price(discogs: World) -> None:
     (stats,) = commands("C5")
     run = discogs.run(stats)
     assert len(run.sent) == 2
-    assert run.row("@r847868").endswith("want 1,355 · for sale: 0")
+    assert run.row("@r847868").endswith("want 1,355 · for sale: 45 from EUR 0.80")
 
 
 @recipe("C6", "works, costly")
@@ -884,6 +894,8 @@ def test_c6_cheapest_pressing(discogs: World) -> None:
     (versions,) = commands("C6")
     run = discogs.run(versions)
     assert len(run.sent) == 2 + len(VINYL)
+    stats = [params for path, params in run.sent if "/stats/" in path]
+    assert [params["curr_abbr"] for params in stats] == ["EUR"] * len(VINYL)
     for release_id in VINYL:
         sale = for_sale(release_id)
         tail = (

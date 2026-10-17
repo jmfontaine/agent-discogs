@@ -146,7 +146,7 @@ Status: works, costly
 agent-discogs get collection --json --limit 100
 ```
 
-Read every page (`--page 2`, ... up to `pagination.pages`). Each row carries `ref`, `title`, `artists`, `year`, `label`, `catno`, `format`, `genres`, `styles`, `master`, `folder` and `added`; `--fields` adds your notes and custom fields.
+Read every page (`--page 2`, ... up to `pagination.total_pages`). Each row carries `ref`, `title`, `artists`, `year`, `label`, `catno`, `format`, `genres`, `styles`, `master`, `folder` and `added`; `--fields` adds your notes and custom fields.
 
 Cost: 2 (the username and the folder list) + 1 per 100 copies.
 
@@ -161,7 +161,7 @@ agent-discogs get collection --json --full --limit 100
 agent-discogs get wantlist --json --full --limit 100
 ```
 
-Read every page of each (`--page 2`, ... up to `pagination.pages`). `--full` keeps every field Discogs sends (`instance_id`, `folder_id`, `notes`, `date_added`). Restoring is by hand on discogs.com: agent-discogs sends no write request.
+Read every page of each (`--page 2`, ... up to `pagination.total_pages`). `--full` keeps every field Discogs sends (`instance_id`, `folder_id`, `notes`, `date_added`). Restoring is by hand on discogs.com: agent-discogs sends no write request.
 
 Cost: 1 (the username) + 1 per 100 copies + 1 per 100 wants.
 
