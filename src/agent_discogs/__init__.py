@@ -265,7 +265,8 @@ Options:
   --debug          Request rows, timings, scan stats, cache and output size on
                    stderr, plus the SDK's own log lines. Never changes stdout
                    or the exit code; an unresolvable cache location shows as
-                   'unknown (no home directory)'
+                   'unknown (no home directory)', an unreadable cache size as
+                   'unknown'
   --color WHEN     auto (default): color stdout and stderr each only when it
                    is a terminal, NO_COLOR is unset or empty, and TERM is not
                    dumb; always; never. Agents whose harness runs commands in

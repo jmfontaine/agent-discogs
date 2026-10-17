@@ -192,6 +192,25 @@ class TestDebug:
         assert "── debug ──" in result.stderr
         assert "cache     unknown (no home directory)  ttl 1h" in result.stderr
 
+    def test_an_unreadable_cache_size_keeps_the_command(
+        self, cache_home: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        plain = CliRunner().invoke(cli, ["skills"])
+        real_stat = Path.stat
+
+        def stat(self: Path, **kwargs: bool) -> object:
+            if self.name == "cache.db":
+                raise PermissionError(13, "Permission denied", str(self))
+            return real_stat(self, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", stat)
+        result = CliRunner().invoke(cli, ["--debug", "skills"])
+        assert result.exception is None
+        assert result.exit_code == 0
+        assert result.stdout == plain.stdout
+        where = trace._tilde(cache_home)
+        assert f"cache     {where}  unknown  ttl 1h" in result.stderr
+
     def test_failed_command_keeps_its_exit_code(
         self, monkeypatch: pytest.MonkeyPatch, use_client: UseClient
     ) -> None:

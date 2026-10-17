@@ -14,7 +14,7 @@ from click.core import ParameterSource
 from discogs_sdk import CacheMissError, CurrencyCode, Discogs, NotFoundError
 
 from agent_discogs import account, style, trace
-from agent_discogs.account import UserRequiredError, require_user
+from agent_discogs.account import require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import (
     ALL_FOLDER,
@@ -2050,9 +2050,11 @@ def _dispatch(
     elif feature is None and wanted:
         feature = "--wanted"
     if feature:
+        # Inside the boundary: the check builds a throwaway client, which can
+        # fail like get_client() below; UserRequiredError is auth_required.
         try:
             require_user(feature)
-        except UserRequiredError as e:
+        except Exception as e:  # noqa: BLE001
             fail(e, json_output=mode.json)
 
     try:

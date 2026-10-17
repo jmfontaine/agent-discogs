@@ -14,6 +14,7 @@ from agent_discogs.trace import (
     ScanNote,
     Trace,
     _CountingWriter,
+    _tilde,
     render_footer,
     render_panel,
 )
@@ -179,3 +180,33 @@ class TestRenderPanel:
         (tmp_path / "cache.db").write_bytes(b"\0" * (3 * 1024 * 1024 + 100_000))
         panel = render_panel(Trace(), cache_dir=tmp_path, elapsed_ms=0)
         assert "  3.1 MB  " in panel
+
+    @pytest.mark.parametrize(
+        ("error", "size"),
+        [
+            (PermissionError, "unknown"),
+            (NotADirectoryError, "unknown"),
+            # Gone since the glob: the other file's size is the total.
+            (FileNotFoundError, "1.0 KB"),
+        ],
+    )
+    def test_a_stat_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        error: type[OSError],
+        size: str,
+    ) -> None:
+        (tmp_path / "cache.db").write_bytes(b"x" * 2048)
+        (tmp_path / "cache.db-wal").write_bytes(b"x" * 1024)
+        real_stat = Path.stat
+
+        def stat(self: Path, **kwargs: bool) -> object:
+            if self.name == "cache.db":
+                raise error(str(self))
+            return real_stat(self, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", stat)
+        panel = render_panel(Trace(), cache_dir=tmp_path, elapsed_ms=0)
+        expected = f"cache     {_tilde(tmp_path)}  {size}  ttl 1h"
+        assert panel.splitlines()[-1] == expected

@@ -8,7 +8,7 @@ The SDK's own log lines (`[sdk] HTTP request ...`, `[sdk] Cache hit ...`) stream
 
 `--debug` is a global flag: it goes before the command (`agent-discogs --debug get artist @a3857`); after it, it is [a usage error](errors.md#a-global-flag-after-the-command).
 
-stdout is byte-identical with and without the flag, and so is the exit code: when the cache location cannot be resolved (no home directory and no absolute `XDG_CACHE_HOME`), the cache row reads `unknown (no home directory)` and the panel still prints.
+stdout is byte-identical with and without the flag, and so is the exit code: when the cache location cannot be resolved (no home directory and no absolute `XDG_CACHE_HOME`), the cache row reads `unknown (no home directory)`, and when the size of the cache files cannot be read (a cache directory that can be listed but not searched, for example), it reads `unknown` in place of the size (`cache     ~/.cache/agent-discogs  unknown  ttl 1h`); either way the panel still prints.
 
 ```
 api: 2 requests · 58/60 left this minute
