@@ -432,7 +432,8 @@ Options:
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its
-                   own duration; total omitted if any track lacks a duration)
+                   own duration; total omitted if any track lacks a duration
+                   or has one that is not a number of minutes and seconds)
   --master-year    get release: 'Master: @m3719 (1994)', the master's year
                    (--json: master_year), 1 more request per release with a
                    master (the one get master sends, cached); a --cached miss

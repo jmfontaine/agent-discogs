@@ -1654,13 +1654,20 @@ def format_price_guide(
 
 
 def _duration_seconds(duration: str | None) -> int | None:
-    """`4:30` or `1:02:03` in seconds; None for a blank or malformed duration."""
+    """`4:30` or `1:02:03` in seconds; None for a blank or malformed duration.
+
+    `isdigit()` also accepts digits `int()` refuses (`²`) and runs too long
+    for it to convert; such a duration is malformed too.
+    """
     parts = (duration or "").split(":")
     if not all(p.isdigit() for p in parts):
         return None
     seconds = 0
-    for part in parts:
-        seconds = seconds * 60 + int(part)
+    try:
+        for part in parts:
+            seconds = seconds * 60 + int(part)
+    except ValueError:
+        return None
     return seconds
 
 
@@ -1909,10 +1916,10 @@ def artist_names(release: Any) -> str:
 
 
 def artist_title(release: Any) -> str | None:
-    """`Artist - Title`, the way a search result titles a release."""
-    names = artist_names(release)
-    title = getattr(release, "title", None)
-    return f"{names} - {title}" if names else title
+    """`Artist - Title`, the way a search result titles a release, or
+    whichever of the two Discogs sent."""
+    names = [artist_names(release), getattr(release, "title", None)]
+    return " - ".join(name for name in names if name) or None
 
 
 def _utc_day(moment: datetime | None) -> str | None:

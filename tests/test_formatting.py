@@ -76,6 +76,17 @@ class TestArtistTitle:
     def test_no_artists_is_the_title(self) -> None:
         assert artist_title(fake(title="Untitled", artists=None)) == "Untitled"
 
+    @pytest.mark.parametrize("title", [None, ""])
+    def test_no_title_is_the_artist(self, title: str | None) -> None:
+        """A record Discogs sent without a title is not titled `A - None`."""
+        release = fake(title=title, artists=[fake(name="A", join="")])
+        assert artist_title(release) == "A"
+
+    @pytest.mark.parametrize("title", [None, ""])
+    def test_neither_is_none(self, title: str | None) -> None:
+        assert artist_title(fake(title=title, artists=None)) is None
+        assert artist_title(fake(title=title, artists=[])) is None
+
 
 class TestArtistParts:
     def test_artist_with_join(self) -> None:
@@ -965,6 +976,28 @@ class TestTrackSummary:
             ],
         )
         assert track_summary([suite]) == "2"
+
+    @pytest.mark.parametrize(
+        "duration",
+        ["4:²", "²", "1" * 4301 + ":00"],
+        ids=["superscript", "bare-superscript", "too-many-digits"],
+    )
+    def test_digits_int_cannot_read_drop_the_total(self, duration: str) -> None:
+        """`isdigit()` accepts `²` and any run of digits; `int()` does not."""
+        tracks = [
+            fake(position="1", title="X", duration=duration, type=None),
+            fake(position="2", title="Y", duration="3:00", type=None),
+        ]
+        assert track_summary(tracks) == "2"
+
+    @pytest.mark.parametrize(
+        ("duration", "summary"),
+        [("270", "1 (4:30)"), ("٤:٣٠", "1 (4:30)"), ("1_0:00", "1"), (" 4:30", "1")],
+        ids=["bare-seconds", "arabic-indic", "underscore", "whitespace"],
+    )
+    def test_forms_read_as_before(self, duration: str, summary: str) -> None:
+        tracks = [fake(position="1", title="A", duration=duration, type=None)]
+        assert track_summary(tracks) == summary
 
 
 class TestFormatReleaseCompact:

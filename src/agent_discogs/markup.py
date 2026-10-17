@@ -7,7 +7,9 @@ writes it from the digits), a name link its name (`[a=Carl Craig]`), a URL
 its text and site (`text (host)`), a guideline or forum link the text the
 website shows, and `[b]`, `[i]`, `[u]` and `[s]` a `Styled` run of the text
 they wrap. Anything else in brackets stays as written, and tags are
-lowercase only, as Discogs writes them: `[A123]` is text.
+lowercase only, as Discogs writes them: `[A123]` is text. So is a ref tag
+whose id has more than 18 digits (`_MAX_ID_DIGITS`), longer than any
+Discogs id: `int()` always converts 18 digits.
 
 No part carries an escape code. A view neutralizes each part's text
 (`sanitize.line()`) before it paints it, so Discogs data can neither inject
@@ -34,11 +36,13 @@ Part = str | Span | Styled
 _BREAKS = "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
 _LINE_BREAK = re.compile(f"\r\n|[{_BREAKS}]")
 _VALUE = rf"[^\[\]{_BREAKS}]+"
+_MAX_ID_DIGITS = 18
+_ID = rf"\d{{1,{_MAX_ID_DIGITS}}}"
 
 _TAG = re.compile(
     r"\[(?:"
-    r"(?P<ref>[arml])(?P<ref_id>\d+)"  # [a123]: an entity by ID
-    r"|(?P<title_ref>[rm])=(?P<title_ref_id>\d+)"  # [r=123]: by ID, title only
+    rf"(?P<ref>[arml])(?P<ref_id>{_ID})"  # [a123]: an entity by ID
+    rf"|(?P<title_ref>[rm])=(?P<title_ref_id>{_ID})"  # [r=123]: by ID, title only
     rf"|(?P<named>[al])=(?P<name>{_VALUE})"  # [a=Name]: by name
     rf"|url=(?P<href>{_VALUE})"
     r"|(?P<open>[bius]|url)"

@@ -182,6 +182,20 @@ class TestListing:
             },
         ]
 
+    @pytest.mark.parametrize("title", [None, ""])
+    def test_a_record_without_a_title_is_titled_by_its_artist(
+        self, monkeypatch: pytest.MonkeyPatch, title: str | None
+    ) -> None:
+        record = _Collection.record(0)
+        record["basic_information"]["title"] = title
+        h = _Harness(monkeypatch, _Collection(1, odd={0: record}))
+        result, _ = h.run("get", "collection")
+        assert result.exit_code == 0, result.output
+        row = result.stdout.splitlines()[2]
+        assert row.startswith('@r1000 "Artist" 2001 · ')
+        rows = _document(h.run("get", "collection", "--json")[0])["results"]
+        assert rows[0]["title"] == "Artist"
+
     def test_rows_carry_artists_genres_styles_and_the_master(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
