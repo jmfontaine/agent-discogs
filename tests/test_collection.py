@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -51,12 +53,42 @@ from agent_discogs.collection import matcher, user_stat
         ("bj*rk", ["Björk"], []),
         # A line break in a value is a character like any other.
         ("a*b", ["a\nb"], []),
+        # The first and last pieces may not overlap in a short value.
+        ("ab*ba", ["abba", "abxba"], ["aba", "ab", "ba"]),
+        # An empty first or last piece, and stars side by side between pieces.
+        ("*b*", ["b", "abc", "ab"], ["", "ac"]),
+        ("*b", ["b", "ab"], ["ba", ""]),
+        ("b*", ["b", "ba"], ["ab", ""]),
+        ("a**b", ["ab", "axxb"], ["a", "ba"]),
+        # Middle pieces are found in order, each after the one before.
+        ("*a*b*c*", ["abc", "xaxbxcx"], ["acb", "cba"]),
     ],
 )
 def test_matcher(pattern: str, matches: list[str], misses: list[str]) -> None:
     match = matcher(pattern)
     assert [value for value in matches if match(value)] == matches
     assert [value for value in misses if match(value)] == []
+
+
+_PATHOLOGICAL = """
+from agent_discogs.collection import matcher
+
+assert matcher("*a" * 20 + "*b*Z")("a" * 5_000 + "Z") is False
+assert matcher("*" * 12 + "b*Z")("a" * 60 + "Z") is False
+assert matcher("*a" * 20 + "*")("a" * 5_000) is True
+"""
+
+
+def test_matcher_time_does_not_grow_with_stars() -> None:
+    """Many `*`: two misses a backtracking regular expression never
+    finishes on (the last piece matches, a middle piece is missing) and a
+    match. Run in a child process, which the timeout kills,
+    since `re` holds the GIL while it matches and no thread could interrupt
+    it; the matching takes microseconds, so the timeout, which also covers
+    starting Python and importing the package, leaves a wide margin."""
+    subprocess.run(  # noqa: S603  # argv is fixed; nothing user-supplied
+        [sys.executable, "-c", _PATHOLOGICAL], check=True, timeout=10
+    )
 
 
 def _stats(user: Any) -> dict[str, Any]:

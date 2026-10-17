@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import math
+import shlex
 import sys
 from decimal import Decimal
 from typing import Any, get_args
@@ -13,7 +14,7 @@ from click.core import ParameterSource
 from discogs_sdk import CacheMissError, CurrencyCode, Discogs, NotFoundError
 
 from agent_discogs import account, style, trace
-from agent_discogs.account import UserRequiredError, require_user
+from agent_discogs.account import require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import (
     ALL_FOLDER,
@@ -604,11 +605,11 @@ def _get_releases(
     )
 
 
-def _versions_scan(release_type: str, format: str | None) -> bool:  # noqa: A002
+def _versions_scan(release_type: str, *, by_format: bool) -> bool:
     """Whether `get versions --release-type` filters client-side: `official`
     always, as Discogs has no filter for it; `unofficial` only with
     `--format`, which takes the `format` filter Discogs applies it with."""
-    return release_type == "official" or (release_type == "unofficial" and bool(format))
+    return release_type == "official" or (release_type == "unofficial" and by_format)
 
 
 def _is_unofficial_version(version: Any) -> bool:
@@ -661,19 +662,24 @@ def _get_versions(
     if entity_type == "release":
         release = client.releases.get(entity_id)
         if not release.master_id:
-            raise ValueError(
+            message = (
                 f"{ref_string} is a release with no master. "
-                "This release isn't linked to a master release. "
-                "Try searching for the master directly: "
-                f'agent-discogs search master "{release.title}"'
+                "This release isn't linked to a master release."
             )
+            # A blank title would suggest an empty search, which fails.
+            if release.title.strip():
+                command = ["agent-discogs", "search", "--", "master", release.title]
+                message += " Try searching for the master directly: " + shlex.join(
+                    command
+                )
+            raise ValueError(message)
         master_id = release.master_id
         titled = release
     else:
         titled = client.masters.get(master_id)
 
     master_ref = make_ref("master", master_id)
-    scan = _versions_scan(release_type, format)
+    scan = _versions_scan(release_type, by_format=bool(format))
     # Before a scan or the --market lookups the header goes first, so
     # --max-requests counts it first; otherwise it stays lazy, read only once
     # the listing succeeded, so a listing that fails costs its one request.
@@ -1593,6 +1599,8 @@ def _flag_error(
     after: str | None,
     role: str | None,
     year: str | None,
+    country: str | None,
+    label: str | None,
     sort: str | None,
     desc: bool,
     format: str | None,  # noqa: A002  # click option name for --format
@@ -1680,8 +1688,14 @@ def _flag_error(
     artist_refs = noun == "releases" and not all(r.startswith("@l") for r in refs)
     inventory_filters = (condition, sleeve, ships_from, max_price)
     filtered = (
-        (noun == "releases" and (bool(role) or (label_refs and bool(year))))
-        or (noun == "versions" and _versions_scan(release_type, format))
+        (
+            noun == "releases"
+            and ("role" in explicit or (label_refs and "year" in explicit))
+        )
+        or (
+            noun == "versions"
+            and _versions_scan(release_type, by_format="format_" in explicit)
+        )
         or (noun == "wantlist" and for_sale)
         or (noun == "collection" and bool(collection_filters))
         or (
@@ -1769,23 +1783,36 @@ def _flag_error(
     bad_cap = max_requests_error(max_requests)
     if bad_cap:
         return bad_cap
-    if year and artist_refs:
+    if "year" in explicit and artist_refs:
         return (
             "--year filters versions and label catalogues; for an artist "
             "discography use --sort year (optionally --desc) and page."
         )
-    if desc and not sort:
+    if desc and "sort" not in explicit:
         return "--desc needs --sort <key>."
-    if sort and sort not in SORT_KEYS[noun]:
+    if "sort" in explicit and sort not in SORT_KEYS[noun]:
         keys = ", ".join(SORT_KEYS[noun])
         return f"--sort {sort!r} is not valid for 'get {noun}'. Keys: {keys}."
-    if label_refs and (role or sort):
+    if label_refs and ("role" in explicit or "sort" in explicit):
         return (
             "Label catalogues cannot be role-filtered or sorted: the Discogs API "
             "offers no --role or --sort for /labels/{id}/releases. Use --year "
             "(client-side), page with --page, or search: "
             "agent-discogs search release --label <name>."
         )
+    # A blank value would be dropped (the SDK sends no empty parameter) or
+    # matched as typed; after the checks above, so a flag that does not apply
+    # is reported as such.
+    if noun in ("releases", "versions"):
+        for flag, value, what in (
+            ("--role", role, "a credit role, such as Main or Remix"),
+            ("--year", year, "a year, such as 1999"),
+            ("--country", country, "a country, as Discogs names it"),
+            ("--format", format, "a format, such as Vinyl or CD"),
+            ("--label", label, "a label name"),
+        ):
+            if value is not None and not value.strip():
+                return f"{flag} needs {what} ({value!r} given)."
     return None
 
 
@@ -1979,6 +2006,8 @@ def _dispatch(
         after=after,
         role=role,
         year=year,
+        country=country,
+        label=label,
         sort=sort,
         desc=desc,
         format=format,
@@ -2021,9 +2050,11 @@ def _dispatch(
     elif feature is None and wanted:
         feature = "--wanted"
     if feature:
+        # Inside the boundary: the check builds a throwaway client, which can
+        # fail like get_client() below; UserRequiredError is auth_required.
         try:
             require_user(feature)
-        except UserRequiredError as e:
+        except Exception as e:  # noqa: BLE001
             fail(e, json_output=mode.json)
 
     try:

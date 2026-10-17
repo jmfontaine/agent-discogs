@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import functools
 import random
-import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -131,7 +130,14 @@ def matcher(pattern: str) -> Callable[[str], bool]:
     any run of characters (none included). `\\` makes the next character
     literal (`\\*`, `\\\\`); a trailing lone `\\` is a backslash. Nothing
     else is special: `?`, `[` and regular-expression characters are
-    literal."""
+    literal.
+
+    The pattern is split at each unescaped `*` into pieces, matched in
+    order: the value starts with the first and ends with the last, and each
+    other piece is found, at its earliest, between the end of the one before
+    and the last piece. A later match would only leave less room for the
+    rest, so nothing is retried, and a value costs at most its length times
+    the pattern's, however many `*` there are."""
     pieces: list[str] = []
     literal: list[str] = []
     chars = iter(pattern)
@@ -139,15 +145,33 @@ def matcher(pattern: str) -> Callable[[str], bool]:
         if char == "\\":
             literal.append(next(chars, "\\"))
         elif char == "*":
-            pieces.append("".join(literal))
+            pieces.append("".join(literal).casefold())
             literal = []
         else:
             literal.append(char)
-    pieces.append("".join(literal))
-    compiled = re.compile(
-        ".*".join(re.escape(piece.casefold()) for piece in pieces), re.DOTALL
-    )
-    return lambda value: compiled.fullmatch(value.casefold()) is not None
+    pieces.append("".join(literal).casefold())
+    if len(pieces) == 1:
+        whole = pieces[0]
+        return lambda value: value.casefold() == whole
+    first, *inner, last = pieces
+    middle = [piece for piece in inner if piece]
+
+    def match(value: str) -> bool:
+        value = value.casefold()
+        end = len(value) - len(last)
+        if end < len(first) or not value.startswith(first):
+            return False
+        if not value.endswith(last):
+            return False
+        start = len(first)
+        for piece in middle:
+            found = value.find(piece, start, end)
+            if found < 0:
+                return False
+            start = found + len(piece)
+        return True
+
+    return match
 
 
 def _record_values(record: Any) -> dict[str, list[str]]:

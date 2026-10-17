@@ -231,4 +231,4 @@ Fields the SDK does not model appear as Discogs sends them. Unlike the projectio
 
 On a UTF-8 stdout, non-ASCII text is written as is (`"title":"無罪モラトリアム"`), which keeps Japanese, Cyrillic, or accented titles short. On any other stdout encoding, it is written as `\uXXXX` escapes so the document stays valid.
 
-Either way, C1 controls (U+0080–U+009F), bidi controls (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), U+2028/U+2029, and lone surrogates are always escaped. The escaping is lossless: `json.loads` returns every string unchanged.
+Either way, C1 controls (U+0080–U+009F), bidi controls (U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069), U+2028/U+2029, zero-width and other invisible characters (U+200B–U+200D, U+2060–U+206F, U+FEFF), the tag characters (U+E0000–U+E007F), and lone surrogates are always escaped. A character above U+FFFF is written as its `\uXXXX\uXXXX` surrogate pair (U+E0041 as `\udb40\udc41`). The escaping is lossless: `json.loads` returns every string unchanged.

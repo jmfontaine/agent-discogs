@@ -10,7 +10,7 @@ from click.core import ParameterSource
 from discogs_sdk import Release, SearchResult
 from discogs_sdk.experimental import releases_added_since
 
-from agent_discogs.account import UserRequiredError, require_user
+from agent_discogs.account import require_user
 from agent_discogs.client import get_client
 from agent_discogs.collection import mark_rows, mark_rows_with, ownership_of
 from agent_discogs.config import RELEASE_TYPES, UNOFFICIAL
@@ -552,7 +552,9 @@ def search(
         if on:
             try:
                 require_user(flag)
-            except UserRequiredError as exc:
+            # Builds a throwaway client, which can fail like get_client()
+            # below; classify() codes UserRequiredError as auth_required.
+            except Exception as exc:  # noqa: BLE001
                 fail(exc, json_output=json_output)
 
     filters = {k: str(v) for k, v in params.items() if k not in ("q", "type")}

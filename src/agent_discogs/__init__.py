@@ -244,15 +244,17 @@ drops a zero month or day (1994-05-00 prints as 1994-05, 1994-00-00 as 1994).
 
 Text output:
   Discogs text never prints raw: line breaks and tabs in a field become spaces,
-  other control and bidi characters print as escapes (\\x1b, \\u202e). Notes
-  and list descriptions keep their line breaks, indented under 'Notes:' or
-  'Description:'. --json keeps values exact, except Discogs markup in
-  profiles, notes and list descriptions, converted in text and --json
-  (not --full): [l647] prints as the ref @l647, [a=Name] as Name, a [url] as
-  'text (host)', [b]/[i]/[u]/[s] as their text. Color marks only the CLI's
-  own framing (refs, labels, the error mark, the budget warning, dimmed counts
-  and prefixes) and that markup's text attributes (never a color); by default
-  a pipe gets none (--color).
+  other control and bidi characters print as escapes (\\x1b, \\u202e), and so
+  do invisible ones such as \\u200b and tag characters (\\U000e0041); the
+  joiners U+200C and U+200D print as they are. Notes and list descriptions
+  keep their line breaks, indented under 'Notes:' or 'Description:'. --json
+  keeps values exact, except Discogs markup in profiles, notes and list
+  descriptions, converted in text and --json (not --full): [l647] prints as
+  the ref @l647, [a=Name] as Name, a [url] as 'text (host)', [b]/[i]/[u]/[s]
+  as their text. Color marks only the CLI's own framing (refs, labels, the
+  error mark, the budget warning, dimmed counts and prefixes) and that
+  markup's text attributes (never a color); by default a pipe gets none
+  (--color).
 
 Options:
   --cached         Serve only from the cache; a miss fails (cache_miss), spends
@@ -263,7 +265,8 @@ Options:
   --debug          Request rows, timings, scan stats, cache and output size on
                    stderr, plus the SDK's own log lines. Never changes stdout
                    or the exit code; an unresolvable cache location shows as
-                   'unknown (no home directory)'
+                   'unknown (no home directory)', an unreadable cache size as
+                   'unknown'
   --color WHEN     auto (default): color stdout and stderr each only when it
                    is a terminal, NO_COLOR is unset or empty, and TERM is not
                    dumb; always; never. Agents whose harness runs commands in
@@ -511,6 +514,9 @@ Get flags by noun (any other get flag fails with invalid_argument):
   any other noun   none beyond --json and --full (list and owned included)
   --after and --max-requests continue or cap one listing, so they take exactly
   one ref.
+  A blank --role, --year, --country, --format, --label or --sort value on
+  releases or versions (or --sort on collection and inventory) fails with
+  invalid_argument.
 
 Environment:
   DISCOGS_TOKEN        Personal access token (60 req/min; price data needs it

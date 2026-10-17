@@ -10,7 +10,7 @@ Global flags precede the command (`agent-discogs --cached price @r847868`). Afte
 |------|-------------|
 | `--cached` | Serve only from the response cache. A request the cache cannot serve fails with error code `cache_miss` (exit 1, per ref when several are given) before any network I/O. Never spends a request. A cache that cannot be opened fails with `cache_error` instead. A client-side scan reads cached pages until its page is full and fails with `cache_miss` at the first uncached one (cache hits never count against `--max-requests`). The collection and marketplace commands fail so on each request they would send (username, folder list, pages): their skills say which. |
 | `--fresh` | Bypass the cache for this command. Every request goes to the API; the response is not stored, so a later run without `--fresh` may still see the older cached entry until its 1h TTL expires. It never opens the cache, so it works even when other commands fail with `cache_error`. Mutually exclusive with `--cached` (exit 2). It re-reads the `--owned` collection and the `--for-sale` Marketplace stats too: use it when current numbers matter. |
-| `--debug` | Trace panel on stderr after the budget line: one row per response (path, status, timing or `cache`; a `--cached` miss or a failed connection has no row), scan statistics, cache size (`unknown (no home directory)` when the cache location cannot be resolved), output size with a token estimate, plus the SDK's own log lines in real time. `AGENT_DISCOGS_DEBUG=1` does the same. stdout and the exit code are unchanged. |
+| `--debug` | Trace panel on stderr after the budget line: one row per response (path, status, timing or `cache`; a `--cached` miss or a failed connection has no row), scan statistics, cache size (`unknown (no home directory)` when the cache location cannot be resolved, `unknown` when the size of the cache files cannot be read), output size with a token estimate, plus the SDK's own log lines in real time. `AGENT_DISCOGS_DEBUG=1` does the same. stdout and the exit code are unchanged. |
 | `--color auto\|always\|never` | Color the text output's framing (refs, section labels, the `✗` of an error, the `⚠` budget warning, page counts and the `Next page:` prefix), never a Discogs value. `auto` (the default) colors stdout and stderr separately, each only when it is a terminal, `NO_COLOR` is unset or empty, and `TERM` is not `dumb`; `always` and `never` override that. A pipe gets no color, so piped output is unchanged. If your harness runs commands in a pseudo-terminal, set `NO_COLOR=1` or pass `--color never`. A `--json` command is never colored, stderr included, and neither are `--help` and `skills`. |
 | `--help` | Show help |
 | `--version` | Show version |
@@ -192,6 +192,8 @@ Discogs writes links into artist and label profiles and release notes as markup,
 | `--desc` | With `--sort` (so `releases @a...` only): descending |
 | `--year` | Label catalogues only: keep releases from this year. Client-side scan (the API has no filters or sorting for `/labels/{id}/releases`), continues via `--after`. Artist discographies: use `--sort year` instead. |
 
+A blank value (empty, or only spaces) of any of these is `invalid_argument` before any request, not ignored (`--role needs a credit role, such as Main or Remix ('' given).`; a blank `--sort` gets the unknown-key message).
+
 ### Additional flags for `versions`
 
 | Flag | Description |
@@ -204,6 +206,8 @@ Discogs writes links into artist and label profiles and release notes as markup,
 | `--desc` | With `--sort`: descending |
 | `--release-type` | `all` (default, unlike `search`, whose default is `official`): every version, unofficial ones included. `unofficial`: the versions whose format lists "Unofficial Release", filtered by Discogs (`format=Unofficial Release`), exact total, pages with `--page`; with `--format` a client-side scan instead. `official`: drops them in a client-side scan, `≤N` total, continues via `--after`, takes `--max-requests` (`--page` is `invalid_argument`). The match is on the whole description, so "Partially Unofficial" counts as official. Bootlegs, counterfeits and pirates all carry it: see Unofficial Releases in the pressings skill (`agent-discogs skills get pressings --full`). |
 | `--market` | Each row ends in its Marketplace numbers, `· for sale: 6 from EUR 427.50` or `· for sale: 0`: 1 request per row on top of the listing, no user needed; `--currency CODE` (only with `--market`) prices them. Takes `--max-requests` (rows past the cap stay unchecked). Details: `agent-discogs skills get marketplace`. |
+
+A blank `--country`, `--format`, `--label`, `--year` or `--sort` is `invalid_argument` before any request, not ignored (`--country needs a country, as Discogs names it ('' given).`).
 
 ### Which flags apply where
 
@@ -224,7 +228,7 @@ Each flag applies only to the nouns below. Any other flag fails with `invalid_ar
 
 ### Smart resolution
 
-`get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. Errors with a hint if the release has no master.
+`get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. If the release has no master it fails with `invalid_argument`, naming a search for the master by the release's title, quoted for the shell (`agent-discogs search -- master '<title>'`); a blank title gets no search.
 
 ### Examples
 

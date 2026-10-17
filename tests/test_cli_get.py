@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from typing import Any
 
 import httpx2
@@ -19,6 +20,7 @@ from agent_discogs.pagination import PageResult
 from tests.conftest import (
     ServePage,
     UseClient,
+    _Catalogue,
     _empty_listing,
     _FakeAPI,
     fake,
@@ -135,6 +137,95 @@ class TestVersionsRequest:
         else:
             assert [path for path, _ in api.sends] == ["/masters/55/versions"]
             assert "not found" in stderr
+
+    @pytest.mark.parametrize("json_mode", [False, True], ids=["text", "json"])
+    def test_a_blank_filter_sends_nothing(
+        self, monkeypatch: pytest.MonkeyPatch, json_mode: bool
+    ) -> None:
+        api = _FakeAPI(monkeypatch, _Catalogue())
+        args = ["get", "versions", "@m1", "--country", ""]
+        result = CliRunner().invoke(cli, [*args, *(["--json"] if json_mode else [])])
+        message = "--country needs a country, as Discogs names it ('' given)."
+        if json_mode:
+            assert json_error(result) == {
+                "code": "invalid_argument",
+                "message": message,
+            }
+        else:
+            # No request, so no budget footer either.
+            assert text_error(result) == f"✗ {message}\n"
+        assert api.sends == []
+
+
+_NO_MASTER = (
+    "@r1 is a release with no master. This release isn't linked to a master release."
+)
+
+
+class TestNoMasterHint:
+    """`get versions` on a release with no master suggests a search for its
+    title, quoted for a POSIX shell, that searches for exactly that title."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.title = ""
+
+        def respond(path: str, params: dict[str, str]) -> object:
+            if path == "/releases/1":
+                return {"id": 1, "title": self.title, "master_id": 0}
+            return _empty_listing("/database/search", params)
+
+        self.api = _FakeAPI(monkeypatch, respond)
+
+    def _message(self, json_mode: bool) -> str:
+        args = ["get", "versions", "@r1", *(["--json"] if json_mode else [])]
+        result = CliRunner().invoke(cli, args)
+        assert self.api.sends == [("/releases/1", {})]
+        if json_mode:
+            error = json_error(result)
+            assert error["code"] == "invalid_argument"
+            return error["message"]
+        line = text_error(result).splitlines()[0]
+        assert line.startswith("✗ ")
+        return line.removeprefix("✗ ")
+
+    @pytest.mark.parametrize("json_mode", [False, True], ids=["text", "json"])
+    @pytest.mark.parametrize(
+        ("title", "hint"),
+        [
+            ('$(touch x) "q"', "agent-discogs search -- master '$(touch x) \"q\"'"),
+            ("`id` and $HOME", "agent-discogs search -- master '`id` and $HOME'"),
+            ('12" Mixes', "agent-discogs search -- master '12\" Mixes'"),
+            ("Help!", "agent-discogs search -- master 'Help!'"),
+            ("Don't Stop", "agent-discogs search -- master 'Don'\"'\"'t Stop'"),
+            ("-x --flag", "agent-discogs search -- master '-x --flag'"),
+            (
+                'Evil"; echo pwned; "',
+                "agent-discogs search -- master 'Evil\"; echo pwned; \"'",
+            ),
+        ],
+    )
+    def test_the_hint_searches_for_the_title(
+        self, title: str, hint: str, json_mode: bool
+    ) -> None:
+        self.title = title
+        message = self._message(json_mode)
+        assert message == f"{_NO_MASTER} Try searching for the master directly: {hint}"
+
+        argv = shlex.split(message.split("directly: ", 1)[1])
+        assert argv == ["agent-discogs", "search", "--", "master", title]
+        before = len(self.api.sends)
+        result = CliRunner().invoke(cli, argv[1:])
+        assert result.exit_code == 0, result.output
+        ((path, params),) = self.api.sends[before:]
+        assert path == "/database/search"
+        assert (params["q"], params["type"]) == (title, "master")
+
+    @pytest.mark.parametrize("json_mode", [False, True], ids=["text", "json"])
+    @pytest.mark.parametrize("title", ["", "   "])
+    def test_a_blank_title_gets_no_hint(self, title: str, json_mode: bool) -> None:
+        self.title = title
+        assert self._message(json_mode) == _NO_MASTER
 
 
 class TestGetCommand:
@@ -740,6 +831,98 @@ class TestGetCommand:
             (
                 ["get", "releases", "@l647", "--after", "2:0"],
                 "--after only continues a client-side filtered listing",
+            ),
+            *(
+                ([*argv, blank], message.format(given=repr(blank)))
+                for blank in ("", " ")
+                for argv, message in [
+                    (
+                        ["get", "releases", "@a3857", "--role"],
+                        (
+                            "--role needs a credit role, such as Main or Remix "
+                            "({given} given)."
+                        ),
+                    ),
+                    (
+                        ["get", "releases", "@l647", "--year"],
+                        "--year needs a year, such as 1999 ({given} given).",
+                    ),
+                    (
+                        ["get", "versions", "@m3719", "--country"],
+                        (
+                            "--country needs a country, as Discogs names it "
+                            "({given} given)."
+                        ),
+                    ),
+                    (
+                        ["get", "versions", "@m3719", "--format"],
+                        "--format needs a format, such as Vinyl or CD ({given} given).",
+                    ),
+                    (
+                        ["get", "versions", "@m3719", "--label"],
+                        "--label needs a label name ({given} given).",
+                    ),
+                    (
+                        ["get", "versions", "@m3719", "--year"],
+                        "--year needs a year, such as 1999 ({given} given).",
+                    ),
+                    (
+                        ["get", "releases", "@a3857", "--year"],
+                        "--year filters versions and label catalogues",
+                    ),
+                    (
+                        ["get", "releases", "@l647", "--role"],
+                        "Label catalogues cannot be role-filtered or sorted",
+                    ),
+                ]
+            ),
+            *(
+                (["get", noun, ref, "--sort", "", *desc], message)
+                for desc in ([], ["--desc"])
+                for noun, ref, message in [
+                    (
+                        "releases",
+                        "@a3857",
+                        (
+                            "--sort '' is not valid for 'get releases'. "
+                            "Keys: year, title, format."
+                        ),
+                    ),
+                    (
+                        "releases",
+                        "@l647",
+                        (
+                            "--sort '' is not valid for 'get releases'. "
+                            "Keys: year, title, format."
+                        ),
+                    ),
+                    (
+                        "versions",
+                        "@m3719",
+                        (
+                            "--sort '' is not valid for 'get versions'. "
+                            "Keys: released, title, format, label, catno, country."
+                        ),
+                    ),
+                ]
+            ),
+            (
+                ["get", "releases", "@a3857", "--role", "", "--max-requests", "5"],
+                "--role needs a credit role, such as Main or Remix ('' given).",
+            ),
+            (
+                [
+                    "get",
+                    "versions",
+                    "@m3719",
+                    "--release-type",
+                    "unofficial",
+                    "--format",
+                    "",
+                    "--max-requests",
+                    "5",
+                ],
+                "--format needs a format, such as Vinyl or CD ('' given).",
             ),
         ],
     )

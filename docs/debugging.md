@@ -8,7 +8,7 @@ The SDK's own log lines (`[sdk] HTTP request ...`, `[sdk] Cache hit ...`) stream
 
 `--debug` is a global flag: it goes before the command (`agent-discogs --debug get artist @a3857`); after it, it is [a usage error](errors.md#a-global-flag-after-the-command).
 
-stdout is byte-identical with and without the flag, and so is the exit code: when the cache location cannot be resolved (no home directory and no absolute `XDG_CACHE_HOME`), the cache row reads `unknown (no home directory)` and the panel still prints.
+stdout is byte-identical with and without the flag, and so is the exit code: when the cache location cannot be resolved (no home directory and no absolute `XDG_CACHE_HOME`), the cache row reads `unknown (no home directory)`, and when the size of the cache files cannot be read (a cache directory that can be listed but not searched, for example), it reads `unknown` in place of the size (`cache     ~/.cache/agent-discogs  unknown  ttl 1h`); either way the panel still prints.
 
 ```
 api: 2 requests · 58/60 left this minute
@@ -33,7 +33,7 @@ Command output follows the encoding of stdout. When it is not UTF-8 (`PYTHONIOEN
 
 ## Discogs text in the text views
 
-Discogs text is user-generated, so the text views never print it raw. A line break or tab inside a field becomes a space; any other control or bidi character prints as a visible escape (`\x1b`, `\u202e`), so a title cannot clear the screen, reorder the line, or start a line that looks like `Next page:` or `✗`.
+Discogs text is user-generated, so the text views never print it raw. A line break or tab inside a field becomes a space; any other control or bidi character prints as a visible escape (`\x1b`, `\u202e`), so a title cannot clear the screen, reorder the line, or start a line that looks like `Next page:` or `✗`. The zero-width space (`\u200b`), U+2060–U+206F (word joiner, invisible operators, deprecated format controls), U+FEFF and the tag characters U+E0000–U+E007F, which draw nothing and could carry text the person at the terminal cannot see while an agent reading the output can, are escaped the same way; a tag character takes the eight-digit form (`\U000e0041`). The zero-width joiner and non-joiner (U+200D, U+200C) print as they are: emoji sequences and words in Persian, Indic and other scripts need them.
 
 Release notes (`get release -v`) keep their line breaks, with every continuation line indented under `Notes:`. Error messages on stderr get the same treatment. `--json` output keeps every value exact (see [JSON output](json-output.md)), apart from the Discogs markup the projection converts in profiles and notes (see [Profiles and notes](commands.md#profiles-and-notes)).
 

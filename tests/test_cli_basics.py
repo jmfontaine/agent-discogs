@@ -340,3 +340,33 @@ class TestExceptionHandling:
         monkeypatch.setattr("agent_discogs.commands.search.get_client", _raise)
         result = CliRunner().invoke(cli, ["search", "--json", "x"])
         assert json_error(result) == error
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["get", "collection"],
+            ["search", "x", "--owned"],
+            ["search", "x", "--wanted"],
+            ["get", "inventory", "x", "--owned"],
+            ["get", "releases", "@a1", "--owned"],
+        ],
+    )
+    def test_user_preflight_is_inside_the_boundary(
+        self, monkeypatch: pytest.MonkeyPatch, argv: list[str]
+    ) -> None:
+        """The check that the credentials name a user builds a client too:
+        its failure is the coded error, an envelope under --json."""
+
+        def _raise() -> str:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("agent_discogs.account.auth_mode", _raise)
+        command, *rest = argv
+        result = CliRunner().invoke(cli, [command, "--json", *rest])
+        assert json_error(result) == {
+            "code": "unexpected",
+            "message": "Unexpected error: RuntimeError: boom",
+        }
+        result = CliRunner().invoke(cli, argv)
+        first = text_error(result).splitlines()[0]
+        assert first == "✗ Unexpected error: RuntimeError: boom"
