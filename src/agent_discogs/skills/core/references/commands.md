@@ -224,7 +224,7 @@ Each flag applies only to the nouns below. Any other flag fails with `invalid_ar
 
 ### Smart resolution
 
-`get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. Errors with a hint if the release has no master.
+`get versions @r847868` where `@r847868` is a release will auto-resolve to the release's master_id and fetch versions. If the release has no master it fails with `invalid_argument`, naming a search for the master by the release's title, quoted for the shell (`agent-discogs search -- master '<title>'`); a blank title gets no search.
 
 ### Examples
 

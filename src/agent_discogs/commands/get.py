@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import math
+import shlex
 import sys
 from decimal import Decimal
 from typing import Any, get_args
@@ -661,12 +662,17 @@ def _get_versions(
     if entity_type == "release":
         release = client.releases.get(entity_id)
         if not release.master_id:
-            raise ValueError(
+            message = (
                 f"{ref_string} is a release with no master. "
-                "This release isn't linked to a master release. "
-                "Try searching for the master directly: "
-                f'agent-discogs search master "{release.title}"'
+                "This release isn't linked to a master release."
             )
+            # A blank title would suggest an empty search, which fails.
+            if release.title.strip():
+                command = ["agent-discogs", "search", "--", "master", release.title]
+                message += " Try searching for the master directly: " + shlex.join(
+                    command
+                )
+            raise ValueError(message)
         master_id = release.master_id
         titled = release
     else:
