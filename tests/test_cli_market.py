@@ -12,7 +12,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from agent_discogs import cli
-from tests.conftest import _FakeAPI, _too_many, json_error, text_error
+from tests.conftest import _Catalogue, _FakeAPI, _too_many, json_error, text_error
 
 _STATS = "/marketplace/stats/"
 
@@ -629,6 +629,45 @@ class TestVersionsMarket:
         ]
         assert document["market_read"]["rows_read"] == 4
         assert document["market_read"]["stop_reason"] == "max_requests"
+
+    @pytest.mark.parametrize(
+        ("argv", "sends"),
+        [
+            # A server-side page: 1 (+ 1 for the text header) + N.
+            ("@m1 --json", 6),
+            ("@m1", 7),
+            # The release lookup that finds the master, in either mode.
+            ("@r10 --json", 7),
+            ("@r10", 7),
+            # A scan of S = 3 pages (2 matching rows each) replaces the page.
+            ("@m1 --release-type official --json", 8),
+            ("@m1 --release-type official", 9),
+            ("@r10 --release-type official --json", 9),
+            ("@r10 --release-type official", 9),
+        ],
+    )
+    def test_cost_is_the_listing_then_one_lookup_per_row(
+        self, monkeypatch: pytest.MonkeyPatch, argv: str, sends: int
+    ) -> None:
+        """The documented formula: the listing's own cost (1 page or S scan
+        pages, plus the text header under @m or the release under @r), then
+        N lookups, N being the rows shown."""
+        catalogue = _Catalogue()
+
+        def respond(path: str, params: dict[str, str]) -> object:
+            if path == "/releases/10":
+                return {"id": 10, "title": "Blue Train", "master_id": 1}
+            if path.startswith(_STATS):
+                price = {"value": 5.0, "currency": "EUR"}
+                return {"num_for_sale": 1, "lowest_price": price}
+            return catalogue(path, params)
+
+        api = _FakeAPI(monkeypatch, respond)
+        args = ["--fresh", "get", "versions", *argv.split(), "--market", "--limit", "5"]
+        result = CliRunner().invoke(cli, args)
+        assert result.exit_code == 0, result.output
+        assert len([p for p, _ in api.sends if p.startswith(_STATS)]) == 5
+        assert len(api.sends) == sends
 
     def test_a_429_keeps_the_rows_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
         h = _Harness(monkeypatch, status={f"{_STATS}13": 429})

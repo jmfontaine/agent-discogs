@@ -1,11 +1,28 @@
 """SDK models → the JSON an agent actually needs.
 
 Each text view in `formatting.py` has a sibling projector here that returns
-exactly the fields that view shows, plus refs and, for an entity Discogs
-gives a page (`uri`), its web link as `url`. `--json` serializes these;
-`--json --full` bypasses them for the SDK's complete, normalized record
-(`json_output.full_dump()`). A full release is ~33 KB of image URLs and
-bookkeeping; its projection is ~1.5 KB.
+the view's data, plus refs and, for an entity Discogs gives a page (`uri`),
+its web link as `url`. It is not field for field. Where the JSON differs from
+the text:
+
+- `url`, which the text never prints;
+- timestamps in full (RFC 3339) where the text prints a day: release and
+  `--added-since` `added`, collection `added`, `get lists` `changed`,
+  inventory `listed`;
+- every label of `get release`, whose text shows the first;
+- `title` on `get versions` rows, which the text row leaves out;
+- `rating` on `get wantlist` rows (0, unrated, dropped);
+- `description` and `added` on `get lists` rows;
+- `listing` on every `get inventory` row (the text names a listing only for
+  a row with no release id);
+- the tracklist and price documents carry `ref`, `title` and the body, not
+  the header's artists and year;
+- `get collection` rows carry release data the text row lacks: `artists`,
+  `genres`, `styles` and `master`.
+
+`--json` serializes these; `--json --full` bypasses them for the SDK's
+complete, normalized record (`json_output.full_dump()`). A full release is
+~33 KB of image URLs and bookkeeping; its projection is ~1.5 KB.
 """
 
 from __future__ import annotations
