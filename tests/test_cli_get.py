@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from typing import Any
 
 import httpx2
@@ -135,6 +136,77 @@ class TestVersionsRequest:
         else:
             assert [path for path, _ in api.sends] == ["/masters/55/versions"]
             assert "not found" in stderr
+
+
+_NO_MASTER = (
+    "@r1 is a release with no master. This release isn't linked to a master release."
+)
+
+
+class TestNoMasterHint:
+    """`get versions` on a release with no master suggests a search for its
+    title, quoted for a POSIX shell, that searches for exactly that title."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.title = ""
+
+        def respond(path: str, params: dict[str, str]) -> object:
+            if path == "/releases/1":
+                return {"id": 1, "title": self.title, "master_id": 0}
+            return _empty_listing("/database/search", params)
+
+        self.api = _FakeAPI(monkeypatch, respond)
+
+    def _message(self, json_mode: bool) -> str:
+        args = ["get", "versions", "@r1", *(["--json"] if json_mode else [])]
+        result = CliRunner().invoke(cli, args)
+        assert self.api.sends == [("/releases/1", {})]
+        if json_mode:
+            error = json_error(result)
+            assert error["code"] == "invalid_argument"
+            return error["message"]
+        line = text_error(result).splitlines()[0]
+        assert line.startswith("✗ ")
+        return line.removeprefix("✗ ")
+
+    @pytest.mark.parametrize("json_mode", [False, True], ids=["text", "json"])
+    @pytest.mark.parametrize(
+        ("title", "hint"),
+        [
+            ('$(touch x) "q"', "agent-discogs search -- master '$(touch x) \"q\"'"),
+            ("`id` and $HOME", "agent-discogs search -- master '`id` and $HOME'"),
+            ('12" Mixes', "agent-discogs search -- master '12\" Mixes'"),
+            ("Help!", "agent-discogs search -- master 'Help!'"),
+            ("Don't Stop", "agent-discogs search -- master 'Don'\"'\"'t Stop'"),
+            ("-x --flag", "agent-discogs search -- master '-x --flag'"),
+            (
+                'Evil"; echo pwned; "',
+                "agent-discogs search -- master 'Evil\"; echo pwned; \"'",
+            ),
+        ],
+    )
+    def test_the_hint_searches_for_the_title(
+        self, title: str, hint: str, json_mode: bool
+    ) -> None:
+        self.title = title
+        message = self._message(json_mode)
+        assert message == f"{_NO_MASTER} Try searching for the master directly: {hint}"
+
+        argv = shlex.split(message.split("directly: ", 1)[1])
+        assert argv == ["agent-discogs", "search", "--", "master", title]
+        before = len(self.api.sends)
+        result = CliRunner().invoke(cli, argv[1:])
+        assert result.exit_code == 0, result.output
+        ((path, params),) = self.api.sends[before:]
+        assert path == "/database/search"
+        assert (params["q"], params["type"]) == (title, "master")
+
+    @pytest.mark.parametrize("json_mode", [False, True], ids=["text", "json"])
+    @pytest.mark.parametrize("title", ["", "   "])
+    def test_a_blank_title_gets_no_hint(self, title: str, json_mode: bool) -> None:
+        self.title = title
+        assert self._message(json_mode) == _NO_MASTER
 
 
 class TestGetCommand:
