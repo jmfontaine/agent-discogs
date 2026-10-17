@@ -20,6 +20,15 @@ agent-discogs skills get pressings     # telling pressings apart: versions, iden
 
 Add `--full` to a skill for its command reference and background notes.
 
+## Tasks
+
+Each skill holds recipes for recurring requests, by stable ID: the commands, what they cost, and a status, `works` (one command, small output), `works, costly` (the cost is stated) or `not possible` (with why), one per part of the request when its parts differ. A `works, costly` or `not possible` entry ends with what would make it cheaper or possible. Load the skill that holds the task:
+
+- core (`skills get core --full`): names, tracks, credits, label catalogues, big jobs: F3, F4, G1, G2, G3, H1, I1, I2
+- collection: what I own, where, how many, and its value: A4, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10, B11, B12, C1, C2, C3, D6, F5, G4
+- marketplace: prices, copies for sale, the wantlist, inventories: C4, C5, C6, C7, C8, D1, D2, D3, D4, D5, E1, E2, E3, E5, H2
+- pressings: barcodes, runouts, catalog numbers, originals, matching files: A1, A2, A3, A5, A6, E4, F1, F2
+
 ## Setup
 
 Full access (60 req/min, search, price data) needs credentials; a personal access token is the simplest (OAuth also works, see `status` below):
@@ -200,3 +209,4 @@ agent-discogs --fresh price @r847868      # bypass the cache; the response is no
 | [references/json-output.md](references/json-output.md) | `--json` and `--full` documents |
 | [references/search-patterns.md](references/search-patterns.md) | Effective search strategies |
 | [references/discogs-domain.md](references/discogs-domain.md) | Discogs data model: genres, country, artists, titles, labels, release dates |
+| [references/tasks.md](references/tasks.md) | The core tasks (F3, F4, G1, G2, G3, H1, I1, I2): recipes, costs and limits |

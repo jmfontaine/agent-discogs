@@ -670,7 +670,7 @@ Print the bundled agent guide. The content ships in the package, so it always ma
 agent-discogs skills                     # list bundled skills with the installed version (same as skills list)
 agent-discogs skills list --json         # [{"name":...,"description":...,"version":...}], one object per skill
 agent-discogs skills get core            # setup, refs, search and navigation, output, budget, troubleshooting
-agent-discogs skills get core --full     # plus references: command reference, errors, JSON output, search patterns, Discogs data model
+agent-discogs skills get core --full     # plus references: command reference, errors, JSON output, search patterns, Discogs data model, tasks
 agent-discogs skills get collection      # your collection, lists and ownership marks (--owned, get owned, get collection, get lists, get list)
 agent-discogs skills get marketplace     # price, get wantlist and --for-sale, get inventory
 agent-discogs skills get pressings       # telling pressings apart: versions, identifiers, unofficial releases
@@ -678,6 +678,8 @@ agent-discogs skills path [name]         # directory holding the bundled skill f
 ```
 
 `--full` appends only that skill's own references. An unknown name exits 1 and lists the available ones.
+
+Each skill also carries Tasks: recipes for recurring requests ("do I own any pressing of this album?", "is anything on my wantlist under €25?"), each under a stable ID with its status (`works`, `works, costly` or `not possible`), the commands, their request cost and, when it is costly or not possible, what would change that. `skills get core` lists every task ID under the skill that holds it; the core tasks themselves are in its `--full`.
 
 ## Shell completion
 

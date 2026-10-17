@@ -52,3 +52,260 @@ What these commands cost; the footer, `--cached` and the per-minute budget are i
 | `get collection --random [N]` | Unfiltered: 2 (the username, the folder list) + page 1 + 1 per other page holding a pick; filtered: as `--duplicates` |
 | `get lists` | 1 for the username + 1 per page of up to 100 lists (`--limit`) |
 | `get list <id>...` | 1 per list, whatever its length |
+
+## Tasks
+
+Recipes for requests about the user's own collection, by stable ID. The legend and the other skills' tasks are under Tasks in `agent-discogs skills get core`. Each needs a token or OAuth.
+
+### A4 Which pressing of this album do I own, and what is it worth?
+
+Status: works (which pressing); works, costly (what it is worth)
+
+```bash
+agent-discogs get owned @m3719
+agent-discogs price @r847868 @r352665
+```
+
+`get owned` prints `@m3719 owned ×3 in 2 releases`, then each release you own with its folders; price those. `price` needs seller settings on the account; without them, `get stats @r...` gives the count for sale and the lowest price (2 requests per ref).
+
+Cost: 1 (the username) + 1 per 100 collection records + 1 (the folder list), then 3 per release priced.
+
+Would need: a value per record (Discogs API limit).
+
+### B1 Which of my records are jazz, techno, vinyl...?
+
+Status: works
+
+```bash
+agent-discogs get collection --genre Jazz --format Vinyl --limit 100
+```
+
+Also `--style`, `--year`, `--label`, `--artist`, `--title`: whole value, any case, `*` for any run of characters. On a big collection add `--max-requests N` and paste the printed `Continue scan:`.
+
+Cost: 2 (the username and the folder list) + 1 per 100 records scanned.
+
+### B2 How many records do I own per label, decade, format or genre?
+
+Status: works
+
+```bash
+agent-discogs get collection --count-by decade
+```
+
+Keys: `label`, `year`, `decade`, `format`, `genre`, `style`, `artist`; `--top N` for the largest, a filter to count a subset.
+
+Cost: 1 (the username) + 1 per 100 records; the other keys are then free for an hour.
+
+### B3 Pick a random record, optionally from a folder or a genre
+
+Status: works (from the collection or a folder); works, costly (from a genre or another filter)
+
+```bash
+agent-discogs get collection --random
+agent-discogs get collection --random --folder "<folder>"
+agent-discogs get collection --random --genre Jazz
+```
+
+`--random 3` draws three. Unfiltered, it reads page 1 and the pages holding a pick; a filter reads the whole collection, then draws from the matches.
+
+Cost: unfiltered: 2 (the username and the folder list) + the first page + 1 per other page holding a pick; filtered: 2 + 1 per 100 records.
+
+Would need: server-side filters on collection pages (Discogs API limit).
+
+### B4 Which records do I own more than once?
+
+Status: works
+
+```bash
+agent-discogs get collection --duplicates release
+agent-discogs get collection --duplicates master
+```
+
+`release`: copies of one pressing; `master`: any pressings of one album, as `@m3719 owned ×3 in 2 releases` and a row per release.
+
+Cost: 2 (the username and the folder list) + 1 per 100 records; the second view is then free.
+
+### B5 Do I own any pressing of this album?
+
+Status: works
+
+```bash
+agent-discogs search master "The Downward Spiral" --artist "Nine Inch Nails"
+agent-discogs get owned @m3719
+```
+
+`@m3719 owned ×3 in 2 releases`, each release with its folders, or `@m3719 not owned`, however many versions the album has. The search only finds the master: with its `@m...` at hand (a release row's `→ @m...`), `get owned` alone answers.
+
+Cost: 1 (the search), then 1 (the username) + 1 per 100 collection records + 1 (the folder list, when a copy is found).
+
+### B6 Export my collection with genres, styles and year
+
+Status: works, costly
+
+```bash
+agent-discogs get collection --json --limit 100
+```
+
+Read every page (`--page 2`, ... up to `pagination.total_pages`). Each row carries `ref`, `title`, `artists`, `year`, `label`, `catno`, `format`, `genres`, `styles`, `master`, `folder` and `added`; `--fields` adds your notes and custom fields.
+
+Cost: 2 (the username and the folder list) + 1 per 100 copies.
+
+Would need: more than 100 copies a request (Discogs API limit).
+
+### B7 Back up my collection and wantlist
+
+Status: works, costly
+
+```bash
+agent-discogs get collection --json --full --limit 100
+agent-discogs get wantlist --json --full --limit 100
+```
+
+Read every page of each (`--page 2`, ... up to `pagination.total_pages`). `--full` keeps every field Discogs sends (`instance_id`, `folder_id`, `notes`, `date_added`). Restoring is by hand on discogs.com: agent-discogs sends no write request.
+
+Cost: 1 (the username) + 1 per 100 copies + 1 per 100 wants.
+
+Would need: more than 100 items a request (Discogs API limit).
+
+### B8 Where is my copy shelved?
+
+Status: works
+
+```bash
+agent-discogs get collection --title "The Downward Spiral" --fields
+```
+
+Each copy prints its folder, then your notes and custom fields by name (`Shelf: A3`). `get owned @r...` gives the folders alone.
+
+Cost: 3 (the username, the folder list and the field names) + 1 per 100 records scanned.
+
+### B9 What did I add recently?
+
+Status: works
+
+```bash
+agent-discogs get collection --sort added --desc
+```
+
+Newest additions first, one row per copy with its `added` day; paste the printed `Next page:` for more.
+
+Cost: 3 (the username, the folder list and the page).
+
+### B10 Add, move or remove records
+
+Status: not possible
+
+Why not: agent-discogs only reads, by design; it sends no write request. The user does it on discogs.com, then `get owned @r...` or `get collection` reads the result.
+
+Would need: nothing planned: read-only by design.
+
+### B11 My collection A-Z by artist, ignoring "The"
+
+Status: works
+
+```bash
+agent-discogs get collection --sort artist --limit 100
+```
+
+Discogs sorts on its side and ignores a leading "The" (seen on 2026-10-15); paste the printed `Next page:` for more.
+
+Cost: 3 (the username, the folder list and the page) + 1 per further page.
+
+### B12 Mirror my collection into another tool
+
+Status: works, costly
+
+```bash
+agent-discogs get collection --json --full --limit 100
+```
+
+Read every page (`--page 2`, ...). Key each copy on `instance_id`: `id` is the release, shared by every copy of it. A rerun within the hour reads the cache; `--fresh` reads Discogs again.
+
+Cost: 1 (the username) + 1 per 100 copies, every sync.
+
+Would need: a changed-since query (Discogs API limit).
+
+### C1 What is my collection worth?
+
+Status: works
+
+```bash
+agent-discogs get collection --value
+```
+
+Discogs' minimum, median and maximum for the whole collection, in your profile's currency.
+
+Cost: 3 (the username, the profile and the value).
+
+### C2 What is one folder or subset worth?
+
+Status: not possible (Discogs' value of a folder); works, costly (an estimate of your own)
+
+Why not: Discogs values the whole collection only. For an estimate, list the folder's releases and add up their prices:
+
+```bash
+agent-discogs get collection --folder "<folder>" --json --limit 100
+agent-discogs get stats @r847868 @r352665
+```
+
+`get stats` gives each release's count for sale and lowest price (an asking price, not a value); with seller settings, `price @r...` gives the suggestion per condition (3 requests per release).
+
+Cost: 3 (the username, the folder list and the page) + 2 per release (up to 10 refs a command).
+
+Would need: a value per folder (Discogs API limit).
+
+### C3 Which of my records are worth over $50?
+
+Status: works, costly
+
+```bash
+agent-discogs get collection --json --limit 100
+agent-discogs get stats @r847868 @r352665 --currency USD
+```
+
+List your releases, then keep those whose lowest price is over 50: the only per-release number without seller settings. With them, `price @r...` gives the suggestion per condition (3 requests per release).
+
+Cost: 2 + 1 per 100 copies, then 2 per release (up to 10 refs a command): 500 records take about 1,000 requests, 17 minutes of budget.
+
+Would need: a value per record, or market numbers for several releases a request (Discogs API limit).
+
+### D6 Which records of a label's catalogue am I missing?
+
+Status: works, costly
+
+```bash
+agent-discogs get releases @l647 --owned --limit 100
+```
+
+Each row ends `· owned`, `· owned ×2` or `· not owned`, from the count on the row; paste the printed `Next page:` for more.
+
+Cost: 1 (the label's name; none with `--json`) + 1 per 100 catalogue rows.
+
+Would need: a catalogue filter on ownership (Discogs API limit).
+
+### F5 How many different artists are in my collection?
+
+Status: works
+
+```bash
+agent-discogs get collection --count-by artist --top 10 --json
+```
+
+`distinct` is the number of different artists; `counts` holds the 10 with the most records.
+
+Cost: 1 (the username) + 1 per 100 records.
+
+### G4 What should I look for next, from what I own?
+
+Status: works, costly
+
+Find the labels (or artists, styles) you own most, then list a catalogue with ownership marks and suggest its `· not owned` rows:
+
+```bash
+agent-discogs get collection --count-by label --top 5
+agent-discogs get releases @l647 --owned --limit 100
+```
+
+Cost: 1 (the username) + 1 per 100 records, then 1 (the label's name; none with `--json`) + 1 per 100 catalogue rows.
+
+Would need: recommendations (Discogs API limit).
