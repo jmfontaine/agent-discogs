@@ -1,0 +1,21 @@
+name: Feature request
+description: A problem to solve or a capability to add
+labels: ["triage"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: The problem you want to solve, not only the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: What is observably true once this is done, including how it should behave when something goes wrong.
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this request does not cover.

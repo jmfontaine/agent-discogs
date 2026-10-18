@@ -1,0 +1,32 @@
+name: Bug report
+description: Something does not work as documented or expected
+labels: ["triage"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What happened, and what you were trying to do. Include the full error message.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: The smallest steps that reproduce the problem. Anyone can use them to confirm the fix.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: What should happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, operating system, and the version of this project.
+    validations:
+      required: true

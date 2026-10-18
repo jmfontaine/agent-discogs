@@ -194,7 +194,7 @@ remove the branch they created before retrying.
 1. `just release-prepare` needs an `X.Y.Z.devN` version. It creates
    `release/vX.Y.Z`, sets `X.Y.Z` (`uv version --bump stable`, in
    `pyproject.toml` and `uv.lock`), commits
-   `chore(release): bump version to X.Y.Z` and opens the pull request. An
+   `chore: release vX.Y.Z` and opens the pull request. An
    argument names another `X.Y.Z` (a patch release while `main` is on the next
    minor). It refuses a version whose tag is already on `origin`. Merging the
    pull request approves the release.
@@ -208,7 +208,7 @@ remove the branch they created before retrying.
    tag is already pushed by then, so check the Actions page.
 3. `just release-next` needs an `X.Y.Z` version whose `vX.Y.Z` tag is on
    `origin`. It creates `release/vX.(Y+1).0.dev0`, sets that version, commits
-   `chore(release): start X.(Y+1).0 development` and opens the pull request.
+   `chore: start X.(Y+1).0 development` and opens the pull request.
    `just release-next patch` opens `X.Y.(Z+1).dev0` instead, and
    `just release-next major` `(X+1).0.0.dev0`. Merge it to reopen development.
 
@@ -228,3 +228,14 @@ A release cannot be replaced once uploaded. If a broken version reaches PyPI,
 yank it there (project page or the upload API — there is no `pip yank`), then
 release the next patch version with `just release-prepare X.Y.(Z+1)` (run
 `just release-next` first if `main` still holds `X.Y.Z`).
+
+## Shared workflow
+
+This repository follows the shared workflow: the `github-workflow` skill's repository
+setup describes its GitHub settings, rulesets, labels and templates. Those settings are
+managed as code outside this repository; change them there, never with `gh api` or the
+GitHub web UI.
+
+### Deviations from the shared workflow
+
+None.

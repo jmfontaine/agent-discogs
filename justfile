@@ -159,7 +159,7 @@ release-next bump="minor": _require-synced-main
     next=$(uv version --bump "$bump" --dry-run --short)
     # Set .dev0 explicitly: `uv version --bump minor --bump dev` gives .dev1.
     {{ quote(just_executable()) }} _version-pr "release/v$next.dev0" "$next.dev0" \
-        "chore(release): start $next development" \
+        "chore: start $next development" \
         "Set the version to $next.dev0 in pyproject.toml and uv.lock, so builds from main sort below the $next release."
 
 # Open the release pull request: version defaults to the development version without its .devN
@@ -184,7 +184,7 @@ release-prepare version="": _require-synced-main
         *) fail "could not check origin for tag v$version" ;;
     esac
     {{ quote(just_executable()) }} _version-pr "release/v$version" "$version" \
-        "chore(release): bump version to $version" \
+        "chore: release v$version" \
         "Set the version to $version for release in pyproject.toml and uv.lock. Merging this pull request approves the release; 'just release' on main then tags and publishes it."
 
 # Refuse to go on unless HEAD is main, the working tree is clean, and main equals the freshly fetched origin/main
