@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ideas and questions
+    url: https://github.com/jmfontaine/agent-discogs/discussions/categories/ideas
+    about: Share an idea that is not ready to become an issue, or ask a question.
