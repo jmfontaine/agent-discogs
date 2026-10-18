@@ -4,7 +4,13 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "build"
+    labels: ["dependencies", "build"]
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "build"
+    labels: ["dependencies", "build"]
