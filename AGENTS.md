@@ -162,7 +162,7 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 
 ## Key Conventions
 
-- Python 3.10+ required
+- Python 3.11+ required
 - `py.typed` marker present (PEP 561)
 - Imports live at module scope; ruff's `PLC0415` enforces it. Only `TYPE_CHECKING` blocks may import inside a function or block.
 - Run `git` commands directly, never with `git -C`

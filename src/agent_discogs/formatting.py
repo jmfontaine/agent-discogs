@@ -6,7 +6,7 @@ import re
 import sys
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -1924,7 +1924,7 @@ def artist_title(release: Any) -> str | None:
 
 def _utc_day(moment: datetime | None) -> str | None:
     """`YYYY-MM-DD`: the UTC day of an aware timestamp."""
-    return moment.astimezone(timezone.utc).date().isoformat() if moment else None
+    return moment.astimezone(UTC).date().isoformat() if moment else None
 
 
 def added_day(release: Any) -> str | None:

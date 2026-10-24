@@ -6,7 +6,7 @@ import json
 import math
 import sqlite3
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
 from typing import TypeVar
@@ -203,11 +203,11 @@ class TestFormatError:
         assert json.loads(format_error_json(exc))["error"]["retry_after"] == seconds
 
     def test_rate_limit_retry_after_http_date(self) -> None:
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         # An HTTP date has whole seconds.
         when = (before + timedelta(seconds=30)).replace(microsecond=0)
         info = classify(_rate_limited(format_datetime(when, usegmt=True)))
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         # The SDK reads the clock between `before` and `after`.
         assert info.retry_after is not None
         assert (

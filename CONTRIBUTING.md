@@ -91,7 +91,7 @@ Tests use `click.testing.CliRunner` for in-process CLI testing. They patch with 
 
 ## Code style
 
-- Python 3.10+
+- Python 3.11+
 - Formatting and linting handled by ruff (`just format`, `just lint-fix`)
 - Type checking with ty (`just type-check`)
 - Type completeness auditing with pyright (`just verify-types`)

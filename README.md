@@ -27,7 +27,7 @@ Or with pip:
 pip install agent-discogs
 ```
 
-pipx, uv and pip need Python 3.10 or later.
+pipx, uv and pip need Python 3.11 or later.
 
 ### Homebrew
 

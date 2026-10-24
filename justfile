@@ -25,7 +25,7 @@ dead-code:
     # no release since 2024-08, and the crash is open as
     # https://github.com/albertas/deadcode/issues/37
     # Pinning the interpreter is safe because deadcode only parses source that
-    # already has to support Python 3.10. It would break if this project ever
+    # already has to support Python 3.11. It would break if this project ever
     # adopts 3.14-only syntax.
     # Remove the pin and restore the dev dependency once deadcode supports 3.14.
     output=$(uvx --python 3.13 deadcode@2.4.1 src tests 2>&1)
