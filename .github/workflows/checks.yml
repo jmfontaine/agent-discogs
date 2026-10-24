@@ -32,7 +32,7 @@ jobs:
           # release since 2024-08, crash open as
           # https://github.com/albertas/deadcode/issues/37
           # Safe because deadcode only parses source that must already support
-          # 3.10. The explicit --python beats the job's UV_PYTHON=3.14.
+          # 3.11. The explicit --python beats the job's UV_PYTHON=3.14.
           # Remove the pin once deadcode supports 3.14.
           #
           # KLUDGE: `|| status=$?` rather than a plain `status=$?`, because
@@ -66,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,8 +117,8 @@ jobs:
       matrix:
         # The oldest supported version, and the one where discogs-sdk's pydantic
         # marker raises the floor to 2.14 (see AGENTS.md). Transitive markers
-        # do differ across 3.11-3.14, so widen this if that resolution matters.
-        python-version: ["3.10", "3.15"]
+        # do differ across 3.12-3.14, so widen this if that resolution matters.
+        python-version: ["3.11", "3.15"]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
