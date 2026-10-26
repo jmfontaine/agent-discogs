@@ -16,3 +16,16 @@ concurrency:
 jobs:
   checks:
     uses: ./.github/workflows/checks.yml
+
+  # The one status check `main` requires. It needs `checks`, which holds every
+  # job, so adding, renaming or resizing a job (or a matrix) never touches the
+  # ruleset. Keep its `needs` in step with the jobs of this workflow.
+  ci-passed:
+    name: CI passed
+    needs: [checks]
+    if: always()
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Fail unless every job passed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
