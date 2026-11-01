@@ -16,7 +16,7 @@ This skill assumes you have read `agent-discogs skills get core` (setup, refs, b
 - **What is on my wantlist?** `get wantlist`, 5 wants a page (`--limit` 1-100, `--page`). Needs a token or OAuth.
 - **Which of these rows are on my wantlist?** Add `--wanted` to a listing (`search`, `get versions`, `get releases @a...|@l...`): each release row ends `· wanted`, `· not wanted` or `· wanted ?` (undecided), after `owned` with `--owned`. `get versions` and `get releases` rows carry the answer (no extra request); `search` reads your whole wantlist once (1 request per 100 wants). Needs a token or OAuth. Not on `get inventory`: use `--in-wantlist` there.
 - **Is anything I want for sale, and under what price?** `get wantlist --for-sale`, optionally `--max-price X --currency EUR`: the wants with copies for sale now, each with the count and the lowest price. It costs 1 request per want checked: always pass `--max-requests N` and paste the printed `Continue scan:` for the rest.
-- **What does this seller have?** `get inventory <username>`: one seller's listings, with grades, price and origin; no credentials needed. `--condition` and `--sleeve` (minimum grades), `--ships-from`, `--max-price X --currency` (in the seller's currency) and `--in-wantlist` (needs a token or OAuth) keep the matching listings, scanning 100 listings a request: pass `--max-requests N`.
+- **What does this seller have?** `get inventory <username>`: one seller's listings, with grades, price and origin; no credentials needed. `--condition` and `--sleeve` (minimum grades), `--ships-from`, `--max-price X --currency` (in the seller's currency) and `--in-wantlist` (needs a token or OAuth) keep the matching listings, scanning 100 listings a request (against an empty wantlist, `--in-wantlist` reads 1 page, not a scan): pass `--max-requests N`.
 
 The output of each, line by line and in JSON, is in [references/commands.md](references/commands.md) (`agent-discogs skills get marketplace --full`); the grades, in [references/discogs-domain.md](references/discogs-domain.md).
 
@@ -36,7 +36,7 @@ The output of each, line by line and in JSON, is in [references/commands.md](ref
 | Compare the market of several pressings | `get versions @m...` → `get stats @r... @r... --currency EUR` (up to 10 refs, 2 requests each) |
 | Cheapest pressing of an album for sale | `get versions @m... --format Vinyl --market --currency EUR --limit 20 --max-requests 30` (1 request per row on top of the page); compare the `for sale:` tails yourself: Discogs cannot sort versions by price |
 | Is anything on my wantlist for sale under X? | `get wantlist --for-sale --max-price X --currency EUR --max-requests 60` (1 request per want checked; paste the printed `Continue scan:` for the rest). Count and lowest price only: condition, sleeve condition, seller location and shipping cannot be filtered (the API lists no copies), so point the user at the release's Marketplace page on discogs.com for those. Needs a token or OAuth |
-| What does seller X have from my wantlist? | `get inventory <seller> --in-wantlist --condition VG+ --max-requests 60` (1 request per 100 wants, then 1 per 100 listings scanned; paste the printed `Continue scan:` for the rest). Other filters: `--sleeve`, `--ships-from`, `--max-price X --currency EUR`; for the seller's VG+-or-better stock, drop `--in-wantlist` (no credentials needed), and for everything, `get inventory <seller>` (server-side pages). `--in-wantlist` needs a token or OAuth |
+| What does seller X have from my wantlist? | `get inventory <seller> --in-wantlist --condition VG+ --max-requests 60` (1 request per 100 wants, then 1 per 100 listings scanned; an empty wantlist: 1 inventory page, not a scan; paste the printed `Continue scan:` for the rest). Other filters: `--sleeve`, `--ships-from`, `--max-price X --currency EUR`; for the seller's VG+-or-better stock, drop `--in-wantlist` (no credentials needed), and for everything, `get inventory <seller>` (server-side pages). `--in-wantlist` needs a token or OAuth |
 | What is on my wantlist? | `get wantlist` (5 a page; `--limit 100`, `--page N`) → `get release @r...` |
 | Which of these pressings do I want? | `get versions @m... --wanted` (no extra request), or `search release ... --wanted` (reads the wantlist once) |
 
@@ -172,7 +172,7 @@ Status: works, costly (a seller you name); not possible (finding such sellers)
 agent-discogs get inventory <seller> --in-wantlist --max-requests 60
 ```
 
-Reads your whole wantlist, then the seller's listings, 100 a request; add `--condition VG+` or `--ships-from France` to narrow.
+Reads your whole wantlist, then the seller's listings, 100 a request (only the first page when the wantlist is empty, since nothing can match); add `--condition VG+` or `--ships-from France` to narrow.
 
 Why not finding sellers: no endpoint lists or searches sellers, so none finds those holding several of your wants.
 
