@@ -42,7 +42,7 @@ Discogs' "Unofficial Release" covers bootlegs, counterfeits and pirate copies al
 
 A search needs a query or at least one non-blank filter; an out-of-range `--limit`/`--page` or an empty search fails with `invalid_argument` before any request.
 
-A query starting with `-` goes after `--` (`agent-discogs search --release-type all -- -ambient`); the printed `Next page:` command always puts the type and query there, so it pastes back unchanged.
+A query starting with `-` goes after `--` (`agent-discogs search --release-type all -- -ambient`); the printed `Next page:` command always puts the type and query there, so it pastes back unchanged, unless a value holds a character the text view rewrites (see below).
 
 The `Next page:` / `Continue scan:` command under any list repeats what you typed (the query, the filters, a username), and the text view prints a tab, a line break or another control, bidi or invisible character as a space or an escape such as `\u202e`, so a command repeating one would run another search. Such a run prints a note in place of the command, naming the first value affected and the character: `Next page: not printed, because --country holds U+0009, which a pasted command would not keep. Run the same command with --page 2.` (`--after CURSOR` after a client-side scan). Add that `--page` or `--after` to the command you ran, before any `--`; it is the one case where you add it by hand. `--json` is unaffected: it prints no command.
 
