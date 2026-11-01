@@ -549,7 +549,10 @@ Paging:
   --in-wantlist), and, for get lists and get wantlist, --limit (and
   --for-sale, --max-price and --currency), and puts a search's type and query
   after --, so a query such as -ambient survives (a seller's name starting
-  with - too).
+  with - too). When one of those values holds a tab, a line break or another
+  control, bidi or invisible character, which the pasted line could not keep,
+  a note replaces the command: it names the flag (or the query or username)
+  and says to run the same command with --page N or --after CURSOR added.
   Filtered lists scan Discogs' 100-row pages until --limit rows match or the
   list ends. 'Continue scan:' means the scan stopped early: --max-requests ran
   out (the header says so; before the scan started, it shows no counts and JSON

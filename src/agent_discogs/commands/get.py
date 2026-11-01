@@ -1211,6 +1211,7 @@ def _get_inventory(
         result,
         limit=limit,
         positionals=(username,) if dashed else (),
+        arguments="the username",
         condition=condition_code,
         sleeve=sleeve_code,
         ships_from=ships_from,

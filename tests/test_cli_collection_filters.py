@@ -107,6 +107,31 @@ class TestFilters:
         seen += [line.split()[0] for line in more.stdout.splitlines()[2:]]
         assert seen == _TECHNO_REFS  # every match once, in order
 
+    def test_a_title_with_a_tab_prints_how_to_continue(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        odd = {n: _moved(n, 1, title="a\tb") for n in (5, 150)}
+        h = _Harness(monkeypatch, _Collection(odd=odd))
+        argv = ["get", "collection", "--title", "a\tb", "--limit", "2"]
+        result, sent = h.run(*argv, "--max-requests", "3")
+        assert result.exit_code == 0, result.output
+        assert _paths(sent) == ["/oauth/identity", _FOLDER_LIST, _RECORDS]
+        assert result.stdout.splitlines()[-1] == (
+            "Continue scan: not printed, because --title holds U+0009, which a "
+            "pasted command would not keep. Run the same command with --after 2:100."
+        )
+        assert result.stdout.splitlines()[2].split()[0] == _numbered(5)[0]
+        cold = _Harness(monkeypatch, _Collection(odd=odd))
+        as_json, _ = cold.run(*argv, "--max-requests", "3", "--json")
+        assert _refs(as_json) == _numbered(5)
+        assert _document(as_json)["pagination"]["next_cursor"] == "2:100"
+
+        more, sent = cold.run(
+            *argv, "--max-requests", "3", "--after", "2:100", "--json"
+        )
+        assert _refs(more) == _numbered(150)
+        assert _pages(sent) == [2, 3]
+
     def test_a_cap_spent_before_the_scan_reads_no_page(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

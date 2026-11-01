@@ -669,6 +669,52 @@ class TestNewFilterContinuation:
         assert {"release_title", "credit", "track", "anv"} <= sent[-1].keys()
         assert sent[-1]["release_title"] == _TRICKY
 
+    @pytest.mark.parametrize(
+        ("release_type", "resume"),
+        [(["--release-type", "all"], "--page 2"), ([], "--after 2:100")],
+        ids=["server-side", "filtered"],
+    )
+    def test_a_title_with_a_tab_prints_how_to_continue(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        release_type: list[str],
+        resume: str,
+    ) -> None:
+        """The text view would print the tab as a space, so the command it
+        printed would search for another title: a note says what to add."""
+        api = _FakeAPI(monkeypatch, _Catalogue())
+        options = ["search", "--title", "a\tb", *release_type, "--limit", "2"]
+        first = CliRunner().invoke(cli, [*options, "--", "Spiral"])
+        assert first.exit_code == 0, first.output
+        assert _FOOTER.findall(first.stdout) == [
+            (
+                "not printed, because --title holds U+0009, which a pasted command "
+                f"would not keep. Run the same command with {resume}."
+            )
+        ]
+        assert "agent-discogs" not in first.stdout
+
+        second = CliRunner().invoke(cli, [*options, *resume.split(), "--", "Spiral"])
+        assert second.exit_code == 0, second.output
+        assert set(_ROW.findall(first.stdout)).isdisjoint(_ROW.findall(second.stdout))
+        sent = [params for path, params in api.sends if path == "/database/search"]
+        assert len({json.dumps({**p, "page": None}, sort_keys=True) for p in sent}) == 1
+        assert sent[-1]["release_title"] == "a\tb"
+
+    def test_a_query_with_a_bidi_override_prints_how_to_continue(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _FakeAPI(monkeypatch, _Catalogue())
+        result = CliRunner().invoke(cli, ["search", "--", "Spi\u202eral"])
+        assert result.exit_code == 0, result.output
+        assert _FOOTER.findall(result.stdout) == [
+            (
+                "not printed, because the search query holds U+202E, which a "
+                "pasted command would not keep. Run the same command with "
+                "--after 2:299."
+            )
+        ]
+
 
 _NEWEST_ADDED = datetime(2026, 10, 1, 12, tzinfo=timezone(timedelta(hours=-7)))
 

@@ -634,6 +634,7 @@ def search(
         result,
         limit=limit,
         positionals=args,  # as typed: re-parses to the same type and query
+        arguments="the search query",
         **filters,
         release_type=release_type if release_type != "official" else None,
         sort=sort,
