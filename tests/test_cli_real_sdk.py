@@ -20,6 +20,7 @@ import agent_discogs.client as client_module
 from agent_discogs import cli
 from tests.conftest import (
     RealSdk,
+    invocation,
 )
 
 _ONE_PAGE = {"page": 1, "pages": 1, "items": 1}
@@ -154,8 +155,7 @@ class TestRealSdk:
         result = CliRunner().invoke(cli, ["tracks", "--json", "@r1"])
         assert result.exit_code == 1
         assert self.sends == ["/releases/1"]
-        assert client_module._client is not None
-        assert client_module._client.auth_mode == mode
+        assert [built.auth_mode for built in self.sdk.clients] == [mode]
         assert json.loads(result.stdout) == {"error": expected}
         result = CliRunner().invoke(cli, ["tracks", "@r1"])
         assert result.exit_code == 1
@@ -659,8 +659,9 @@ class TestRealSdk:
         self.sdk.respond = lambda _request: httpx2.Response(
             200, json={"id": "one", "title": "T"}
         )
-        client = client_module.get_client()
-        client._send("GET", client._build_url("/releases/1"), parse=lambda d: d)
+        with invocation():
+            client = client_module.get_client()
+            client._send("GET", client._build_url("/releases/1"), parse=lambda d: d)
         self.sdk.respond = lambda _request: httpx2.Response(
             200, json=_RELEASE_WITH_HEADINGS
         )

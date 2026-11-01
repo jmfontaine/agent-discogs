@@ -3,15 +3,17 @@ and CLI result checks."""
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import re
 import shlex
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import click
 import httpx2
 import pytest
 from click.testing import CliRunner, Result
@@ -161,13 +163,15 @@ def json_error(result: Result) -> dict[str, Any]:
 
 class RealSdk:
     """What `real_sdk` sets up: the paths it sent (`sends`), the sleeps the
-    client asked for (`sleeps`), and `respond`, the function that answers
-    each request, which a test sets before it sends anything."""
+    client asked for (`sleeps`), the clients `get_client()` built (`clients`),
+    and `respond`, the function that answers each request, which a test sets
+    before it sends anything."""
 
     def __init__(self, cache_home: Path) -> None:
         self.cache_home = cache_home
         self.sends: list[str] = []
         self.sleeps: list[float] = []
+        self.clients: list[Discogs] = []
         self.respond: Callable[[httpx2.Request], httpx2.Response] = _unanswered
 
 
@@ -179,25 +183,41 @@ def _unanswered(request: httpx2.Request) -> httpx2.Response:
 def real_sdk(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[RealSdk]:
     """`get_client()` builds the real `Discogs` client, with a token, its
     SQLite cache under `tmp_path` and `time.sleep` recorded; only the HTTP
-    transport is faked."""
+    transport is faked. Each invocation closes the client it built; one built
+    outside a `cli` invocation needs `invocation()`."""
     sdk = RealSdk(tmp_path)
 
     def _transport(request: httpx2.Request) -> httpx2.Response:
         sdk.sends.append(request.url.path)
         return sdk.respond(request)
 
+    build = client_module._build
+
+    def _recorded() -> Discogs:
+        sdk.clients.append(build())
+        return sdk.clients[-1]
+
     http = httpx2.Client(transport=httpx2.MockTransport(_transport))
     monkeypatch.setenv("DISCOGS_TOKEN", "test-token")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.setattr("time.sleep", sdk.sleeps.append)
-    monkeypatch.setattr(client_module, "_client", None)
     monkeypatch.setattr(
         client_module, "Discogs", functools.partial(Discogs, http_client=http)
     )
+    monkeypatch.setattr(client_module, "_build", _recorded)
     yield sdk
-    if client_module._client is not None:
-        client_module._client.close()
     http.close()
+
+
+@contextlib.contextmanager
+def invocation() -> Generator[click.Context]:
+    """A click context standing in for one `cli` invocation, for calling
+    `get_client()` outside a command: it registers the closer the group
+    callback registers, so leaving it closes the client built inside."""
+    ctx = click.Context(cli)
+    ctx.call_on_close(functools.partial(client_module.close_client, ctx))
+    with ctx:
+        yield ctx
 
 
 class _FakeAPI:
@@ -224,7 +244,7 @@ class _FakeAPI:
             on_request=trace.record,
             max_retries=0,
         )
-        monkeypatch.setattr("agent_discogs.client._client", client)
+        monkeypatch.setattr(client_module, "_build", lambda: client)
 
     def _handle(self, request: httpx2.Request) -> httpx2.Response:
         params = dict(request.url.params)
