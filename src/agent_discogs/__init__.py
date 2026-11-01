@@ -203,7 +203,8 @@ Get Inventory: get inventory <username>: one seller's Marketplace listings, 5
                per 100 listings scanned, so always pass --max-requests with a
                filter: a seller with 50,000 listings is 500 requests.
                --in-wantlist reads your whole wantlist first (1 request for
-               your username, 1 per 100 wants). --json: listing, ref, title,
+               your username, 1 per 100 wants); an empty one then costs 1
+               inventory page, not a scan. --json: listing, ref, title,
                format, condition, sleeve, price, currency, ships_from,
                listed, url; --json --full: the listing records. No command
                finds every seller of one release (the API has no such
@@ -435,7 +436,9 @@ Options:
                    wants, all counted by --max-requests). When that read stops
                    short (--max-requests or a 429) no listing is scanned: an
                    empty page with Continue scan:, exit 0 (JSON: wantlist
-                   complete false, wants_read, total_wants)
+                   complete false, wants_read, total_wants). An empty
+                   wantlist read whole reads 1 inventory page, for the
+                   totals, instead of the scan
   -v, --verbose    get release: also print notes, credits, identifiers
   -c, --compact    get release: one-line "Tracks: N (mm:ss)" instead of the tracklist
                    (a suite counts as its parts, timed by their sum or else its

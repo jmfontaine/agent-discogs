@@ -53,7 +53,7 @@ What these commands cost; the footer, `--cached` and the per-minute budget are i
 | `get wantlist --for-sale` | on top of that: 1 per want checked (its Marketplace stats), wants read 100 per request; ~1 request per want when few are for sale. Pass `--max-requests` |
 | `get inventory <username>` | 1 per page of up to 100 listings (`--limit`); no username request |
 | `get inventory` with `--condition`, `--sleeve`, `--ships-from` or `--max-price` | 1 per 100 listings scanned (50,000 listings = 500 requests). Pass `--max-requests` |
-| `get inventory --in-wantlist` | on top of that: 1 for the username + 1 per 100 wants, read before any listing; a cap or 429 that stops it scans nothing |
+| `get inventory --in-wantlist` | on top of that: 1 for the username + 1 per 100 wants, read before any listing; a cap or 429 that stops it scans nothing; an empty wantlist replaces the scan with 1 inventory page (at most 3 requests in all) |
 | `--wanted` on `get versions`, `get releases` | 0: each row carries your want count |
 | `--wanted` on `search` | on top of the listing: 1 for the username (shared with `--owned`) + 1 per 100 wants, then free for an hour; nothing when the page has no release row |
 
@@ -176,7 +176,7 @@ Reads your whole wantlist, then the seller's listings, 100 a request; add `--con
 
 Why not finding sellers: no endpoint lists or searches sellers, so none finds those holding several of your wants.
 
-Cost: 1 (the username) + 1 per 100 wants + 1 per 100 listings scanned.
+Cost: 1 (the username) + 1 per 100 wants + 1 per 100 listings scanned; an empty wantlist: 1 + 1 + 1 inventory page.
 
 Would need: a seller search (Discogs API limit).
 
