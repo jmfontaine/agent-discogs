@@ -28,8 +28,8 @@ from typing import TYPE_CHECKING, Any
 import click
 from discogs_sdk import RateLimitError
 
-from agent_discogs import account, trace
-from agent_discogs.inventory import is_release_row, short_grade
+from agent_discogs import account, rows, trace
+from agent_discogs.inventory import short_grade
 from agent_discogs.pagination import (
     MAX_LIMIT,
     Listing,
@@ -328,23 +328,12 @@ class Ownership:
         return doc
 
 
-def _member(value: Any, name: str) -> Any:
-    """`value.name`, or `value[name]` for a dict: the SDK models a version
-    row's `stats`, but an artist or label row keeps the dict Discogs sent."""
-    if isinstance(value, dict):
-        return value.get(name)
-    return getattr(value, name, None)
-
-
 def user_stat(row: Any, name: str) -> int | None:
     """The authenticated user's own `stats.user.<name>` on a list row
     (`in_collection`, `in_wantlist`), which `get versions` and `get releases`
     rows carry; None when the row has no such integer (no user, or Discogs
     sent none)."""
-    value = _member(_member(_member(row, "stats"), "user"), name)
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
+    return rows.count(rows.field(rows.field(rows.field(row, "stats"), "user"), name))
 
 
 def _row_id(row: Any) -> int | None:
@@ -359,7 +348,7 @@ def mark_rows_with(
     """Give each release row of a page document (`results`, projected or
     `--full`, in `items` order) `key`: `value` of its item."""
     for row, item in zip(document["results"], items, strict=True):
-        if is_release_row(item):
+        if rows.is_release_row(item):
             row[key] = value(item)
 
 
@@ -399,7 +388,7 @@ def ownership_of(
     """The ownership to mark the `listing` page with, read once per
     invocation, or None, without a request, when the page has no release
     row: there is nothing to mark."""
-    if not any(is_release_row(item) for item in listing.items):
+    if not any(rows.is_release_row(item) for item in listing.items):
         return None
     meta = click.get_current_context().meta
     if _OWNERSHIP not in meta:
