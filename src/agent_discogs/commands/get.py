@@ -6,6 +6,7 @@ import functools
 import math
 import shlex
 import sys
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, get_args
 
@@ -20,6 +21,8 @@ from agent_discogs.collection import (
     ALL_FOLDER,
     COUNT_KEYS,
     DUPLICATE_KINDS,
+    CollectionRead,
+    CustomField,
     copies,
     count_records,
     custom_fields,
@@ -809,22 +812,61 @@ def _cap_spent(max_requests: int | None) -> bool:
     return max_requests is not None and trace.sends() >= max_requests
 
 
-def _collection_folder(
-    client: Discogs, *, folder: str | None, names: bool, max_requests: int | None
-) -> tuple[Any, dict[int, str], int | None]:
-    """The user, the folder list and the id of the folder to read.
+@dataclass(frozen=True)
+class _CollectionStart:
+    """What a `get collection` handler knows before it reads records: the
+    user, the folder list (`{}` when not read), the id of the folder to read
+    (None once the cap was spent after the username: nothing will be read)
+    and the custom fields (None when not read)."""
 
-    The username and the folder list go before the listing, the way a
-    header does, so --max-requests counts them first. The list is read to
-    name each copy's folder (`names`) or to resolve `folder`. Once the cap
-    is spent after the username, neither: there is no row to name and no
-    folder to resolve, and the folder id is None, as nothing will be read.
+    user: Any
+    names: dict[int, str]
+    folder: int | None
+    fields: dict[int, CustomField] | None
+
+
+def _prepare_collection(
+    client: Discogs,
+    *,
+    folder: str | None,
+    names: bool,
+    fields: bool,
+    max_requests: int | None,
+) -> _CollectionStart:
+    """The steps every `get collection` handler takes before its read.
+
+    The username, the folder list and the fields list go before the
+    records, the way a header does, so --max-requests counts them first.
+    The folder list is read to name each copy's folder (`names`) or to
+    resolve `folder`; the fields list with `fields`, after it, while the cap
+    allows. Once the cap is spent after the username, neither: there is no
+    row to name and no folder to resolve, and the folder id is None, as
+    nothing will be read.
     """
     user = account.user(client)
     if _cap_spent(max_requests):
-        return user, {}, None
+        return _CollectionStart(user, {}, None, None)
     found = folder_names(user) if names or folder is not None else {}
-    return user, found, ALL_FOLDER if folder is None else folder_id(found, folder)
+    read_folder = ALL_FOLDER if folder is None else folder_id(found, folder)
+    custom = custom_fields(user) if fields and not _cap_spent(max_requests) else None
+    return _CollectionStart(user, found, read_folder, custom)
+
+
+def _read_collection(
+    start: _CollectionStart, filters: dict[str, str], *, max_requests: int | None
+) -> tuple[list[Any], CollectionRead]:
+    """The whole folder `start` names, read for a view of the collection
+    (`--count-by`, `--duplicates`, a filtered `--random`), and the records
+    of it the filters keep. The filters apply after the read, which keeps
+    every record, so the scan's kept count is its rows fetched; nothing is
+    read once the cap was spent before it."""
+    if start.folder is None:
+        read = unread(ScanStop("max_requests", max_requests=max_requests))
+    else:
+        listing = records(start.user, folder=start.folder)
+        read = read_whole(listing, max_requests=max_requests)
+    keep = record_filter(filters)
+    return [record for record in read.records if keep is None or keep(record)], read
 
 
 def _get_collection(
@@ -846,24 +888,26 @@ def _get_collection(
     100-record pages. With `fields`, each row names the copy's notes."""
     # --full names folders by id, so it reads the list only to resolve
     # --folder; the fields list follows it, also counted by --max-requests.
-    user, names, read_folder = _collection_folder(
-        client, folder=folder, names=not mode.full, max_requests=max_requests
+    start = _prepare_collection(
+        client,
+        folder=folder,
+        names=not mode.full,
+        fields=fields,
+        max_requests=max_requests,
     )
     keep = record_filter(filters)
-    custom = None
-    if read_folder is None:
+    if start.folder is None:
         # Only a scan takes --max-requests; it continues where it was asked.
         result = unscanned(after, ScanStop("max_requests", max_requests=max_requests))
     else:
-        listing = records(user, folder=read_folder, sort=sort, desc=desc)
-        if fields and not _cap_spent(max_requests):
-            custom = custom_fields(user)
+        listing = records(start.user, folder=start.folder, sort=sort, desc=desc)
         if keep:
             result = fetch_filtered_page(
                 listing, limit=limit, keep=keep, cursor=after, max_requests=max_requests
             )
         else:
             result = fetch_page(listing, page=page or 1, per_page=limit)
+    names, custom = start.names, start.fields
 
     if mode.json:
         return mode.page(result, lambda record: project_record(record, names, custom))
@@ -917,17 +961,11 @@ def _get_collection_counts(
     the filters keep are counted; a read `--max-requests` or a 429 stopped
     gives the counts of the part read, flagged incomplete."""
     # Nothing printed names a folder: the list is read only for --folder.
-    user, _, read_folder = _collection_folder(
-        client, folder=folder, names=False, max_requests=max_requests
+    start = _prepare_collection(
+        client, folder=folder, names=False, fields=False, max_requests=max_requests
     )
-    if read_folder is None:
-        read = unread(ScanStop("max_requests", max_requests=max_requests))
-    else:
-        read = read_whole(records(user, folder=read_folder), max_requests=max_requests)
-    keep = record_filter(filters)
-    counts = count_records(
-        [record for record in read.records if keep is None or keep(record)], key
-    )
+    kept, read = _read_collection(start, filters, max_requests=max_requests)
+    counts = count_records(kept, key)
     if mode.json:
         return {
             "count_by": key,
@@ -963,20 +1001,16 @@ def _get_collection_duplicates(
     or a 429 stopped gives the groups of the part read, flagged incomplete."""
     # As the listing: --full names folders by id, and --fields reads the
     # fields list after the folder list, both counted by --max-requests.
-    user, names, read_folder = _collection_folder(
-        client, folder=folder, names=not mode.full, max_requests=max_requests
+    start = _prepare_collection(
+        client,
+        folder=folder,
+        names=not mode.full,
+        fields=fields,
+        max_requests=max_requests,
     )
-    custom = None
-    if read_folder is None:
-        read = unread(ScanStop("max_requests", max_requests=max_requests))
-    else:
-        if fields and not _cap_spent(max_requests):
-            custom = custom_fields(user)
-        read = read_whole(records(user, folder=read_folder), max_requests=max_requests)
-    keep = record_filter(filters)
-    found = find_duplicates(
-        [record for record in read.records if keep is None or keep(record)], kind
-    )
+    names, custom = start.names, start.fields
+    kept, read = _read_collection(start, filters, max_requests=max_requests)
+    found = find_duplicates(kept, kind)
     if mode.json:
         document: dict[str, Any] = {"duplicates": kind}
         if mode.full:
@@ -1025,27 +1059,24 @@ def _get_collection_random(
     read) and the draw is taken from the records the filters keep."""
     # As the listing: --full names folders by id, and --fields reads the
     # fields list after the folder list, both counted by --max-requests.
-    user, names, read_folder = _collection_folder(
-        client, folder=folder, names=not mode.full, max_requests=max_requests
+    start = _prepare_collection(
+        client,
+        folder=folder,
+        names=not mode.full,
+        fields=fields,
+        max_requests=max_requests,
     )
-    keep = record_filter(filters)
-    custom = None
+    names, custom = start.names, start.fields
     read = None
-    if read_folder is None:
-        # Only a filtered draw takes --max-requests.
-        read = unread(ScanStop("max_requests", max_requests=max_requests))
-        population, picked = 0, []
+    # Only a filtered draw takes --max-requests, so an unfiltered one always
+    # has a folder to read.
+    if not filters and start.folder is not None:
+        listing = records(start.user, folder=start.folder)
+        population, picked = sample_records(listing, count)
     else:
-        if fields and not _cap_spent(max_requests):
-            custom = custom_fields(user)
-        listing = records(user, folder=read_folder)
-        if keep is None:
-            population, picked = sample_records(listing, count)
-        else:
-            read = read_whole(listing, max_requests=max_requests)
-            kept = [record for record in read.records if keep(record)]
-            population = len(kept)
-            picked = [kept[position] for position in draw(population, count)]
+        kept, read = _read_collection(start, filters, max_requests=max_requests)
+        population = len(kept)
+        picked = [kept[position] for position in draw(population, count)]
     if mode.json:
         document: dict[str, Any] = {
             "random": {"requested": count, "population": population},

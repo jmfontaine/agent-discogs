@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from discogs_sdk import AuthMode
 
     from agent_discogs.collection import (
+        CollectionRead,
         Copies,
         Counts,
         Duplicates,
@@ -765,7 +766,7 @@ def format_collection_random(
     picked: list[Any],
     requested: int,
     population: int,
-    read: Ownership | None,
+    read: CollectionRead | None,
     *,
     folders: dict[int, str],
     fields: dict[int, CustomField] | None,
@@ -805,7 +806,7 @@ def _records(count: int) -> str:
     return f"{count:,} record{'' if count == 1 else 's'}"
 
 
-def _whole_read(counted: int, read: Ownership, lead: str = "") -> str:
+def _whole_read(counted: int, read: CollectionRead, lead: str = "") -> str:
     """The header counts of a view of the whole collection: `(250 records)`,
     `(12 of 250 records)` when filters kept 12 or the read stopped short,
     then why it stopped and after how many records, each after `lead`; or
@@ -818,7 +819,7 @@ def _whole_read(counted: int, read: Ownership, lead: str = "") -> str:
     return f"({lead}{shown}{_stop_suffix(read)})"
 
 
-def _stop_suffix(read: Ownership) -> str:
+def _stop_suffix(read: CollectionRead) -> str:
     """Why a read of the whole collection stopped and after how many
     records, for its header counts, or nothing when it did not."""
     if read.stop is None:
@@ -832,7 +833,7 @@ def format_collection_counts(
     username: str,
     key: str,
     counts: Counts,
-    read: Ownership,
+    read: CollectionRead,
     *,
     filters: dict[str, str],
     top: int | None,
@@ -908,7 +909,7 @@ def format_collection_duplicates(
     username: str,
     kind: str,
     found: Duplicates,
-    read: Ownership,
+    read: CollectionRead,
     *,
     folders: dict[int, str],
     fields: dict[int, CustomField] | None,

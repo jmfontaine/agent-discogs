@@ -289,30 +289,22 @@ def count_records(records: list[Any], key: str) -> Counts:
 
 
 @dataclass(frozen=True)
-class Ownership:
-    """Copies per release id in the part of the collection read, the records
-    read (in collection order), and why the read stopped short (`stop`), if
-    it did."""
+class CollectionRead:
+    """A read of a folder's records: the records read, in collection order,
+    the folder's size (None when no page was read), and why the read stopped
+    short (`stop`), if it did."""
 
-    counts: Counter[int]
-    records_read: int
+    records: tuple[Any, ...]
     total_records: int | None
     stop: ScanStop | None
-    records: tuple[Any, ...] = ()
+
+    @property
+    def records_read(self) -> int:
+        return len(self.records)
 
     @property
     def complete(self) -> bool:
         return self.stop is None
-
-    def owned(self, release_id: int | None) -> int | None:
-        """Copies of the release `release_id`: 0 (not owned) only once the
-        whole collection was read, None when the part read does not hold it,
-        or for no release id. A copy found in a partial read counts, though
-        more may be unread."""
-        if release_id is None:
-            return None
-        copies = self.counts[release_id]
-        return copies if copies or self.complete else None
 
     def document(self) -> dict[str, Any]:
         """The JSON `collection` object: how much was read, and why not all."""
@@ -324,6 +316,33 @@ class Ownership:
         if self.stop is not None:
             doc.update(self.stop.document())
         return doc
+
+
+@dataclass(frozen=True)
+class Ownership(CollectionRead):
+    """A read of the "All" folder for `--owned` and `get owned`, with the
+    copies per release id in the part read (`counts`)."""
+
+    counts: Counter[int]
+
+    @classmethod
+    def of(cls, read: CollectionRead) -> Ownership:
+        return cls(
+            read.records,
+            read.total_records,
+            read.stop,
+            Counter(record.id for record in read.records),
+        )
+
+    def owned(self, release_id: int | None) -> int | None:
+        """Copies of the release `release_id`: 0 (not owned) only once the
+        whole collection was read, None when the part read does not hold it,
+        or for no release id. A copy found in a partial read counts, though
+        more may be unread."""
+        if release_id is None:
+            return None
+        copies = self.counts[release_id]
+        return copies if copies or self.complete else None
 
 
 def user_stat(row: Any, name: str) -> int | None:
@@ -396,9 +415,9 @@ def ownership_of(
     return meta[_OWNERSHIP]
 
 
-def unread(stop: ScanStop) -> Ownership:
+def unread(stop: ScanStop) -> CollectionRead:
     """A collection read that `stop` ended before it read a record."""
-    return Ownership(Counter(), 0, None, stop)
+    return CollectionRead((), None, stop)
 
 
 def _collection_read(client: Discogs) -> Ownership:
@@ -415,7 +434,7 @@ def _read_ownership(
     client: Discogs, listing_stop: ScanStop | None, *, max_requests: int | None
 ) -> Ownership:
     """Read the user's collection: the username, then the "All" folder at
-    100 records per request.
+    100 records per request, into the copies per release.
 
     `max_requests` caps the sends of the whole command, as for every scan:
     with nothing left of it, not even the username is asked for. A 429 keeps
@@ -423,16 +442,18 @@ def _read_ownership(
     page; after a listing scan stopped by one, nothing is asked at all.
     """
     if listing_stop is not None and listing_stop.reason == "rate_limited":
-        return unread(listing_stop)
-    if max_requests is not None and trace.sends() >= max_requests:
-        return unread(ScanStop("max_requests", max_requests=max_requests))
-    try:
-        return read_whole(records(account.user(client)), max_requests=max_requests)
-    except RateLimitError as exc:
-        return unread(rate_limited_stop(exc))
+        read = unread(listing_stop)
+    elif max_requests is not None and trace.sends() >= max_requests:
+        read = unread(ScanStop("max_requests", max_requests=max_requests))
+    else:
+        try:
+            read = read_whole(records(account.user(client)), max_requests=max_requests)
+        except RateLimitError as exc:
+            read = unread(rate_limited_stop(exc))
+    return Ownership.of(read)
 
 
-def read_whole(listing: Listing, *, max_requests: int | None) -> Ownership:
+def read_whole(listing: Listing, *, max_requests: int | None) -> CollectionRead:
     """Every record of a folder's `listing`, 100 a request, unsorted, through
     the filtered-scan machinery: `max_requests` and a 429 after the first
     page stop it (the records read so far kept), and a 429 on the first page
@@ -440,13 +461,7 @@ def read_whole(listing: Listing, *, max_requests: int | None) -> Ownership:
     result = fetch_filtered_page(
         listing, limit=None, keep=keep_all, max_requests=max_requests
     )
-    return Ownership(
-        Counter(item.id for item in result.items),
-        len(result.items),
-        result.total_items,
-        result.stop,
-        tuple(result.items),
-    )
+    return CollectionRead(tuple(result.items), result.total_items, result.stop)
 
 
 def draw(population: int, count: int) -> list[int]:
