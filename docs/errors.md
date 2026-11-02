@@ -101,7 +101,7 @@ Before any request, `get stats` rejects with `invalid_argument` (no budget foote
 
 ## get releases and get versions argument errors
 
-Before any request, with `invalid_argument` (no budget footer): a blank value (empty, or only spaces) of `--role`, `--year`, `--country`, `--format` or `--label` (`--year needs a year, such as 1999 ('' given).`; when several are blank, the first of that list is reported), and a blank or unknown `--sort` key (`--sort '' is not valid for 'get releases'. Keys: year, title, format.`, also on `get collection` and `get inventory`). A flag the noun or ref does not take is reported as such first: `get releases @l647 --role ''` gets the label catalogue message, `get releases @a3857 --year ''` the `--year filters versions and label catalogues` one.
+Before any request, with `invalid_argument` (no budget footer): a blank value (empty, or only spaces) of `--role`, `--year`, `--country`, `--format` or `--label` (`--year needs a year, such as 1999 ('' given).`; when several are blank, the first of that list is reported), and a blank or unknown `--sort` key (`--sort '' is not valid for 'get releases'. Keys: year, title, format.`, also on `get collection` and `get inventory`), and `--desc` without `--sort` (`--desc needs --sort <key>.`). A flag the noun or ref does not take is reported as such first: `get releases @l647 --role ''` gets the label catalogue message, `get releases @a3857 --year ''` the `--year filters versions and label catalogues` one.
 
 ## get versions --market argument errors
 

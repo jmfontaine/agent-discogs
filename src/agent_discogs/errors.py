@@ -237,8 +237,12 @@ def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
 
     The order matters: `bad_response` (a 2xx the SDK cannot read, most of
     whose causes are `ValueError`s) is decided before the `ValueError` ->
-    `invalid_argument` branch. Text from Discogs or the transport enters a
-    message only through `sanitize.summary()`. The `CacheMissError` branch
+    `invalid_argument` branch. An API error's body and a connection error's
+    cause enter a message only through `sanitize.summary()`; an
+    `invalid_argument` from a `ValueError` may quote Discogs text (a folder
+    name from `collection.folder_id()`, a release title from `get versions`),
+    which `format_error()` (`sanitize.line()`) and `json_output.dumps()`
+    neutralize. The `CacheMissError` branch
     only builds the error: the footer learns about the miss from the SDK's
     own `source == "miss"` event. agent-discogs has no envelope or schema
     checks of its own, and `src/` never imports `httpx2`."""

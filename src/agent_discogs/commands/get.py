@@ -2315,6 +2315,8 @@ class _GetCommand(click.Command):
     "of the listing, largest first (reads the whole collection, 100 records a "
     "request; filters narrow what is counted)",
 )
+# A plain string, not a click.Choice: an unknown code is then `invalid_argument`
+# (`_price_error()`), not click's usage error.
 @click.option(
     "--currency",
     metavar="CODE",
