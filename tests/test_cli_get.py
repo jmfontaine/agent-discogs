@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shlex
 from typing import Any
 
 import httpx2
 import pytest
+from click.core import ParameterSource
 from click.testing import CliRunner
 from discogs_sdk import (
     MarketplaceReleaseStats,
@@ -16,6 +18,8 @@ from discogs_sdk import (
 from discogs_sdk.models import Artist, Label, LabelRelease
 
 from agent_discogs import cli
+from agent_discogs.commands.get import GetOptions
+from agent_discogs.commands.get import get as get_command
 from agent_discogs.pagination import PageResult
 from tests.conftest import (
     ServePage,
@@ -1211,3 +1215,55 @@ class TestShortcutCommands:
         result = CliRunner().invoke(cli, ["price", "@r123"])
         assert result.exit_code == 0
         assert "Price Guide:" in result.stdout
+
+
+class TestGetOptions:
+    """`get` hands its options to `_dispatch` as one `GetOptions`, which must
+    stay in step with the click declarations."""
+
+    _LOOSE = frozenset({"noun", "refs", "json_output", "full"})
+
+    def test_fields_match_the_click_options(self) -> None:
+        options = {f.name for f in dataclasses.fields(GetOptions)} - {"explicit"}
+        assert options == {p.name for p in get_command.params} - self._LOOSE
+
+    def test_defaults_match_the_click_options(self) -> None:
+        # The value click hands the callback for an option not given: its
+        # default, processed (`get_default()` returns click's UNSET sentinel
+        # for an option without one, which reaches the callback as None).
+        ctx = get_command.make_context("get", ["release", "@r1"])
+        defaults = {f.name: f.default for f in dataclasses.fields(GetOptions)}
+        for name, value in ctx.params.items():
+            if name not in self._LOOSE:
+                assert ctx.get_parameter_source(name) is ParameterSource.DEFAULT
+                assert defaults[name] == value, name
+
+    @staticmethod
+    def _dispatched(monkeypatch: pytest.MonkeyPatch, *argv: str) -> list[Any]:
+        calls: list[Any] = []
+
+        def dispatch(*args: Any, **_kwargs: Any) -> None:
+            calls.append(args[2])
+
+        monkeypatch.setattr("agent_discogs.commands.get._dispatch", dispatch)
+        result = CliRunner().invoke(cli, list(argv))
+        assert result.exit_code == 0, result.output
+        return calls
+
+    @pytest.mark.parametrize("shortcut", ["tracks", "price"])
+    def test_shortcuts_take_the_defaults(
+        self, monkeypatch: pytest.MonkeyPatch, shortcut: str
+    ) -> None:
+        [options] = self._dispatched(monkeypatch, shortcut, "@r1")
+        [plain] = self._dispatched(monkeypatch, "get", "release", "@r1")
+        assert options == GetOptions() == plain
+        assert options.explicit == plain.explicit == frozenset()
+
+    def test_explicit_holds_the_options_given(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        argv = ["get", "releases", "@a1", "--limit", "5"]
+        [limited] = self._dispatched(monkeypatch, *argv)
+        assert limited.explicit == {"limit"}
+        [sorted_] = self._dispatched(monkeypatch, *argv, "--sort", "year")
+        assert sorted_.explicit == {"limit", "sort"}

@@ -1405,6 +1405,88 @@ NOUN_OPTIONS: dict[str, frozenset[str]] = {
 NOUN_SPECIFIC_OPTIONS: frozenset[str] = frozenset().union(*NOUN_OPTIONS.values())
 
 
+@dataclass(frozen=True)
+class GetOptions:
+    """Every option of `get` but `--json` and `--full`, under click's
+    parameter names and with click's defaults, plus `explicit`, the
+    noun-specific options the user supplied (`_explicit_options()`). `get`
+    builds it once from what click hands over; the `tracks` and `price`
+    shortcuts use `GetOptions()`, every default and nothing explicit. A flag
+    added to `get` adds a field here (a test compares the two)."""
+
+    after: str | None = None
+    artist: str | None = None
+    compact: bool = False
+    condition: str | None = None
+    count_by: str | None = None
+    country: str | None = None
+    currency: str | None = None
+    desc: bool = False
+    duplicates: str | None = None
+    fields: bool = False
+    folder: str | None = None
+    for_sale: bool = False
+    format_: str | None = None
+    genre: str | None = None
+    in_wantlist: bool = False
+    label: str | None = None
+    limit: int = DEFAULT_LIMIT
+    market: bool = False
+    master_year: bool = False
+    max_price: float | None = None
+    max_requests: int | None = None
+    owned: bool = False
+    page: int | None = None
+    random_: int | None = None
+    release_type: str = "all"
+    role: str | None = None
+    ships_from: str | None = None
+    sleeve: str | None = None
+    sort: str | None = None
+    style_: str | None = None
+    title: str | None = None
+    top: int | None = None
+    value: bool = False
+    verbose: bool = False
+    wanted: bool = False
+    year: str | None = None
+    explicit: frozenset[str] = frozenset()
+
+    @functools.cached_property
+    def collection_filters(self) -> dict[str, str]:
+        """The `get collection` filters given, in the order the header and
+        the continuation repeat them."""
+        return {
+            key: value
+            for key, value in (
+                ("format", self.format_),
+                ("genre", self.genre),
+                ("style", self.style_),
+                ("year", self.year),
+                ("label", self.label),
+                ("artist", self.artist),
+                ("title", self.title),
+            )
+            if value is not None
+        }
+
+    @functools.cached_property
+    def currency_code(self) -> CurrencyCode | None:
+        """The currency `--currency` names, None without one. Read only after
+        `_flag_error()` has rejected an unknown code."""
+        return _currency(self.currency) if self.currency else None
+
+    @functools.cached_property
+    def condition_grade(self) -> str | None:
+        """The Discogs name of the `--condition` grade, None without one."""
+        return grade(self.condition) if self.condition else None
+
+    @functools.cached_property
+    def sleeve_grade(self) -> str | None:
+        """The Discogs name of the `--sleeve` grade, None without one."""
+        return grade(self.sleeve) if self.sleeve else None
+
+
 def _fresh() -> bool:
     """Whether this invocation runs under `--fresh`, which caches nothing, so
     the text header lookup is sent again on every run."""
@@ -1623,38 +1705,7 @@ def _collection_error(
 
 
 def _flag_error(
-    noun: str,
-    refs: tuple[str, ...],
-    *,
-    explicit: frozenset[str],
-    limit: int,
-    page: int | None,
-    after: str | None,
-    role: str | None,
-    year: str | None,
-    country: str | None,
-    label: str | None,
-    sort: str | None,
-    desc: bool,
-    format: str | None,  # noqa: A002  # click option name for --format
-    release_type: str,
-    max_requests: int | None,
-    owned: bool,
-    for_sale: bool,
-    market: bool,
-    max_price: float | None,
-    currency: str | None,
-    collection_filters: dict[str, str],
-    condition: str | None,
-    sleeve: str | None,
-    ships_from: str | None,
-    in_wantlist: bool,
-    folder: str | None,
-    count_by: str | None,
-    duplicates: str | None,
-    random_: int | None,
-    top: int | None,
-    full: bool,
+    noun: str, refs: tuple[str, ...], options: GetOptions, mode: Mode
 ) -> str | None:
     """Reject flag combinations that make no sense for this noun.
 
@@ -1665,6 +1716,12 @@ def _flag_error(
     `unofficial` with `--format`), `collection` with a filter, `wantlist
     --for-sale` and `inventory` with any of its filters.
     """
+    explicit = options.explicit
+    after, max_requests, currency = (
+        options.after,
+        options.max_requests,
+        options.currency,
+    )
     if noun == "lists" and refs:
         return (
             "get lists takes no ref: it lists your own lists. "
@@ -1678,15 +1735,15 @@ def _flag_error(
     if noun == "inventory":
         inventory_error = _inventory_error(
             refs,
-            condition=condition,
-            sleeve=sleeve,
-            ships_from=ships_from,
-            max_price=max_price,
+            condition=options.condition,
+            sleeve=options.sleeve,
+            ships_from=options.ships_from,
+            max_price=options.max_price,
             currency=currency,
         )
         if inventory_error:
             return inventory_error
-    if noun == "versions" and currency is not None and not market:
+    if noun == "versions" and currency is not None and not options.market:
         return "--currency needs --market with get versions."
     if noun in ("stats", "versions"):
         price_error = _price_error(None, currency)
@@ -1695,8 +1752,8 @@ def _flag_error(
     if noun == "wantlist":
         wantlist_error = _wantlist_error(
             refs,
-            for_sale=for_sale,
-            max_price=max_price,
+            for_sale=options.for_sale,
+            max_price=options.max_price,
             currency=currency,
             max_requests=max_requests,
         )
@@ -1706,20 +1763,25 @@ def _flag_error(
         collection_error = _collection_error(
             refs,
             explicit=explicit,
-            filters=collection_filters,
-            folder=folder,
+            filters=options.collection_filters,
+            folder=options.folder,
             max_requests=max_requests,
-            count_by=count_by,
-            duplicates=duplicates,
-            random_=random_,
-            top=top,
-            full=full,
+            count_by=options.count_by,
+            duplicates=options.duplicates,
+            random_=options.random_,
+            top=options.top,
+            full=mode.full,
         )
         if collection_error:
             return collection_error
     label_refs = noun == "releases" and any(r.startswith("@l") for r in refs)
     artist_refs = noun == "releases" and not all(r.startswith("@l") for r in refs)
-    inventory_filters = (condition, sleeve, ships_from, max_price)
+    inventory_filters = (
+        options.condition,
+        options.sleeve,
+        options.ships_from,
+        options.max_price,
+    )
     filtered = (
         (
             noun == "releases"
@@ -1727,13 +1789,13 @@ def _flag_error(
         )
         or (
             noun == "versions"
-            and _versions_scan(release_type, by_format="format_" in explicit)
+            and _versions_scan(options.release_type, by_format="format_" in explicit)
         )
-        or (noun == "wantlist" and for_sale)
-        or (noun == "collection" and bool(collection_filters))
+        or (noun == "wantlist" and options.for_sale)
+        or (noun == "collection" and bool(options.collection_filters))
         or (
             noun == "inventory"
-            and (in_wantlist or any(f is not None for f in inventory_filters))
+            and (options.in_wantlist or any(f is not None for f in inventory_filters))
         )
     )
     if after is not None and not filtered:
@@ -1755,7 +1817,7 @@ def _flag_error(
     # --owned and --wanted read nothing on these nouns (each row carries the
     # user's own counts), so only a scan or the --market lookups are left to
     # cap.
-    capped = filtered or (noun == "versions" and market)
+    capped = filtered or (noun == "versions" and options.market)
     if max_requests is not None and noun in ("releases", "versions") and not capped:
         if noun == "versions":
             return (
@@ -1769,7 +1831,11 @@ def _flag_error(
             "--role, or get releases @l... --year). This listing pages "
             "server-side and sends one request per page."
         )
-    if max_requests is not None and noun == "inventory" and not (filtered or owned):
+    if (
+        max_requests is not None
+        and noun == "inventory"
+        and not (filtered or options.owned)
+    ):
         return (
             "--max-requests caps the get inventory filter scan (--condition, "
             "--sleeve, --ships-from, --max-price or --in-wantlist) or the --owned "
@@ -1781,7 +1847,7 @@ def _flag_error(
             "--max-requests caps one scan, so it takes exactly one ref "
             f"({len(refs)} given): a capped listing continues one ref at a time."
         )
-    if filtered and page is not None:
+    if filtered and options.page is not None:
         return (
             "--page is not available while results are filtered client-side "
             "(--role, --year on a label catalogue, --release-type official or "
@@ -1810,7 +1876,7 @@ def _flag_error(
         )
     # After the applicability check, so a flag the noun does not take is
     # reported as such rather than as out of range.
-    bad_paging = paging_error(limit, page)
+    bad_paging = paging_error(options.limit, options.page)
     if bad_paging:
         return bad_paging
     bad_cap = max_requests_error(max_requests)
@@ -1821,11 +1887,11 @@ def _flag_error(
             "--year filters versions and label catalogues; for an artist "
             "discography use --sort year (optionally --desc) and page."
         )
-    if desc and "sort" not in explicit:
+    if options.desc and "sort" not in explicit:
         return "--desc needs --sort <key>."
-    if "sort" in explicit and sort not in SORT_KEYS[noun]:
+    if "sort" in explicit and options.sort not in SORT_KEYS[noun]:
         keys = ", ".join(SORT_KEYS[noun])
-        return f"--sort {sort!r} is not valid for 'get {noun}'. Keys: {keys}."
+        return f"--sort {options.sort!r} is not valid for 'get {noun}'. Keys: {keys}."
     if label_refs and ("role" in explicit or "sort" in explicit):
         return (
             "Label catalogues cannot be role-filtered or sorted: the Discogs API "
@@ -1838,11 +1904,11 @@ def _flag_error(
     # is reported as such.
     if noun in ("releases", "versions"):
         for flag, value, what in (
-            ("--role", role, "a credit role, such as Main or Remix"),
-            ("--year", year, "a year, such as 1999"),
-            ("--country", country, "a country, as Discogs names it"),
-            ("--format", format, "a format, such as Vinyl or CD"),
-            ("--label", label, "a label name"),
+            ("--role", options.role, "a credit role, such as Main or Remix"),
+            ("--year", options.year, "a year, such as 1999"),
+            ("--country", options.country, "a country, as Discogs names it"),
+            ("--format", options.format_, "a format, such as Vinyl or CD"),
+            ("--label", options.label, "a label name"),
         ):
             if value is not None and not value.strip():
                 return f"{flag} needs {what} ({value!r} given)."
@@ -1860,30 +1926,7 @@ MAX_REFS = 10
 
 
 def _run_one(
-    client: Discogs,
-    noun: str,
-    ref: str,
-    *,
-    page: int | None,
-    after: str | None,
-    limit: int,
-    country: str | None,
-    format: str | None,  # noqa: A002  # click option name for --format
-    label: str | None,
-    year: str | None,
-    sort: str | None,
-    desc: bool,
-    release_type: str,
-    role: str | None,
-    max_requests: int | None,
-    owned: bool,
-    wanted: bool,
-    verbose: bool,
-    compact: bool,
-    master_year: bool,
-    market: bool,
-    currency: CurrencyCode | None,
-    mode: Mode,
+    client: Discogs, noun: str, ref: str, options: GetOptions, mode: Mode
 ) -> tuple[Any, bool]:
     """One noun for one ref: text, or the JSON document, and whether it
     reports a failure of its own (a `get versions --market` row not cached)."""
@@ -1895,21 +1938,21 @@ def _run_one(
             entity_type,
             entity_id,
             ref,
-            page=page,
-            limit=limit,
-            country=country,
-            format=format,
-            label=label,
-            year=year,
-            sort=sort,
-            desc=desc,
-            release_type=release_type,
-            after=after,
-            owned=owned,
-            wanted=wanted,
-            market=market,
-            currency=currency,
-            max_requests=max_requests,
+            page=options.page,
+            limit=options.limit,
+            country=options.country,
+            format=options.format_,
+            label=options.label,
+            year=options.year,
+            sort=options.sort,
+            desc=options.desc,
+            release_type=options.release_type,
+            after=options.after,
+            owned=options.owned,
+            wanted=options.wanted,
+            market=options.market,
+            currency=options.currency_code,
+            max_requests=options.max_requests,
             mode=mode,
         )
     if noun == "artist":
@@ -1932,9 +1975,9 @@ def _run_one(
         output = _get_release(
             client,
             entity_id,
-            verbose=verbose,
-            compact=compact,
-            master_year=master_year,
+            verbose=options.verbose,
+            compact=options.compact,
+            master_year=options.master_year,
             mode=mode,
         )
         return output, False
@@ -1943,65 +1986,29 @@ def _run_one(
             client,
             entity_type,
             entity_id,
-            page=page,
-            after=after,
-            limit=limit,
-            role=role,
-            year=year,
-            sort=sort,
-            desc=desc,
-            max_requests=max_requests,
-            owned=owned,
-            wanted=wanted,
+            page=options.page,
+            after=options.after,
+            limit=options.limit,
+            role=options.role,
+            year=options.year,
+            sort=options.sort,
+            desc=options.desc,
+            max_requests=options.max_requests,
+            owned=options.owned,
+            wanted=options.wanted,
             mode=mode,
         )
         return output, False
     if noun == "stats":
-        return _get_stats(client, entity_id, currency=currency, mode=mode), False
+        output = _get_stats(
+            client, entity_id, currency=options.currency_code, mode=mode
+        )
+        return output, False
     return _get_tracklist(client, entity_id, mode), False
 
 
 def _dispatch(
-    noun: str,
-    refs: tuple[str, ...],
-    *,
-    page: int | None,
-    after: str | None,
-    limit: int,
-    country: str | None,
-    format: str | None,  # noqa: A002  # click option name for --format
-    label: str | None,
-    year: str | None,
-    genre: str | None,
-    style_: str | None,
-    sort: str | None,
-    desc: bool,
-    release_type: str,
-    role: str | None,
-    max_requests: int | None,
-    owned: bool,
-    wanted: bool,
-    for_sale: bool,
-    market: bool,
-    max_price: float | None,
-    currency: str | None,
-    value: bool,
-    condition: str | None,
-    sleeve: str | None,
-    ships_from: str | None,
-    in_wantlist: bool,
-    artist: str | None,
-    title: str | None,
-    folder: str | None,
-    fields: bool,
-    count_by: str | None,
-    duplicates: str | None,
-    random_: int | None,
-    top: int | None,
-    verbose: bool,
-    compact: bool,
-    master_year: bool,
-    mode: Mode,
+    noun: str, refs: tuple[str, ...], options: GetOptions, mode: Mode
 ) -> None:
     """Shared dispatch for get, tracks, and price: one or many refs.
 
@@ -2015,54 +2022,7 @@ def _dispatch(
     JSON envelope). `collection`, `lists` and `wantlist` take no ref and
     `inventory` one username; each prints one document.
     """
-    # The `get collection` filters, in the order the header and the
-    # continuation repeat them.
-    collection_filters = {
-        key: value
-        for key, value in (
-            ("format", format),
-            ("genre", genre),
-            ("style", style_),
-            ("year", year),
-            ("label", label),
-            ("artist", artist),
-            ("title", title),
-        )
-        if value is not None
-    }
-    flag_error = _flag_error(
-        noun,
-        refs,
-        explicit=_explicit_options(),
-        limit=limit,
-        page=page,
-        after=after,
-        role=role,
-        year=year,
-        country=country,
-        label=label,
-        sort=sort,
-        desc=desc,
-        format=format,
-        release_type=release_type,
-        max_requests=max_requests,
-        owned=owned,
-        for_sale=for_sale,
-        market=market,
-        max_price=max_price,
-        currency=currency,
-        collection_filters=collection_filters,
-        folder=folder,
-        count_by=count_by,
-        duplicates=duplicates,
-        random_=random_,
-        top=top,
-        condition=condition,
-        sleeve=sleeve,
-        ships_from=ships_from,
-        in_wantlist=in_wantlist,
-        full=mode.full,
-    )
+    flag_error = _flag_error(noun, refs, options, mode)
     if flag_error:
         fail(ValueError(flag_error), json_output=mode.json)
     if len(refs) > MAX_REFS:
@@ -2076,11 +2036,11 @@ def _dispatch(
         "owned": "get owned",
         "wantlist": "get wantlist",
     }.get(noun)
-    if feature is None and in_wantlist:
+    if feature is None and options.in_wantlist:
         feature = "--in-wantlist"
-    elif feature is None and owned:
+    elif feature is None and options.owned:
         feature = "--owned"
-    elif feature is None and wanted:
+    elif feature is None and options.wanted:
         feature = "--wanted"
     if feature:
         # Inside the boundary: the check builds a throwaway client, which can
@@ -2098,39 +2058,40 @@ def _dispatch(
         fail(e, json_output=mode.json)
 
     if noun in REFLESS_NOUNS:
+        filters = options.collection_filters
         try:
-            if noun == "collection" and value:
+            if noun == "collection" and options.value:
                 output, failed = _get_collection_value(client, mode), False
-            elif noun == "collection" and count_by:
+            elif noun == "collection" and options.count_by:
                 output = _get_collection_counts(
                     client,
-                    key=count_by,
-                    top=top,
-                    filters=collection_filters,
-                    folder=folder,
-                    max_requests=max_requests,
+                    key=options.count_by,
+                    top=options.top,
+                    filters=filters,
+                    folder=options.folder,
+                    max_requests=options.max_requests,
                     mode=mode,
                 )
                 failed = False
-            elif noun == "collection" and duplicates:
+            elif noun == "collection" and options.duplicates:
                 output = _get_collection_duplicates(
                     client,
-                    kind=duplicates,
-                    filters=collection_filters,
-                    folder=folder,
-                    fields=fields,
-                    max_requests=max_requests,
+                    kind=options.duplicates,
+                    filters=filters,
+                    folder=options.folder,
+                    fields=options.fields,
+                    max_requests=options.max_requests,
                     mode=mode,
                 )
                 failed = False
-            elif noun == "collection" and random_ is not None:
+            elif noun == "collection" and options.random_ is not None:
                 output = _get_collection_random(
                     client,
-                    count=random_,
-                    filters=collection_filters,
-                    folder=folder,
-                    fields=fields,
-                    max_requests=max_requests,
+                    count=options.random_,
+                    filters=filters,
+                    folder=options.folder,
+                    fields=options.fields,
+                    max_requests=options.max_requests,
                     mode=mode,
                 )
                 failed = False
@@ -2138,32 +2099,34 @@ def _dispatch(
                 output, failed = (
                     _get_collection(
                         client,
-                        page=page,
-                        limit=limit,
-                        after=after,
-                        filters=collection_filters,
-                        folder=folder,
-                        fields=fields,
-                        sort=sort,
-                        desc=desc,
-                        max_requests=max_requests,
+                        page=options.page,
+                        limit=options.limit,
+                        after=options.after,
+                        filters=filters,
+                        folder=options.folder,
+                        fields=options.fields,
+                        sort=options.sort,
+                        desc=options.desc,
+                        max_requests=options.max_requests,
                         mode=mode,
                     ),
                     False,
                 )
             elif noun == "lists":
-                output = _get_lists(client, page=page, limit=limit, mode=mode)
+                output = _get_lists(
+                    client, page=options.page, limit=options.limit, mode=mode
+                )
                 failed = False
             else:
                 output, failed = _get_wantlist(
                     client,
-                    page=page,
-                    limit=limit,
-                    after=after,
-                    for_sale=for_sale,
-                    max_price=max_price,
-                    currency=_currency(currency) if currency else None,
-                    max_requests=max_requests,
+                    page=options.page,
+                    limit=options.limit,
+                    after=options.after,
+                    for_sale=options.for_sale,
+                    max_price=options.max_price,
+                    currency=options.currency_code,
+                    max_requests=options.max_requests,
                     mode=mode,
                 )
         except Exception as e:  # noqa: BLE001
@@ -2181,19 +2144,19 @@ def _dispatch(
             output = _get_inventory(
                 client,
                 refs[0],
-                page=page,
-                limit=limit,
-                after=after,
-                sort=sort,
-                desc=desc,
-                condition=grade(condition) if condition else None,
-                sleeve=grade(sleeve) if sleeve else None,
-                ships_from=ships_from,
-                max_price=max_price,
-                currency=_currency(currency) if currency else None,
-                in_wantlist=in_wantlist,
-                owned=owned,
-                max_requests=max_requests,
+                page=options.page,
+                limit=options.limit,
+                after=options.after,
+                sort=options.sort,
+                desc=options.desc,
+                condition=options.condition_grade,
+                sleeve=options.sleeve_grade,
+                ships_from=options.ships_from,
+                max_price=options.max_price,
+                currency=options.currency_code,
+                in_wantlist=options.in_wantlist,
+                owned=options.owned,
+                max_requests=options.max_requests,
                 mode=mode,
             )
         except Exception as e:  # noqa: BLE001
@@ -2210,31 +2173,7 @@ def _dispatch(
     for ref in refs:
         context = f"{noun.title()} {ref}"
         try:
-            output, missed = _run_one(
-                client,
-                noun,
-                ref,
-                page=page,
-                after=after,
-                limit=limit,
-                country=country,
-                format=format,
-                label=label,
-                year=year,
-                sort=sort,
-                desc=desc,
-                release_type=release_type,
-                role=role,
-                max_requests=max_requests,
-                owned=owned,
-                wanted=wanted,
-                verbose=verbose,
-                compact=compact,
-                master_year=master_year,
-                market=market,
-                currency=_currency(currency) if currency else None,
-                mode=mode,
-            )
+            output, missed = _run_one(client, noun, ref, options, mode)
             blocks.append(output)
             failed = failed or missed
         except Exception as e:  # noqa: BLE001
@@ -2560,42 +2499,7 @@ def get(
     refs: tuple[str, ...],
     json_output: bool,
     full: bool,
-    after: str | None,
-    compact: bool,
-    condition: str | None,
-    country: str | None,
-    currency: str | None,
-    desc: bool,
-    format_: str | None,
-    for_sale: bool,
-    genre: str | None,
-    in_wantlist: bool,
-    label: str | None,
-    limit: int,
-    market: bool,
-    master_year: bool,
-    max_price: float | None,
-    max_requests: int | None,
-    owned: bool,
-    page: int | None,
-    release_type: str,
-    role: str | None,
-    ships_from: str | None,
-    sleeve: str | None,
-    sort: str | None,
-    style_: str | None,
-    value: bool,
-    artist: str | None,
-    title: str | None,
-    folder: str | None,
-    fields: bool,
-    count_by: str | None,
-    duplicates: str | None,
-    random_: int | None,
-    top: int | None,
-    verbose: bool,
-    wanted: bool,
-    year: str | None,
+    **options: Any,
 ) -> None:
     """Get entity details for one or more refs.
 
@@ -2611,91 +2515,17 @@ def get(
         ctx = click.get_current_context()
         param = next(p for p in ctx.command.params if p.name == "refs")
         raise click.MissingParameter(ctx=ctx, param=param)
+    mode = _mode(json_output, full)
     _dispatch(
         NOUN_ALIASES.get(noun, noun),
         refs,
-        page=page,
-        after=after,
-        limit=limit,
-        country=country,
-        format=format_,
-        label=label,
-        year=year,
-        genre=genre,
-        style_=style_,
-        sort=sort,
-        desc=desc,
-        release_type=release_type,
-        role=role,
-        max_requests=max_requests,
-        owned=owned,
-        wanted=wanted,
-        for_sale=for_sale,
-        market=market,
-        max_price=max_price,
-        currency=currency,
-        value=value,
-        artist=artist,
-        title=title,
-        folder=folder,
-        fields=fields,
-        count_by=count_by,
-        duplicates=duplicates,
-        random_=random_,
-        top=top,
-        condition=condition,
-        sleeve=sleeve,
-        ships_from=ships_from,
-        in_wantlist=in_wantlist,
-        verbose=verbose,
-        compact=compact,
-        master_year=master_year,
-        mode=_mode(json_output, full),
+        GetOptions(**options, explicit=_explicit_options()),
+        mode,
     )
 
 
 def _shortcut(noun: str, refs: tuple[str, ...], json_output: bool, full: bool) -> None:
-    _dispatch(
-        noun,
-        refs,
-        page=None,
-        after=None,
-        limit=DEFAULT_LIMIT,
-        country=None,
-        format=None,
-        label=None,
-        year=None,
-        genre=None,
-        style_=None,
-        sort=None,
-        desc=False,
-        release_type="all",
-        role=None,
-        max_requests=None,
-        owned=False,
-        wanted=False,
-        for_sale=False,
-        market=False,
-        max_price=None,
-        currency=None,
-        value=False,
-        artist=None,
-        title=None,
-        folder=None,
-        fields=False,
-        count_by=None,
-        duplicates=None,
-        random_=None,
-        top=None,
-        condition=None,
-        sleeve=None,
-        ships_from=None,
-        in_wantlist=False,
-        verbose=False,
-        compact=False,
-        master_year=False,
-        mode=_mode(json_output, full),
-    )
+    _dispatch(noun, refs, GetOptions(), _mode(json_output, full))
 
 
 @click.command()
