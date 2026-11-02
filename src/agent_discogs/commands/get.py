@@ -1159,8 +1159,9 @@ def _get_inventory(
 ) -> Any:
     """A seller's listings, server-side pages; with a filter, a client-side
     scan. `--in-wantlist` reads the whole wantlist first, and scans nothing
-    when that read stops short. `condition` and `sleeve` are grade names
-    (`GRADES` keys); `max_price` comes with its `currency`."""
+    when that read stops short; against an empty wantlist read whole it reads
+    the first page alone, for the totals. `condition` and `sleeve` are grade
+    names (`GRADES` keys); `max_price` comes with its `currency`."""
     wants = read_wantlist(client, max_requests=max_requests) if in_wantlist else None
     # _inventory_error lets through both or neither.
     cap = None if max_price is None or currency is None else (max_price, currency)
@@ -1183,6 +1184,7 @@ def _get_inventory(
             keep=check,
             cursor=after,
             max_requests=max_requests,
+            totals_only=wants is not None and not wants.ids,
         )
     else:
         result = fetch_page(listing, page=page or 1, per_page=limit)

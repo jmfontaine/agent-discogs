@@ -25,7 +25,7 @@ The `--owned` collection read of `search` and `get inventory` shows in the panel
 
 The `get wantlist --for-sale` scan has a `scan` row as well: its API calls are the wants pages (100 wants each), its rows fetched every want on those pages (checked or not), and its rows kept the wants it kept. Each want's Marketplace stats lookup is a `GET /marketplace/stats/{id}` row of its own, which the scan row's API calls do not count.
 
-`get inventory` is a scan with any filter (`--condition`, `--sleeve`, `--ships-from`, `--max-price`, `--in-wantlist`), so it has a `scan` row (API calls are the inventory pages, 100 listings each), and the wantlist read by `--in-wantlist` has a `scan` row of its own, like the `--owned` collection read, with rows fetched and kept equal.
+`get inventory` is a scan with any filter (`--condition`, `--sleeve`, `--ships-from`, `--max-price`, `--in-wantlist`), so it has a `scan` row (API calls are the inventory pages, 100 listings each; after `--in-wantlist` read an empty wantlist whole, it is one page, since no listing can match), and the wantlist read by `--in-wantlist` has a `scan` row of its own, like the `--owned` collection read, with rows fetched and kept equal.
 
 ## Output encoding
 

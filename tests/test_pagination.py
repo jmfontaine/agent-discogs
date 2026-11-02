@@ -226,9 +226,15 @@ def _scan(
     keep: Callable[[Any], bool],
     cursor: str | None,
     max_requests: int | None = None,
+    totals_only: bool = False,
 ) -> PageResult:
     return fetch_filtered_page(
-        listing, limit=limit, keep=keep, cursor=cursor, max_requests=max_requests
+        listing,
+        limit=limit,
+        keep=keep,
+        cursor=cursor,
+        max_requests=max_requests,
+        totals_only=totals_only,
     )
 
 
@@ -383,6 +389,46 @@ class TestFetchFilteredPage:
         assert notes[-1] == trace.ScanNote(
             api_calls=2, rows=200, kept=0, stop="max_requests"
         )
+
+    def test_totals_only_reads_one_page_and_keeps_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A scan whose `keep` can match no row reads the page it would start
+        on for the totals, then ends complete."""
+        notes: list[trace.ScanNote] = []
+        monkeypatch.setattr(trace, "note_scan", notes.append)
+        listing = _PagedListing(1000)
+        result = _scan(
+            listing, limit=5, keep=lambda _: True, cursor="4:250", totals_only=True
+        )
+        assert listing.calls == [3]
+        assert listing.per_pages == [100]
+        assert result.items == []
+        assert (result.page, result.total_items, result.total_pages) == (4, 1000, 10)
+        assert result.stop is None
+        assert result.next_cursor is None
+        assert notes == [trace.ScanNote(api_calls=1, rows=100, kept=0, stop=None)]
+
+    @pytest.mark.parametrize(("max_requests", "calls"), [(1, []), (2, [1])])
+    def test_totals_only_checks_the_cap_before_its_page(
+        self, monkeypatch: pytest.MonkeyPatch, max_requests: int, calls: list[int]
+    ) -> None:
+        monkeypatch.setattr(trace, "sends", lambda: 1)
+        listing = _PagedListing(1000)
+        result = _scan(
+            listing,
+            limit=5,
+            keep=lambda _: True,
+            cursor=None,
+            max_requests=max_requests,
+            totals_only=True,
+        )
+        assert listing.calls == calls
+        if calls:
+            assert (result.stop, result.next_cursor) == (None, None)
+        else:
+            assert result.stop == ScanStop("max_requests", max_requests=1)
+            assert result.next_cursor == "1:0"
 
 
 class TestDropRepeats:

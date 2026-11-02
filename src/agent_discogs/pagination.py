@@ -305,6 +305,7 @@ def fetch_filtered_page(
     cursor: str | None = None,
     max_requests: int | None = None,
     keep_sends: bool = False,
+    totals_only: bool = False,
 ) -> PageResult:
     """Fetch one page of client-side filtered results, resuming from `cursor`.
 
@@ -326,6 +327,11 @@ def fetch_filtered_page(
     and a 429 from `keep` stops the scan with the rows kept so far, on any
     page. Either way the cursor names the row `keep` did not decide, so a
     continuation checks it first and never checks a row twice.
+
+    With `totals_only`, no row can match (`--in-wantlist` against an empty
+    wantlist read whole): only the page the scan would start on is read,
+    after the same cap check, for its totals, no row is kept, and the scan
+    ends complete, with no cursor.
 
     A returned cursor guarantees unscanned raw rows remain, not that they
     match `keep`.
@@ -357,6 +363,8 @@ def fetch_filtered_page(
         # fetch_page always reports both totals.
         total_items, last_page = result.total_items, result.total_pages or 0
         total_pages = last_page
+        if totals_only:
+            break
 
         for idx in range(offset, len(result.items)):
             item = result.items[idx]

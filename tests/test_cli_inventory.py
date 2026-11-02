@@ -570,6 +570,138 @@ class TestInWantlist:
             "retry_after": 30,
         }
 
+    def test_an_empty_wantlist_reads_one_inventory_page(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No listing can match an empty wantlist read whole: only the first
+        inventory page is read, for its totals."""
+        h = _Harness(monkeypatch, _Seller(wants=0))
+        argv = ["get", "inventory", "seller", "--in-wantlist"]
+        result, sent = h.run(*argv, "--json")
+        assert _paths(sent) == ["/oauth/identity", _WANTS, _INVENTORY]
+        assert sent[2] == (_INVENTORY, {"page": "1", "per_page": "100"})
+        assert _document(result) == {
+            "pagination": {
+                "page": 1,
+                "total_items": 300,
+                "total_pages": 3,
+                "filtered": True,
+                "capped": False,
+                "next_cursor": None,
+            },
+            "results": [],
+            "wantlist": {"complete": True, "wants_read": 0, "total_wants": 0},
+        }
+        # Only the first inventory page was cached, and it is all a rerun needs.
+        cached, sent = h.run("--cached", *argv, "--json")
+        assert sent == []
+        assert _document(cached) == _document(result)
+
+        h = _Harness(monkeypatch, _Seller(wants=0))  # a cold cache
+        text, sent = h.run(*argv)
+        assert text.exit_code == 0, text.output
+        assert _paths(sent) == ["/oauth/identity", _WANTS, _INVENTORY]
+        lines = text.stdout.splitlines()
+        assert lines[0] == "Inventory: seller in wantlist (page 1, 0 of ≤300 listings)"
+        assert not any(line.startswith("Continue scan:") for line in lines)
+
+    @pytest.mark.parametrize(
+        ("flags", "params"),
+        [
+            (["--condition", "VG+"], {}),
+            (["--sort", "price", "--desc"], {"sort": "price", "sort_order": "desc"}),
+        ],
+    )
+    def test_an_empty_wantlist_with_other_flags_reads_one_page(
+        self, monkeypatch: pytest.MonkeyPatch, flags: list[str], params: dict[str, str]
+    ) -> None:
+        h = _Harness(monkeypatch, _Seller(wants=0))
+        argv = ["get", "inventory", "seller", "--in-wantlist", *flags]
+        result, sent = h.run(*argv, "--json")
+        document = _document(result)
+        assert sent[2:] == [(_INVENTORY, {**params, "page": "1", "per_page": "100"})]
+        assert document["results"] == []
+        assert document["pagination"]["capped"] is False
+        assert document["pagination"]["next_cursor"] is None
+
+    def test_an_empty_wantlist_under_max_requests(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One send left reads the page and the answer is complete; none left
+        is the empty capped page, continuing from the cursor asked for."""
+        argv = ["get", "inventory", "seller", "--in-wantlist", "--json"]
+        h = _Harness(monkeypatch, _Seller(wants=0))
+        result, sent = h.run(*argv, "--max-requests", "3")
+        assert _paths(sent) == ["/oauth/identity", _WANTS, _INVENTORY]
+        assert _document(result)["pagination"] == {
+            "page": 1,
+            "total_items": 300,
+            "total_pages": 3,
+            "filtered": True,
+            "capped": False,
+            "next_cursor": None,
+        }
+
+        for after, page, cursor in [([], 1, "1:0"), (["--after", "9:250"], 9, "9:250")]:
+            h = _Harness(monkeypatch, _Seller(wants=0))  # a cold cache
+            capped, sent = h.run(*argv, "--max-requests", "2", *after)
+            assert _paths(sent) == ["/oauth/identity", _WANTS]
+            assert _document(capped)["pagination"] == {
+                "page": page,
+                "total_items": None,
+                "total_pages": None,
+                "filtered": True,
+                "capped": True,
+                "next_cursor": cursor,
+                "stop_reason": "max_requests",
+            }
+
+    @pytest.mark.parametrize(
+        ("after", "page"),
+        # Row 250 is on API page 3, as row 200 is; only the second cursor's
+        # display page is the API page.
+        [("9:250", 9), ("3:200", 3)],
+    )
+    def test_an_empty_wantlist_after_a_cursor_reads_its_api_page(
+        self, monkeypatch: pytest.MonkeyPatch, after: str, page: int
+    ) -> None:
+        h = _Harness(monkeypatch, _Seller(wants=0))
+        argv = ["get", "inventory", "seller", "--in-wantlist", "--after", after]
+        result, sent = h.run(*argv, "--json")
+        assert sent[2:] == [(_INVENTORY, {"page": "3", "per_page": "100"})]
+        assert _document(result)["pagination"] == {
+            "page": page,
+            "total_items": 300,
+            "total_pages": 3,
+            "filtered": True,
+            "capped": False,
+            "next_cursor": None,
+        }
+
+    def test_an_empty_wantlist_and_a_seller_with_no_listings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, _Seller(0, wants=0))
+        result, sent = h.run("get", "inventory", "seller", "--in-wantlist", "--json")
+        assert _paths(sent) == ["/oauth/identity", _WANTS, _INVENTORY]
+        assert _document(result)["pagination"]["total_items"] == 0
+
+    def test_an_empty_wantlist_and_a_rate_limited_page_is_an_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, _Seller(wants=0, throttle=("inventory:1",)))
+        result, _ = h.run("get", "inventory", "seller", "--in-wantlist", "--json")
+        assert json_error(result)["code"] == "rate_limited"
+
+    def test_an_empty_wantlist_with_owned_reads_no_collection(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        h = _Harness(monkeypatch, _Seller(wants=0, owned=(100,)))
+        argv = ["get", "inventory", "seller", "--in-wantlist", "--owned", "--json"]
+        result, sent = h.run(*argv)
+        assert _paths(sent) == ["/oauth/identity", _WANTS, _INVENTORY]
+        assert "collection" not in _document(result)
+
 
 class TestOwned:
     def test_marks_a_listing_by_its_release(
