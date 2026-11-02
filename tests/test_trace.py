@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NoReturn
 
+import click
 import pytest
 from discogs_sdk import RateLimit, RequestEvent
 
+from agent_discogs import trace
 from agent_discogs.trace import (
     LOW_BUDGET,
     ScanNote,
     Trace,
+    _count_sends,
     _CountingWriter,
     _tilde,
     render_footer,
@@ -39,6 +42,40 @@ def _event(
         stored=False,
         ratelimit=ratelimit,
     )
+
+
+class TestSends:
+    def test_counts_network_attempts_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(trace, "_trace", Trace())
+        events = [
+            _event(),
+            # A transport failure: no status code, every attempt was a send.
+            _event(status_code=None, attempts=3),
+            _event(source="cache"),
+            _event(source="miss", status_code=None),
+        ]
+        counts = []
+        for event in events:
+            trace.record(event)
+            assert trace.sends() == _count_sends(trace._trace.events)
+            counts.append(trace.sends())
+        assert counts == [1, 4, 4, 4]
+
+        trace.begin(click.Context(click.Command("get")), debug=False)
+        assert trace.sends() == 0
+
+    def test_does_not_walk_the_events(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        class Unwalkable(list[RequestEvent]):
+            def __iter__(self) -> NoReturn:
+                raise AssertionError("sends() walked the events")
+
+        monkeypatch.setattr(trace, "_trace", Trace())
+        trace.record(_event())
+        trace.record(_event())
+        trace._trace.events = Unwalkable(trace._trace.events)
+        assert trace.sends() == 2
 
 
 class TestRenderFooter:
