@@ -52,6 +52,15 @@ def test_config_imports_nothing_from_the_package() -> None:
     assert _import_graph()[f"{PACKAGE}.config"] == set()
 
 
+def test_rows_imports_nothing_from_the_package_but_refs() -> None:
+    assert _import_graph()[f"{PACKAGE}.rows"] <= {f"{PACKAGE}.refs"}
+
+
+def test_projections_does_not_import_formatting() -> None:
+    # The JSON side reads rows through `rows`, never through the text renderer.
+    assert f"{PACKAGE}.formatting" not in _import_graph()[f"{PACKAGE}.projections"]
+
+
 def test_package_has_no_import_cycle() -> None:
     # Raises graphlib.CycleError naming the cycle.
     TopologicalSorter(_import_graph()).prepare()

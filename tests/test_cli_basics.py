@@ -205,7 +205,6 @@ class TestStatusCommand:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         monkeypatch.setenv("DISCOGS_TOKEN", "t")
-        monkeypatch.setattr("agent_discogs.client._client", None)
         not_a_dir = tmp_path / "file"
         not_a_dir.write_text("")
         monkeypatch.setenv("XDG_CACHE_HOME", str(not_a_dir))

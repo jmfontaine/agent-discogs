@@ -40,22 +40,22 @@ from agent_discogs.collection import (
     folder_name,
     folders_of,
 )
-from agent_discogs.formatting import (
-    _community_counts,
-    _format_string,
-    _ref_type,
-    _urls_short,
+from agent_discogs.inventory import release_id, short_grade
+from agent_discogs.refs import make_ref
+from agent_discogs.rows import (
     artist_title,
+    community_counts,
     credits_by_role,
     field,
+    format_string,
     known_year,
     listing_title,
+    ref_type,
     release_date,
     split_members,
     track_summary,
+    urls_short,
 )
-from agent_discogs.inventory import release_id, short_grade
-from agent_discogs.refs import make_ref
 
 if TYPE_CHECKING:
     from agent_discogs.wantlist import Market
@@ -125,7 +125,7 @@ def _tracks(tracklist: list[Any] | None) -> list[dict[str, Any]]:
 
 
 def project_search_result(r: Any) -> dict[str, Any]:
-    entity_type = _ref_type(r)
+    entity_type = ref_type(r)
     if entity_type is None:
         # What the text row shows: no ref, since nothing says what the ID is.
         return drop_empty(
@@ -144,7 +144,7 @@ def project_search_result(r: Any) -> dict[str, Any]:
             "label": label[0] if label else None,
             "catno": getattr(r, "catalog_number", None),
             "format": getattr(r, "format", None),
-            **_community_counts(r),
+            **community_counts(r),
             "master": make_ref("master", master_id)
             if entity_type == "release" and master_id
             else None,
@@ -168,7 +168,7 @@ def project_added_release(rel: Any) -> dict[str, Any]:
             "country": getattr(rel, "country", None),
             "label": getattr(first, "name", None),
             "catno": getattr(first, "catalog_number", None),
-            "formats": _format_string(getattr(rel, "formats", None)),
+            "formats": format_string(getattr(rel, "formats", None)),
             "added": _timestamp(getattr(rel, "date_added", None)),
             "master": make_ref("master", master_id) if master_id else None,
         }
@@ -205,7 +205,7 @@ def project_release(
             }
             for lb in getattr(rel, "labels", None) or []
         ],
-        "formats": _format_string(getattr(rel, "formats", None)),
+        "formats": format_string(getattr(rel, "formats", None)),
         "genres": getattr(rel, "genres", None),
         "styles": getattr(rel, "styles", None),
         "master": make_ref("master", master_id) if master_id else None,
@@ -362,7 +362,7 @@ def project_artist(artist: Any) -> dict[str, Any]:
             "url": _url(artist),
             "name": artist.name,
             "profile": markup.plain(markup.profile(getattr(artist, "profile", None))),
-            "urls": _urls_short(getattr(artist, "urls", None)),
+            "urls": urls_short(getattr(artist, "urls", None)),
             "members": _refs_of(current, "artist"),
             "former": _refs_of(former, "artist"),
         }
@@ -377,7 +377,7 @@ def project_label(label: Any) -> dict[str, Any]:
             "url": _url(label),
             "name": label.name,
             "profile": markup.plain(markup.profile(getattr(label, "profile", None))),
-            "urls": _urls_short(getattr(label, "urls", None)),
+            "urls": urls_short(getattr(label, "urls", None)),
             "parent": _refs_of([parent], "label")[0] if parent else None,
             "sub_labels": _refs_of(getattr(label, "sub_labels", None) or [], "label"),
         }
@@ -394,7 +394,7 @@ def project_label_release(rel: Any) -> dict[str, Any]:
             "year": known_year(getattr(rel, "year", None)),
             "catno": getattr(rel, "catalog_number", None),
             "format": getattr(rel, "format", None),
-            **_community_counts(rel),
+            **community_counts(rel),
         }
     )
 
@@ -431,7 +431,7 @@ def project_master_version(ver: Any) -> dict[str, Any]:
             "label": getattr(ver, "label", None),
             "catno": getattr(ver, "catalog_number", None),
             "format": getattr(ver, "format", None),
-            **_community_counts(ver),
+            **community_counts(ver),
         }
     )
 
@@ -448,7 +448,7 @@ def project_artist_release(rel: Any) -> dict[str, Any]:
             "role": getattr(rel, "role", None),
             "label": getattr(rel, "label", None),
             "format": getattr(rel, "format", None),
-            **_community_counts(rel),
+            **community_counts(rel),
         }
     )
 
@@ -466,7 +466,7 @@ def project_want(want: Any) -> dict[str, Any]:
             "year": known_year(getattr(release, "year", None)),
             "label": getattr(first, "name", None),
             "catno": getattr(first, "catalog_number", None),
-            "format": _format_string(getattr(release, "formats", None)),
+            "format": format_string(getattr(release, "formats", None)),
             "notes": getattr(want, "notes", None),
             "rating": getattr(want, "rating", None) or None,
         }
@@ -497,7 +497,7 @@ def project_list_summary(summary: Any) -> dict[str, Any]:
 def _list_item(item: Any) -> dict[str, Any]:
     """One list item: its ref, or for a type with no ref prefix its id and
     type, as a search row; its comment as Discogs sent it."""
-    entity_type = _ref_type(item)
+    entity_type = ref_type(item)
     if entity_type is None:
         head = {"id": item.id, "type": item.type}
     else:
@@ -555,7 +555,7 @@ def project_record(
             "year": known_year(getattr(release, "year", None)),
             "label": getattr(first, "name", None),
             "catno": getattr(first, "catalog_number", None),
-            "format": _format_string(getattr(release, "formats", None)),
+            "format": format_string(getattr(release, "formats", None)),
             "genres": getattr(release, "genres", None),
             "styles": getattr(release, "styles", None),
             "master": make_ref("master", master_id) if master_id else None,

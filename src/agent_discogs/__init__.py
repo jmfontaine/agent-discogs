@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import sys
 from typing import Any
 
@@ -762,6 +763,10 @@ def cli(
     if cached and fresh:
         msg = "--cached and --fresh are mutually exclusive."
         raise click.UsageError(msg)
+    # Close callbacks run last registered first: registered before begin(), the
+    # closer runs after finish() has printed, so the --debug panel measures
+    # the cache before closing checkpoints its WAL away.
+    ctx.call_on_close(functools.partial(client.close_client, ctx))
     trace.begin(ctx, debug=debug)
     if cached:
         client.request_cache_scope(ctx, "cache_only")
