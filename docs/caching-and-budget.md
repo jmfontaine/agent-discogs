@@ -107,7 +107,7 @@ A scan reads 100-row pages until the page is full or the list ends: a dense filt
 
 ## Capping requests with --max-requests
 
-`--max-requests N` caps the HTTP sends of the whole command: header lookups, the username, the folder and fields lists and every page included. Cache hits are free and never count, so a rerun of the same command within the hour spends the cap on the requests the first run did not reach, and reads further. `N` must be 1 or more, with one ref, otherwise `invalid_argument` before any request.
+`--max-requests N` caps the HTTP sends of the whole command: header lookups, the username, the folder and fields lists and every page included. Cache hits are free and never count, so a rerun of the same command within the hour spends the cap on the requests the first run did not reach, and reads further. `N` must be 1 or more, with at most one ref (`get collection` and `get wantlist` take none), otherwise `invalid_argument` before any request.
 
 It is accepted only where something can stop: a client-side scan (see [Client-side scans](commands.md#client-side-scans)), `search --added-since` (see [Releases added since a date](commands.md#releases-added-since-a-date)), or one of the reads of the table below. Where each noun takes it is in [Flags per noun](commands.md#flags-per-noun); the rejection messages are in [Errors](errors.md). `--owned` and `--wanted` on `get versions` and `get releases` read nothing (each row carries your counts), so there the cap needs a scan or `--market` and caps that alone.
 
