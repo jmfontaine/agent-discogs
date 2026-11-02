@@ -463,3 +463,26 @@ def test_an_option_value_is_never_rewritten(monkeypatch: pytest.MonkeyPatch) -> 
     result, _ = h.run("get", "collection", "--label", "--random=-1", "--limit", "1")
     assert result.exit_code == 0, result.output
     assert result.stdout.startswith("Collection: me label=--random=-1 ")
+
+
+_U = "/oauth/identity"
+
+
+@pytest.mark.parametrize(
+    ("argv", "paths"),
+    [
+        ([], [_U, _FOLDER_LIST, *[_RECORDS] * 3]),
+        (["--json", "--full"], [_U, *[_RECORDS] * 3]),
+        (["--max-requests", "1"], [_U]),
+    ],
+)
+def test_requests_of_a_filtered_draw(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], paths: list[str]
+) -> None:
+    """A filtered draw reads as `--duplicates` does: the username, the folder
+    list unless `--json --full`, then the whole folder, within the cap."""
+    h = _Harness(monkeypatch)
+    base = ["--fresh", "get", "collection", "--random", "2", "--genre", "Electronic"]
+    result, sent = h.run(*base, *argv)
+    assert result.exit_code == 0, result.output
+    assert _paths(sent) == paths

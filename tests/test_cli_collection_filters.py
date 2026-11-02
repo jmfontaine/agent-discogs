@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from tests.conftest import (
+    _FIELDS,
     _FOLDER_LIST,
     _FOLDERS,
     _RECORDS,
@@ -464,3 +465,26 @@ class TestFolder:
         result, sent = h.run("--cached", "get", "collection", "--folder", "Vinyl")
         assert "Not cached" in text_error(result)
         assert sent == []
+
+
+_U = "/oauth/identity"
+
+
+@pytest.mark.parametrize(
+    ("argv", "paths"),
+    [
+        ([], [_U, _FOLDER_LIST, _RECORDS]),
+        (["--json", "--full"], [_U, _RECORDS]),
+        (["--max-requests", "3", "--fields"], [_U, _FOLDER_LIST, _FIELDS]),
+    ],
+)
+def test_requests_of_a_filtered_listing(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], paths: list[str]
+) -> None:
+    """The username, the folder list unless `--json --full`, the fields list
+    with `--fields`, then the scan, the cap counting each in that order."""
+    h = _Harness(monkeypatch)
+    base = ["--fresh", "get", "collection", "--genre", "Electronic"]
+    result, sent = h.run(*base, *argv)
+    assert result.exit_code == 0, result.output
+    assert _paths(sent) == paths
