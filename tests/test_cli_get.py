@@ -156,6 +156,31 @@ class TestVersionsRequest:
             assert text_error(result) == f"✗ {message}\n"
         assert api.sends == []
 
+    def test_a_country_with_a_tab_prints_how_to_continue(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        api = _FakeAPI(monkeypatch, _Catalogue())
+        args = ["get", "versions", "@m3719", "--country", "a\tb"]
+        result = CliRunner().invoke(cli, args)
+        assert result.exit_code == 0, result.output
+        assert result.stdout.splitlines()[-1] == (
+            "Next page: not printed, because --country holds U+0009, which a "
+            "pasted command would not keep. Run the same command with --page 2."
+        )
+        document = json.loads(CliRunner().invoke(cli, [*args, "--json"]).stdout)
+        assert document["pagination"] == {
+            "page": 1,
+            "total_items": 300,
+            "total_pages": 60,
+        }
+        more = CliRunner().invoke(cli, [*args, "--page", "2", "--json"])
+        assert json.loads(more.stdout)["pagination"]["page"] == 2
+        versions = [p for path, p in api.sends if path.endswith("/versions")]
+        assert [(p["country"], p["page"]) for p in versions] == [
+            ("a\tb", "1"),
+            ("a\tb", "2"),
+        ]
+
 
 _NO_MASTER = (
     "@r1 is a release with no master. This release isn't linked to a master release."

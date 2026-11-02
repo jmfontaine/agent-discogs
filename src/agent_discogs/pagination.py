@@ -11,7 +11,7 @@ from typing import Any, Literal
 import click
 from discogs_sdk import RateLimitError, SyncPage
 
-from agent_discogs import trace
+from agent_discogs import sanitize, trace
 
 DEFAULT_LIMIT = 5
 MAX_LIMIT = 100  # Discogs' largest per_page
@@ -150,9 +150,11 @@ def next_page_cmd(
     *,
     limit: int,
     positionals: tuple[str, ...] = (),
+    arguments: str = "an argument",
     **flags: object,
 ) -> str | None:
-    """The shell-safe command that continues `result`, or None at the end.
+    """The text after a list's `Next page:`/`Continue scan:` label: the
+    shell-safe command that continues `result`, or None at the end.
 
     It continues by cursor (`--after`) after a client-side filtered page and
     by `--page N+1` otherwise, keeps a non-default `--limit`, and repeats this
@@ -164,6 +166,13 @@ def next_page_cmd(
     Flags whose value is None/""/False are omitted; `True` renders as a bare
     switch; underscores become dashes. Every token is quoted by `shlex.join`,
     so titles with quotes and labels like `R & S Records` paste back unchanged.
+
+    A token that `sanitize.line()` would change (a tab, a line break, another
+    control or bidi character) cannot be pasted back from the text view, so
+    the command is not printed: a note names the first such token, by its
+    flag or by `arguments` (what the words of `argv` and `positionals` that
+    the caller typed are, such as "the search query"), its first such
+    character, and the `--page`/`--after` to add to the command that ran.
     """
     if not result.has_next:
         return None
@@ -172,16 +181,29 @@ def next_page_cmd(
         after=result.next_cursor,
         page=None if result.filtered else result.page + 1,
     )
-    parts = ["agent-discogs", *_cache_flags(), *argv]
+    words = [(word, arguments) for word in argv]  # each with what it is
     for flag, value in flags.items():
         if value in (None, "", False):
             continue
-        parts.append(f"--{flag.replace('_', '-')}")
+        option = f"--{flag.replace('_', '-')}"
+        words.append((option, option))
         if value is not True:
-            parts.append(str(value))
+            words.append((str(value), option))
     if positionals:
-        parts += ["--", *positionals]
-    return shlex.join(parts)
+        words += [("--", "--"), *((word, arguments) for word in positionals)]
+    for word, name in words:
+        lost = next((char for char in word if sanitize.line(char) != char), None)
+        if lost is not None:
+            resume = (
+                f"--after {result.next_cursor}"
+                if result.filtered
+                else f"--page {result.page + 1}"
+            )
+            return (
+                f"not printed, because {name} holds U+{ord(lost):04X}, which a "
+                f"pasted command would not keep. Run the same command with {resume}."
+            )
+    return shlex.join(["agent-discogs", *_cache_flags(), *(w for w, _ in words)])
 
 
 def _cache_flags() -> list[str]:

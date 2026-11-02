@@ -66,8 +66,6 @@ from agent_discogs.formatting import (
     format_stats,
     format_tracklist,
     format_wantlist,
-    iter_tracks,
-    known_year,
 )
 from agent_discogs.inventory import GRADES, Filter, grade, read_wantlist, release_id
 from agent_discogs.json_output import Mode, dump, full_dump
@@ -110,6 +108,7 @@ from agent_discogs.projections import (
     project_want,
 )
 from agent_discogs.refs import make_ref, parse_ref
+from agent_discogs.rows import iter_tracks, known_year
 from agent_discogs.wantlist import ForSale, MarketRead, market_of, read_markets
 
 # Which entity type each noun expects
@@ -1213,6 +1212,7 @@ def _get_inventory(
         result,
         limit=limit,
         positionals=(username,) if dashed else (),
+        arguments="the username",
         condition=condition_code,
         sleeve=sleeve_code,
         ships_from=ships_from,
