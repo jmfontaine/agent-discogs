@@ -1,4 +1,11 @@
-"""Skills command — serve the bundled agent guide from the installed package."""
+"""Skills command — serve the bundled agent guide from the installed package.
+
+Every directory of `src/agent_discogs/skills/` holding a `SKILL.md` is a
+skill, with optional `references/*.md` that `--full` appends; all of it ships
+in the wheel. `skills list` pads the names to the longest; `skills list
+--json` prints `[{"name", "description", "version"}]` through
+`json_output.dump()`, its `--json` uncolored by `off_for_json` like every
+other."""
 
 from __future__ import annotations
 

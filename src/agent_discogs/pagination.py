@@ -335,7 +335,10 @@ def fetch_filtered_page(
     a page is asked for only while a send would remain to check a row of it,
     and a 429 from `keep` stops the scan with the rows kept so far, on any
     page. Either way the cursor names the row `keep` did not decide, so a
-    continuation checks it first and never checks a row twice.
+    continuation checks it first and never checks a row twice. When the cap
+    leaves too few sends for the next page and a row of it, at a page
+    boundary, the scan stops with the boundary cursor, without reading that
+    page.
 
     With `totals_only`, no row can match (`--in-wantlist` against an empty
     wantlist read whole): only the page the scan would start on is read,

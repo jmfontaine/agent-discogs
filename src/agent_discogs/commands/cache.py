@@ -1,4 +1,11 @@
-"""Cache command handler."""
+"""Cache command handler.
+
+`clear_cache()` runs inside the command's error boundary: success prints
+`Cache cleared.` (`{"cleared": true}` under `--json`) only when it returns,
+and a purge or open failure (`CacheError`) exits 1 with `cache_error`, as
+text or the JSON envelope. The CLI deletes no database itself, and this
+command attaches no logging handler (under `--debug`, `trace.begin()` adds
+the SDK's)."""
 
 from __future__ import annotations
 

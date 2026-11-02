@@ -117,8 +117,9 @@ def amount(text: str | None, field: str) -> float:
     What comes before the first digit and after the last is the currency
     symbol, and is dropped. Between them, the decimal separator is the last
     `.` or `,` when one or two digits follow it to the end; every other `.`,
-    `,`, `'`, space or no-break space separates thousands, so it must cut
-    the whole part into groups of three after a first group of one to three
+    `,`, `'`, typographic apostrophe (U+2019), space, no-break space (U+00A0)
+    or narrow no-break space (U+202F) separates thousands, so it must cut the
+    whole part into groups of three after a first group of one to three
     digits that is not 0. Anything else raises `UnknownFormatError` naming
     `field`: a sign or parentheses around the number, a `.` or `,` right
     before its first digit (`.50` is not 50), or more digits than a float

@@ -1,4 +1,10 @@
-"""JSON output helpers for --json flag."""
+"""JSON output helpers for --json flag.
+
+Build a document inside a command's error boundary and print it outside, so
+a failure never leaves half a document on stdout. Every document goes out
+through `dumps()` (never `json.dumps` directly), the error envelope included,
+and every `--full` path through `full_dump()`: never print `model.raw` or a
+Python-mode `model_dump()`."""
 
 from __future__ import annotations
 
