@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -21,6 +22,7 @@ from discogs_sdk import (
 
 from agent_discogs import cli, trace
 from tests.conftest import (
+    RealSdk,
     UseClient,
     _tracks_fake,
     fake_client,
@@ -225,6 +227,24 @@ class TestDebug:
         assert isinstance(result.exception, SystemExit)  # not a teardown crash
         assert "✗ Tracklist @r1 not found." in result.stderr
         assert "cache     unknown (no home directory)  ttl 1h" in result.stderr
+
+    def test_cache_row_measured_before_the_client_closes(
+        self, real_sdk: RealSdk
+    ) -> None:
+        real_sdk.respond = lambda _request: httpx2.Response(
+            200, json={"id": 1, "title": "Album"}
+        )
+        result = CliRunner().invoke(cli, ["--debug", "get", "release", "@r1"])
+        assert result.exit_code == 0, result.output
+        row = r"^cache .*  ([\d.]+) (B|KB|MB)  ttl 1h$"
+        size = re.search(row, result.stderr, re.MULTILINE)
+        assert size is not None, result.stderr
+        units = {"B": 1, "KB": 1024, "MB": 1024 * 1024}
+        printed = float(size[1]) * units[size[2]]
+        # Closing checkpoints the WAL into cache.db and removes the sidecars,
+        # so the panel exceeds the database alone only if it printed first.
+        database = real_sdk.cache_home / "agent-discogs" / "cache.db"
+        assert printed > database.stat().st_size
 
     def test_logger_restored_when_the_panel_raises(
         self, monkeypatch: pytest.MonkeyPatch

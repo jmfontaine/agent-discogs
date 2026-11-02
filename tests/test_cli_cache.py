@@ -54,13 +54,14 @@ class _CacheScope:
 class TestCacheFlags:
     @pytest.fixture(autouse=True)
     def _scoped_client(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The real get_client() over a fake singleton, so the pending scope
+        """The real get_client() over a fake client, so the pending scope
         is entered the way a real run enters it."""
         self.log: list[str] = []
         self.scoped = _tracks_fake(lambda: self.log.append("request"))
         self.scoped.cache_only = _CacheScope(self.log, "cache_only")
         self.scoped.no_cache = _CacheScope(self.log, "no_cache")
-        monkeypatch.setattr("agent_discogs.client._client", self.scoped)
+        self.scoped.close = lambda: None
+        monkeypatch.setattr("agent_discogs.client._build", lambda: self.scoped)
 
     def test_both_flags_is_a_usage_error(self) -> None:
         result = CliRunner().invoke(cli, ["--cached", "--fresh", "status"])

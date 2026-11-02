@@ -198,8 +198,9 @@ class TestCompletionCommand:
     def test_never_builds_the_client_or_prints_a_budget_line(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(client, "_client", None)
+        built: list[object] = []
+        monkeypatch.setattr(client, "_build", lambda: built.append(None))
         result = CliRunner().invoke(cli, ["completion", "zsh"])
         assert result.exit_code == 0
         assert result.stderr == ""
-        assert client._client is None
+        assert built == []
