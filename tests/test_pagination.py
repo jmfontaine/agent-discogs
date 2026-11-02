@@ -5,17 +5,19 @@ from __future__ import annotations
 import contextlib
 import functools
 import json
+import shlex
 from collections.abc import Callable, Generator
 from types import SimpleNamespace
 from typing import Any
 
+import click
 import httpx2
 import pytest
 from discogs_sdk import Discogs, DiscogsError, RateLimitError
 from discogs_sdk import PageResult as SdkPageResult
 from pydantic import BaseModel
 
-from agent_discogs import trace
+from agent_discogs import sanitize, trace
 from agent_discogs.json_output import dumps, page_document
 from agent_discogs.pagination import (
     DropRepeats,
@@ -24,6 +26,7 @@ from agent_discogs.pagination import (
     fetch_filtered_page,
     fetch_page,
     keep_all,
+    next_page_cmd,
     parse_cursor,
     without_repeats,
 )
@@ -79,6 +82,93 @@ class TestParseCursor:
         printed, which named pages of another size."""
         with pytest.raises(ValueError, match="Invalid --after cursor"):
             parse_cursor(bad)
+
+
+_NEXT_PAGE = PageResult(items=[], page=1, total_items=300, total_pages=60)
+_NEXT_SCAN = PageResult(
+    items=[], page=3, total_items=500, total_pages=5, filtered=True, next_cursor="3:100"
+)
+
+
+def _continue(
+    result: PageResult, argv: tuple[str, ...] = ("search",), **kwargs: Any
+) -> str | None:
+    with click.Context(click.Command("agent-discogs")):
+        return next_page_cmd(list(argv), result, limit=5, **kwargs)
+
+
+def _note(name: str, code: str, resume: str) -> str:
+    return (
+        f"not printed, because {name} holds U+{code}, which a pasted command "
+        f"would not keep. Run the same command with {resume}."
+    )
+
+
+class TestNextPageCmd:
+    """The footer command repeats the caller's arguments exactly, or is not
+    printed: a character the text view rewrites never reaches it."""
+
+    @pytest.mark.parametrize(
+        ("char", "code"),
+        [
+            ("\t", "0009"),
+            ("\n", "000A"),
+            ("\u202e", "202E"),
+            ("\x1b", "001B"),
+            ("\x7f", "007F"),
+            ("\u2028", "2028"),
+            ("\x9b", "009B"),
+            ("\u200b", "200B"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("result", "resume"),
+        [(_NEXT_PAGE, "--page 2"), (_NEXT_SCAN, "--after 3:100")],
+        ids=["page", "scan"],
+    )
+    def test_a_value_the_text_view_rewrites_prints_a_note(
+        self, char: str, code: str, result: PageResult, resume: str
+    ) -> None:
+        assert sanitize.line(f"a{char}b") != f"a{char}b"
+        note = _continue(result, ("get", "versions", "@m1"), country=f"a{char}b")
+        assert note == _note("--country", code, resume)
+
+    def test_the_first_affected_token_and_character_are_named(self) -> None:
+        note = _continue(_NEXT_PAGE, label="a\u202e\tb", country="c\x1bd")
+        assert note == _note("--label", "202E", "--page 2")
+        note = _continue(_NEXT_PAGE, label="plain", underscore_flag="a\r\nb")
+        assert note == _note("--underscore-flag", "000D", "--page 2")
+
+    def test_the_query_and_the_username_are_checked(self) -> None:
+        query = ("release", "a\tb")
+        note = _continue(_NEXT_SCAN, positionals=query, arguments="the search query")
+        assert note == _note("the search query", "0009", "--after 3:100")
+        argv = ("get", "inventory", "seller\n")
+        note = _continue(_NEXT_PAGE, argv, arguments="the username")
+        assert note == _note("the username", "000A", "--page 2")
+        note = _continue(
+            _NEXT_PAGE,
+            ("get", "inventory"),
+            positionals=("-seller\u202e",),
+            arguments="the username",
+        )
+        assert note == _note("the username", "202E", "--page 2")
+
+    @pytest.mark.parametrize(
+        "value", ["R & S Records", "Björk", "it's", 'Van "Gelder" $HOME', "a\u200db"]
+    )
+    def test_a_value_the_text_view_keeps_is_quoted_as_before(self, value: str) -> None:
+        assert sanitize.line(value) == value
+        assert _continue(_NEXT_PAGE, country=value) == shlex.join(
+            ["agent-discogs", "search", "--country", value, "--page", "2"]
+        )
+        assert _continue(_NEXT_SCAN, positionals=("-x", value)) == shlex.join(
+            ["agent-discogs", "search", "--after", "3:100", "--", "-x", value]
+        )
+
+    def test_no_next_page_prints_nothing(self) -> None:
+        last = PageResult(items=[], page=60, total_items=300, total_pages=60)
+        assert _continue(last, country="a\tb") is None
 
 
 class _FakeModel(BaseModel):
