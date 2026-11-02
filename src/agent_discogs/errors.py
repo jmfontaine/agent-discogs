@@ -233,7 +233,15 @@ _LIST_NOT_FOUND = (
 
 def classify(exc: Exception, context: str | None = None) -> ErrorInfo:
     """Map an exception to an ErrorInfo. `context` names the thing that
-    failed, e.g. "Release @r847868", and is used in not-found messages."""
+    failed, e.g. "Release @r847868", and is used in not-found messages.
+
+    The order matters: `bad_response` (a 2xx the SDK cannot read, most of
+    whose causes are `ValueError`s) is decided before the `ValueError` ->
+    `invalid_argument` branch. Text from Discogs or the transport enters a
+    message only through `sanitize.summary()`. The `CacheMissError` branch
+    only builds the error: the footer learns about the miss from the SDK's
+    own `source == "miss"` event. agent-discogs has no envelope or schema
+    checks of its own, and `src/` never imports `httpx2`."""
     if isinstance(exc, NotFoundError):
         # Discogs overloads 404 for the marketplace endpoints: a release that
         # does not exist and a release whose price data the caller may not read

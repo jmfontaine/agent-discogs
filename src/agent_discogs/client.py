@@ -52,7 +52,8 @@ def _build() -> Discogs:
     # The CLI never retries or sleeps on the caller's behalf: a 429, a 5xx or
     # a transport failure is reported at once, so one request is one send and
     # the footer counts what was spent. Credentials come from the
-    # environment, resolved by the SDK as in auth_mode().
+    # environment, resolved by the SDK as in auth_mode(): never check one
+    # variable yourself. Tests patch this function to inject a client.
     return Discogs(
         cache=True,
         cache_dir=cache_dir(),

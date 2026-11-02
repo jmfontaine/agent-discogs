@@ -1,5 +1,35 @@
 """Shared test setup: environment isolation, SDK stand-ins and harnesses,
-and CLI result checks."""
+and CLI result checks.
+
+Only helpers that more than one test module uses live here, imported with
+`from tests.conftest import ...`; test modules never import from each other,
+and a helper only one module uses stays in that module. There is no mocking
+framework: tests patch with pytest's `monkeypatch` and fake the SDK with
+`SimpleNamespace` objects (`fake`, `fake_model`, `fake_client`, `listed`).
+Prefer a real model (`SearchResult(...)`, `Release.model_validate(...)`) when
+its fields allow the case, and never give a fake a value the model could not
+hold. A command builds its listing before `fetch_page` runs, so a test that
+fakes `fetch_page` (`serve_page`) still needs a client with listings
+(`fake_client()` has a recording `search`).
+
+Two harnesses run the real SDK client over an `httpx2.MockTransport`.
+`_FakeAPI` injects one with an in-memory cache by patching `client._build`
+(request counts, cache flags, continuation, the query parameters each flag
+sends); each invocation closes it, which leaves its injected transport and
+cache usable. `real_sdk` lets `get_client()` build the client itself, so
+request events, retries, models and the on-disk cache can be asserted; a
+test calling `get_client()` outside `cli` does so inside `invocation()`. The
+`_Collection`/`_Harness` pair (used by the four `test_cli_collection*.py`
+modules) and the `_Account`/`_AccountHarness` pair (`test_cli_owned.py` and
+`test_cli_get_owned.py`) are the shared data and runners built on `_FakeAPI`.
+
+Assert on `result.stdout` and `result.stderr`, not `result.output`, which
+mixes the two; leave stderr alone on a `--json` failure, where the budget
+footer or `--debug` panel may print (`text_error()`, `json_error()`).
+
+`_isolate_env` is autouse (the `pytester` plugin lets
+`tests/test_env_isolation.py` check it), and `DOC_FILES` is the one list of
+docs the doc tests read."""
 
 from __future__ import annotations
 

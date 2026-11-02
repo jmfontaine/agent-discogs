@@ -1,4 +1,12 @@
-"""Completion command: print click's shell completion script."""
+"""Completion command: print click's shell completion script.
+
+The scripts are click's own (`BashComplete`, `ZshComplete`, `FishComplete`),
+for the root command under the fixed program name `agent-discogs`; none is
+hand-written. Like `status`, it never calls `get_client()`. What Tab offers
+comes from the commands themselves: `click.Choice` types and the
+`shell_complete` callbacks of `search`, `get` and `skills`. Aliases are
+resolved by `AliasGroup.get_command()` but never listed, so they are not
+offered."""
 
 from __future__ import annotations
 

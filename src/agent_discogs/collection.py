@@ -292,7 +292,11 @@ def count_records(records: list[Any], key: str) -> Counts:
 class CollectionRead:
     """A read of a folder's records: the records read, in collection order,
     the folder's size (None when no page was read), and why the read stopped
-    short (`stop`), if it did."""
+    short (`stop`), if it did.
+
+    The views of the whole collection (`--count-by`, `--duplicates`, a
+    filtered `--random`) use it alone and never write the ownership entry of
+    `ctx.meta`: only `_read_ownership()` turns a read into an `Ownership`."""
 
     records: tuple[Any, ...]
     total_records: int | None
@@ -423,7 +427,9 @@ def unread(stop: ScanStop) -> CollectionRead:
 def _collection_read(client: Discogs) -> Ownership:
     """The collection `get owned @m...` answers from: the same read as
     `--owned`, once per invocation, uncapped (`get owned` takes no
-    `--max-requests`)."""
+    `--max-requests`). A 429 is a stop (the part read answers); any other
+    error, `CacheMissError` included, propagates, and the next master ref
+    tries the read again."""
     meta = click.get_current_context().meta
     if _OWNERSHIP not in meta:
         meta[_OWNERSHIP] = _read_ownership(client, None, max_requests=None)

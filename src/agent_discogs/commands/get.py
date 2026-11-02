@@ -1411,8 +1411,13 @@ class GetOptions:
     parameter names and with click's defaults, plus `explicit`, the
     noun-specific options the user supplied (`_explicit_options()`). `get`
     builds it once from what click hands over; the `tracks` and `price`
-    shortcuts use `GetOptions()`, every default and nothing explicit. A flag
-    added to `get` adds a field here (a test compares the two)."""
+    shortcuts use `GetOptions()`, every default and nothing explicit. It
+    travels as `options` through `_flag_error()`, `_dispatch()` and
+    `_run_one()`, while the noun handlers and validators keep narrow keyword
+    signatures. A new flag is its click declaration, a field here (a test
+    compares the two, names and defaults), an entry in `NOUN_OPTIONS`, and the
+    validator and handler calls that use it. `format_` and `style_` avoid the
+    builtin and the `style` module this file imports."""
 
     after: str | None = None
     artist: str | None = None
@@ -1582,7 +1587,10 @@ def _wantlist_error(
 ) -> str | None:
     """What `get wantlist` cannot take: a ref, or a --for-sale flag without
     --for-sale. --max-price needs --currency, so the threshold is always in a
-    currency the user named, never the account's."""
+    currency the user named, never the account's. --max-requests below 3 is
+    refused with --for-sale: the username, a wants page and one want's
+    stats, all sent on a cold cache or under --fresh, so even then one want
+    is checked per run."""
     if refs:
         return "get wantlist takes no ref: it lists your own wantlist."
     stray = [
@@ -1714,7 +1722,12 @@ def _flag_error(
     page by cursor, not by number) are `releases --role` on an artist,
     `releases --year` on a label, `versions --release-type official` (or
     `unofficial` with `--format`), `collection` with a filter, `wantlist
-    --for-sale` and `inventory` with any of its filters.
+    --for-sale` and `inventory` with any of its filters. `--max-requests`
+    caps one scan, so it is accepted only where something scans (those
+    listings, `inventory --owned`, `versions --market`, a view of the whole
+    collection), with at most one ref (the nouns that take none reject any
+    ref in their own validator) and at least 1
+    (`pagination.max_requests_error()`).
     """
     explicit = options.explicit
     after, max_requests, currency = (

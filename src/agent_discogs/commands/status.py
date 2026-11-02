@@ -1,4 +1,7 @@
-"""Status command handler."""
+"""Status command handler.
+
+It never calls `get_client()`: `client.auth_mode()` reads the mode from a
+throwaway client, so `status` never opens or creates the cache."""
 
 from __future__ import annotations
 

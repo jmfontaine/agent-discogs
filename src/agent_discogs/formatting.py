@@ -1,4 +1,8 @@
-"""SDK Pydantic models → compact text output."""
+"""SDK Pydantic models → compact text output.
+
+Every view returns plain text built by `_text(lines)`, which neutralizes each
+line, and callers `print()` it: build new views the same way. Rows are read
+through `rows`."""
 
 from __future__ import annotations
 
