@@ -67,6 +67,27 @@ class TestPageResult:
         assert pr.has_next is False
 
 
+class TestScanStopDocument:
+    @pytest.mark.parametrize(
+        ("stop", "document"),
+        [
+            (ScanStop("max_requests", max_requests=3), {"stop_reason": "max_requests"}),
+            (
+                ScanStop("rate_limited", retry_after=30),
+                {"stop_reason": "rate_limited", "retry_after": 30},
+            ),
+            # 0 is "retry now", a value Discogs sent: kept.
+            (
+                ScanStop("rate_limited", retry_after=0),
+                {"stop_reason": "rate_limited", "retry_after": 0},
+            ),
+            (ScanStop("rate_limited"), {"stop_reason": "rate_limited"}),
+        ],
+    )
+    def test_document(self, stop: ScanStop, document: dict[str, object]) -> None:
+        assert list(stop.document().items()) == list(document.items())
+
+
 class TestParseCursor:
     def test_none_is_start(self) -> None:
         assert parse_cursor(None) == (1, 1, 0)

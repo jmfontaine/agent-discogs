@@ -96,9 +96,7 @@ class Wants:
             "total_wants": self.total,
         }
         if self.stop is not None:
-            doc["stop_reason"] = self.stop.reason
-            if self.stop.retry_after is not None:
-                doc["retry_after"] = self.stop.retry_after
+            doc.update(self.stop.document())
         return doc
 
     def wanted(self, release_id: int) -> bool | None:

@@ -116,8 +116,6 @@ def page_document(
     if result.duplicates_dropped:
         pagination["duplicates_dropped"] = result.duplicates_dropped
     if result.stop is not None:
-        pagination["stop_reason"] = result.stop.reason
-        if result.stop.retry_after is not None:
-            pagination["retry_after"] = result.stop.retry_after
+        pagination.update(result.stop.document())
     rows = [full_dump(item) if full else project(item) for item in result.items]
     return {"pagination": pagination, "results": rows}

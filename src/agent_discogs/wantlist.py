@@ -71,9 +71,7 @@ class MarketRead:
             "rows": self.rows,
         }
         if self.stop is not None:
-            doc["stop_reason"] = self.stop.reason
-            if self.stop.retry_after is not None:
-                doc["retry_after"] = self.stop.retry_after
+            doc.update(self.stop.document())
         return doc
 
 

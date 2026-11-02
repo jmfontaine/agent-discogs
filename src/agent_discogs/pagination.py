@@ -60,6 +60,15 @@ class ScanStop:
     max_requests: int | None = None
     retry_after: int | None = None
 
+    def document(self) -> dict[str, Any]:
+        """The one JSON form of a stop, merged into whatever document reports
+        it: `stop_reason`, then `retry_after` unless Discogs sent none (`0`,
+        "retry now", is kept). `max_requests` is for the text notes only."""
+        doc: dict[str, Any] = {"stop_reason": self.reason}
+        if self.retry_after is not None:
+            doc["retry_after"] = self.retry_after
+        return doc
+
 
 @dataclass
 class PageResult:

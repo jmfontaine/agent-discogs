@@ -70,6 +70,9 @@ class _CountingWriter:
 @dataclass
 class Trace:
     events: list[RequestEvent] = field(default_factory=list)
+    # HTTP sends so far, kept as `record()` adds each event, so `sends()`
+    # never walks `events`: a capped scan asks before every row.
+    sends: int = 0
     scans: list[ScanNote] = field(default_factory=list)
     started: float = 0.0
     debug: bool = False
@@ -106,6 +109,8 @@ def record(event: RequestEvent) -> None:
     (`status_code` None, `source == "network"`), or refused by `cache_only()`
     (`source == "miss"`)."""
     _trace.events.append(event)
+    if event.source == "network":
+        _trace.sends += event.attempts
 
 
 def note_scan(note: ScanNote) -> None:
@@ -121,8 +126,9 @@ def _count_sends(events: Sequence[RequestEvent]) -> int:
 
 def sends() -> int:
     """HTTP sends this invocation has made so far: what `--max-requests` caps
-    and the footer counts."""
-    return _count_sends(_trace.events)
+    and the footer counts. A running count, equal to `_count_sends()` of the
+    events recorded."""
+    return _trace.sends
 
 
 def render_footer(events: Sequence[RequestEvent], *, color: bool = False) -> str | None:
