@@ -870,3 +870,40 @@ class TestDuplicates:
         result, sent = h.run("get", "collection", "--max-requests", "5", "--json")
         assert "--duplicates" in json_error(result)["message"]
         assert sent == []
+
+
+_U = "/oauth/identity"
+
+
+@pytest.mark.parametrize(
+    ("argv", "paths"),
+    [
+        (["--count-by", "label"], [_U, *[_RECORDS] * 3]),
+        (["--count-by", "label", "--folder", "Vinyl"], [_U, _FOLDER_LIST, _folder(5)]),
+        (["--count-by", "label", "--max-requests", "1"], [_U]),
+        (["--count-by", "label", "--max-requests", "2"], [_U, _RECORDS]),
+        (
+            ["--count-by", "label", "--max-requests", "2", "--folder", "Vinyl"],
+            [_U, _FOLDER_LIST],
+        ),
+        (["--duplicates", "release"], [_U, _FOLDER_LIST, *[_RECORDS] * 3]),
+        (["--duplicates", "release", "--json", "--full"], [_U, *[_RECORDS] * 3]),
+        (
+            ["--duplicates", "release", "--fields"],
+            [_U, _FOLDER_LIST, _FIELDS, *[_RECORDS] * 3],
+        ),
+        (
+            ["--duplicates", "release", "--max-requests", "3", "--fields"],
+            [_U, _FOLDER_LIST, _FIELDS],
+        ),
+    ],
+)
+def test_requests_of_a_whole_collection_view(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], paths: list[str]
+) -> None:
+    """The username, the folder list when a name is printed or `--folder`
+    is resolved, the fields list with `--fields`, then the whole folder, the
+    cap counting each in that order."""
+    result, sent = _Harness(monkeypatch).run("--fresh", "get", "collection", *argv)
+    assert result.exit_code == 0, result.output
+    assert _paths(sent) == paths
