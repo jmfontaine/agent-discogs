@@ -226,13 +226,13 @@ yank it there (project page or the upload API — there is no `pip yank`), then
 release the next patch version with `just release-prepare X.Y.(Z+1)` (run
 `just release-next` first if `main` still holds `X.Y.Z`).
 
-## Shared workflow
+## Shared Workflow
 
 This repository follows the shared workflow: the `github-workflow` skill's repository
 setup describes its GitHub settings, rulesets, labels and templates. Those settings are
 managed as code outside this repository; change them there, never with `gh api` or the
 GitHub web UI.
 
-### Deviations from the shared workflow
+### Deviations From the Shared Workflow
 
 None.

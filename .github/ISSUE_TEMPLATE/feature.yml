@@ -12,10 +12,10 @@ body:
   - type: textarea
     id: acceptance-criteria
     attributes:
-      label: Acceptance criteria
+      label: Acceptance Criteria
       description: What is observably true once this is done, including how it should behave when something goes wrong.
   - type: textarea
     id: out-of-scope
     attributes:
-      label: Out of scope
+      label: Out of Scope
       description: What this request does not cover.
