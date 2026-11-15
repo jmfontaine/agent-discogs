@@ -19,7 +19,7 @@ Keep everything above <details> to one phone screen, in plain words.
 Closes #N
 
 <details>
-<summary>Agent notes</summary>
+<summary>Agent Notes</summary>
 
 <!-- Detail only agents and reviewers need: paths, commands and their full output. Remove this block when there is none. -->
 
