@@ -279,7 +279,8 @@ type-check:
 # Compare reference/discogs_api/ with the Discogs API reference (--diff, --check, --write)
 [positional-arguments]
 update-api-docs *args:
-    uvx --from git+https://github.com/jmfontaine/discogs-api-reference discogs-api-reference "$@"
+    # @latest: without it, uvx keeps the version it cached on its first run.
+    uvx discogs-api-reference@latest "$@"
 
 # Audit public API type annotation coverage
 verify-types:
