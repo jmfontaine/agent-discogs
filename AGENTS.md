@@ -145,7 +145,12 @@ Refs are stateless: `@r847868` is just the Discogs ID with a type prefix, so not
 
 ## Discogs API Documentation
 
-`reference/discogs/api/` contains the Discogs API documentation as Markdown files, and `reference/discogs/knowledge_base/` the seller and grading guides (both gitignored for copyright reasons). Read these when working on API integration, pagination, or new endpoints.
+`reference/discogs_api/` contains the Discogs API documentation as Markdown files, and `reference/discogs/knowledge_base/` the seller and grading guides (both gitignored for copyright reasons). Read these when working on API integration, pagination, or new endpoints.
+
+Refresh the API documentation with `just update-api-docs`, which runs
+[discogs-api-reference](https://github.com/jmfontaine/discogs-api-reference). It only
+reports what would change; add `--write` to update the files, or `--diff` to see the
+changes.
 
 ## Key Conventions
 

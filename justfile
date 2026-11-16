@@ -276,6 +276,10 @@ test-live *args:
 type-check:
     uv run ty check
 
+# Compare reference/discogs_api/ with the Discogs API reference (--diff, --check, --write)
+update-api-docs *args:
+    uvx --from git+https://github.com/jmfontaine/discogs-api-reference discogs-api-reference {{ args }}
+
 # Audit public API type annotation coverage
 verify-types:
     uv run pyright --ignoreexternal --verifytypes agent_discogs
